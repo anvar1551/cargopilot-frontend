@@ -1,0 +1,35 @@
+name: Frontend CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_API_URL: /api
+      NEXT_PUBLIC_PAYMENTS_ENABLED: "false"
+      NEXT_PUBLIC_SUPPORT_EMAIL: support@cargopilot.app
+      NEXT_PUBLIC_SUPPORT_PHONE: "+49 40 0000 0000"
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
