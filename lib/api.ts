@@ -1,8 +1,27 @@
 import axios from "axios";
 import { clearAuth, getToken } from "./auth";
 
-const rawBaseUrl = process.env.NEXT_PUBLIC_API_URL?.trim() ?? "";
-const normalizedBaseUrl = rawBaseUrl.replace(/\/+$/, "");
+function resolveBaseUrl() {
+  const envBaseUrl = process.env.NEXT_PUBLIC_API_URL?.trim() ?? "";
+  if (envBaseUrl) return envBaseUrl.replace(/\/+$/, "");
+
+  if (typeof window === "undefined") return "";
+
+  const { protocol, hostname } = window.location;
+  const isLocalhost = hostname === "localhost" || hostname === "127.0.0.1";
+
+  if (isLocalhost) {
+    return `${protocol}//${hostname}:4000`;
+  }
+
+  if (hostname.startsWith("api.")) {
+    return `${protocol}//${hostname}`;
+  }
+
+  return `${protocol}//api.${hostname}`;
+}
+
+const normalizedBaseUrl = resolveBaseUrl();
 
 export const api = axios.create({
   baseURL: normalizedBaseUrl || undefined,
