@@ -180,6 +180,9 @@ export default function CreateOrderDialog({
           : Promise.resolve(),
       ]);
       toast.success(t("createOrder.createdSuccess"));
+      if (typeof data?.warning === "string" && data.warning.trim()) {
+        toast.warning(data.warning);
+      }
       setOpen(false);
       setTab("customer");
       form.reset();
