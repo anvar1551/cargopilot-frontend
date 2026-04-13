@@ -347,6 +347,94 @@ function formatTimelineStamp(value?: string | null) {
   return `${date} ${time}`;
 }
 
+function looksLikeUuid(value?: string | null) {
+  if (!value) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value,
+  );
+}
+
+function getReadableDriverLabel(order?: OrderDetails | null) {
+  return (
+    order?.assignedDriver?.name?.trim() ||
+    order?.assignedDriver?.email?.trim() ||
+    null
+  );
+}
+
+function getTrackingActorLabel(evt: TrackingEvent, order?: OrderDetails | null) {
+  const actorName = evt.actor?.name?.trim();
+  if (actorName) return actorName;
+
+  const actorEmail = evt.actor?.email?.trim();
+  if (actorEmail) return actorEmail;
+
+  const assignedDriverLabel = getReadableDriverLabel(order);
+  if (assignedDriverLabel && evt.actor?.id && evt.actor.id === order?.assignedDriver?.id) {
+    return assignedDriverLabel;
+  }
+
+  return null;
+}
+
+function getTrackingHeadline(
+  evt: TrackingEvent,
+  order: OrderDetails | null | undefined,
+  t: Translate,
+) {
+  const note = String(evt.note ?? "").trim();
+  const assignedMatch = /^Driver assigned \(([^)]+)\) to .+$/i.exec(note);
+
+  if (assignedMatch) {
+    return {
+      title: `Driver ${getReadableDriverLabel(order) ?? "-"} assigned (${prettyEnum(
+        assignedMatch[1],
+      )})`,
+      hideNote: true,
+    };
+  }
+
+  if (evt.status) {
+    return {
+      title: `Status changed to ${displayEnum(evt.status, t)}`,
+      hideNote: false,
+    };
+  }
+
+  return {
+    title: "Tracking updated",
+    hideNote: false,
+  };
+}
+
+function getTrackingNote(
+  evt: TrackingEvent,
+  order: OrderDetails | null | undefined,
+  headlineHidesNote: boolean,
+) {
+  if (headlineHidesNote) return null;
+
+  const note = String(evt.note ?? "").trim();
+  if (!note) return null;
+
+  const assignedDriverId = order?.assignedDriver?.id?.trim();
+  const assignedDriverLabel = getReadableDriverLabel(order);
+
+  if (
+    assignedDriverId &&
+    assignedDriverLabel &&
+    note.toLowerCase().includes(assignedDriverId.toLowerCase())
+  ) {
+    return note.replaceAll(assignedDriverId, assignedDriverLabel);
+  }
+
+  if (looksLikeUuid(note)) {
+    return assignedDriverLabel ?? null;
+  }
+
+  return note;
+}
+
 function trackingEventTone(evt: TrackingEvent) {
   const s = toLower(evt.status);
   if (evt.reasonCode || s === "exception" || s === "cancelled" || s === "returned") {
@@ -1084,6 +1172,9 @@ export default function OrderDetailsView({
                 {filteredTracking.map((evt, idx) => {
                   const tone = trackingEventTone(evt);
                   const isLast = idx === filteredTracking.length - 1;
+                  const headline = getTrackingHeadline(evt, order, t);
+                  const note = getTrackingNote(evt, order, headline.hideNote);
+                  const actorLabel = getTrackingActorLabel(evt, order);
 
                   return (
                     <li key={evt.id} className="grid grid-cols-[92px_1fr] gap-3 sm:grid-cols-[120px_1fr] sm:gap-4">
@@ -1123,16 +1214,7 @@ export default function OrderDetailsView({
                           </div>
 
                           <p className="mt-2 text-sm font-semibold leading-snug">
-                            {evt.status ? (
-                              <>
-                                Status changed to{" "}
-                                <span className="italic text-foreground">
-                                  {displayEnum(evt.status, t)}
-                                </span>
-                              </>
-                            ) : (
-                              "Tracking updated"
-                            )}
+                            {headline.title}
                             {evt.warehouse?.name ? (
                               <>
                                 {" "}
@@ -1153,12 +1235,12 @@ export default function OrderDetailsView({
                             ) : null}
                           </p>
 
-                          {evt.note ? (
-                            <p className="mt-1 text-sm text-muted-foreground">{evt.note}</p>
+                          {note ? (
+                            <p className="mt-1 text-sm text-muted-foreground">{note}</p>
                           ) : null}
 
                           <div className="mt-2 text-xs text-muted-foreground">
-                            {evt.actor?.name ? `By ${evt.actor.name}` : "By system"}
+                            {actorLabel ? `By ${actorLabel}` : "By system"}
                             {evt.actorRole ? ` (${displayEnum(evt.actorRole, t)})` : ""}
                             {evt.region ? ` • ${evt.region}` : ""}
                             {evt.warehouse?.name ? ` • ${evt.warehouse.name}` : ""}
