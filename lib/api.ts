@@ -3,12 +3,23 @@ import { clearAuth, getToken } from "./auth";
 
 function resolveBaseUrl() {
   const envBaseUrl = process.env.NEXT_PUBLIC_API_URL?.trim() ?? "";
-  if (envBaseUrl) return envBaseUrl.replace(/\/+$/, "");
-
   if (typeof window === "undefined") return "";
 
   const { protocol, hostname } = window.location;
   const isLocalhost = hostname === "localhost" || hostname === "127.0.0.1";
+  const normalizedEnvBaseUrl = envBaseUrl.replace(/\/+$/, "");
+
+  if (normalizedEnvBaseUrl) {
+    const isRelativeEnvBaseUrl = normalizedEnvBaseUrl.startsWith("/");
+
+    // Production uses a dedicated API subdomain. If an old relative `/api`
+    // value is still baked into the build, route directly to the API host.
+    if (!isLocalhost && isRelativeEnvBaseUrl && normalizedEnvBaseUrl === "/api") {
+      return `${protocol}//api.${hostname}`;
+    }
+
+    return normalizedEnvBaseUrl;
+  }
 
   if (isLocalhost) {
     return `${protocol}//${hostname}:4000`;
