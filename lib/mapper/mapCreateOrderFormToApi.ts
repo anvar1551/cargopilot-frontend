@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import { createOrderPayloadSchema } from "../validators/order";
+import type { ServiceType } from "../orders/service-types";
 
 export type CreateOrderFormValues = z.infer<typeof createOrderPayloadSchema>;
 
@@ -11,17 +12,21 @@ export type CreateOrderApiPayload = {
 
   senderName?: string | null;
   senderPhone?: string | null;
+  senderPhone2?: string | null;
+  senderPhone3?: string | null;
   senderAddress?: string | null;
 
   receiverName?: string | null;
   receiverPhone?: string | null;
+  receiverPhone2?: string | null;
+  receiverPhone3?: string | null;
   receiverAddress?: string | null;
 
   customerEntityId?: string | null;
   senderAddressId?: string | null;
   receiverAddressId?: string | null;
 
-  serviceType?: string | null;
+  serviceType?: ServiceType | null;
   codAmount?: number | null;
   currency?: string | null;
   weightKg?: number | null;
@@ -81,8 +86,12 @@ export function mapCreateOrderFormToApi(
 
     senderName: values.sender?.name ?? null,
     senderPhone: values.sender?.phone ?? null,
+    senderPhone2: values.sender?.phone2 ?? null,
+    senderPhone3: values.sender?.phone3 ?? null,
     receiverName: values.receiver?.name ?? null,
     receiverPhone: values.receiver?.phone ?? null,
+    receiverPhone2: values.receiver?.phone2 ?? null,
+    receiverPhone3: values.receiver?.phone3 ?? null,
 
     // keep these purely optional helpers
     senderAddressId,

@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import PageShell from "@/components/layout/PageShell";
+import CreateOrderDialog from "@/components/orders/CreateOrderDialog";
 
 import {
   AlertTriangle,
@@ -448,6 +449,10 @@ export default function ManagerDashboardPage() {
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
+                <CreateOrderDialog
+                  mode="manager"
+                  triggerClassName="h-10 rounded-md border-white/20 bg-white px-4 text-slate-950 shadow-none hover:bg-white/90"
+                />
                 <Button asChild variant="secondary">
                   <Link href="/dashboard/manager/dispatch" className="gap-2">
                     <Send className="h-4 w-4" />

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useFieldArray, useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
@@ -14,6 +14,7 @@ import {
 } from "@/lib/validators/order";
 import type { CreateOrderParcelsFieldArray } from "./create-order-form.types";
 import { createOrder } from "@/lib/orders";
+import { fetchPricingQuote, type PricingQuote } from "@/lib/pricing";
 import { getUser } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
@@ -50,6 +51,7 @@ type CreateOrderDialogProps = {
   presetCustomerEntityLabel?: string | null;
   lockCustomerEntitySelection?: boolean;
   triggerLabel?: string;
+  triggerClassName?: string;
 };
 
 export default function CreateOrderDialog({
@@ -58,6 +60,7 @@ export default function CreateOrderDialog({
   presetCustomerEntityLabel = null,
   lockCustomerEntitySelection = false,
   triggerLabel = "New Shipment",
+  triggerClassName,
 }: CreateOrderDialogProps) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
@@ -76,8 +79,8 @@ export default function CreateOrderDialog({
       customerEntityId: isManager
         ? (presetCustomerEntityId ?? undefined)
         : (user?.customerEntityId ?? undefined),
-      sender: { name: null, phone: null },
-      receiver: { name: null, phone: null },
+      sender: { name: null, phone: null, phone2: null, phone3: null },
+      receiver: { name: null, phone: null, phone2: null, phone3: null },
       addresses: {
         senderAddressId: null,
         receiverAddressId: null,
@@ -135,10 +138,66 @@ export default function CreateOrderDialog({
     control: form.control,
     name: "customerEntityId",
   });
+  const senderRegionQuery = useWatch({
+    control: form.control,
+    name: "addresses.senderAddress.city",
+  });
+  const receiverRegionQuery = useWatch({
+    control: form.control,
+    name: "addresses.receiverAddress.city",
+  });
+  const destinationCity = useWatch({
+    control: form.control,
+    name: "addresses.destinationCity",
+  });
+  const serviceType = useWatch({
+    control: form.control,
+    name: "shipment.serviceType",
+  });
+  const weightKg = useWatch({
+    control: form.control,
+    name: "shipment.weightKg",
+  });
 
   const canSaveAddresses = isManager
     ? Boolean(selectedCustomerEntityId)
     : Boolean(user?.customerEntityId);
+  const pricingCustomerEntityId = isManager
+    ? (selectedCustomerEntityId ?? null)
+    : (user?.customerEntityId ?? null);
+  const pricingOriginQuery = senderRegionQuery?.trim() || null;
+  const pricingDestinationQuery =
+    receiverRegionQuery?.trim() || destinationCity?.trim() || null;
+  const pricingReady = Boolean(
+    open &&
+      serviceType &&
+      typeof weightKg === "number" &&
+      weightKg > 0 &&
+      pricingOriginQuery &&
+      pricingDestinationQuery,
+  );
+
+  const pricingQuoteQuery = useQuery<PricingQuote>({
+    queryKey: [
+      "pricing-quote",
+      pricingCustomerEntityId,
+      serviceType,
+      weightKg,
+      pricingOriginQuery,
+      pricingDestinationQuery,
+    ],
+    queryFn: () =>
+      fetchPricingQuote({
+        customerEntityId: pricingCustomerEntityId,
+        serviceType: serviceType ?? null,
+        weightKg: typeof weightKg === "number" ? weightKg : null,
+        originQuery: pricingOriginQuery,
+        destinationQuery: pricingDestinationQuery,
+      }),
+    enabled: pricingReady,
+    retry: false,
+    staleTime: 30_000,
+  });
 
   useEffect(() => {
     if (!isManager || !presetCustomerEntityId) return;
@@ -147,6 +206,43 @@ export default function CreateOrderDialog({
       shouldValidate: false,
     });
   }, [form, isManager, presetCustomerEntityId]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const quote = pricingQuoteQuery.data;
+    const serviceChargeDirty = form.getFieldState("payment.serviceCharge").isDirty;
+    const amountDirty = form.getFieldState("amount").isDirty;
+
+    if (!pricingReady || !quote?.quoteAvailable) {
+      if (!serviceChargeDirty) {
+        form.setValue("payment.serviceCharge", undefined, {
+          shouldDirty: false,
+          shouldValidate: true,
+        });
+      }
+      if (!amountDirty) {
+        form.setValue("amount", undefined, {
+          shouldDirty: false,
+          shouldValidate: true,
+        });
+      }
+      return;
+    }
+
+    if (!serviceChargeDirty) {
+      form.setValue("payment.serviceCharge", quote.serviceCharge ?? undefined, {
+        shouldDirty: false,
+        shouldValidate: true,
+      });
+    }
+    if (!amountDirty) {
+      form.setValue("amount", quote.serviceCharge ?? undefined, {
+        shouldDirty: false,
+        shouldValidate: true,
+      });
+    }
+  }, [form, open, pricingQuoteQuery.data, pricingReady]);
 
   const mutation = useMutation({
     mutationFn: async (values: CreateOrderPayload) => {
@@ -243,7 +339,7 @@ export default function CreateOrderDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button className="rounded-2xl shadow-sm">
+        <Button className={cn("rounded-2xl shadow-sm", triggerClassName)}>
           <PackagePlus className="mr-2 h-4 w-4" />
           {triggerLabel === "New Shipment" ? t("createOrder.trigger") : triggerLabel}
         </Button>
@@ -331,15 +427,29 @@ export default function CreateOrderDialog({
                 </TabsContent>
 
                 <TabsContent value="shipment" className="mt-0 data-[state=inactive]:hidden" forceMount>
-                  <ShipmentStep form={form} parcels={parcels} />
+                  <ShipmentStep
+                    form={form}
+                    parcels={parcels}
+                    pricingQuote={pricingQuoteQuery.data}
+                    pricingLoading={pricingQuoteQuery.isFetching}
+                  />
                 </TabsContent>
 
                 <TabsContent value="payment" className="mt-0 data-[state=inactive]:hidden" forceMount>
-                  <PaymentStep form={form} paymentsEnabled={paymentsEnabled} />
+                  <PaymentStep
+                    form={form}
+                    paymentsEnabled={paymentsEnabled}
+                    pricingQuote={pricingQuoteQuery.data}
+                    pricingLoading={pricingQuoteQuery.isFetching}
+                  />
                 </TabsContent>
 
                 <TabsContent value="review" className="mt-0 space-y-4 data-[state=inactive]:hidden" forceMount>
-                  <ReviewStep form={form} paymentsEnabled={paymentsEnabled} />
+                  <ReviewStep
+                    form={form}
+                    paymentsEnabled={paymentsEnabled}
+                    pricingQuote={pricingQuoteQuery.data}
+                  />
                 </TabsContent>
 
                 <div className="h-24" />
@@ -360,11 +470,22 @@ export default function CreateOrderDialog({
               </Button>
 
               {tab !== "review" ? (
-                <Button type="button" onClick={next} className="rounded-2xl">
+                <Button
+                  key="create-order-next"
+                  type="button"
+                  onClick={next}
+                  className="rounded-2xl"
+                >
                   {t("createOrder.continue")}
                 </Button>
               ) : (
-                <Button type="submit" form={FORM_ID} disabled={!canSubmit} className="rounded-2xl">
+                <Button
+                  key="create-order-submit"
+                  type="submit"
+                  form={FORM_ID}
+                  disabled={!canSubmit}
+                  className="rounded-2xl"
+                >
                   {mutation.isPending
                     ? t("createOrder.creating")
                     : paymentsEnabled

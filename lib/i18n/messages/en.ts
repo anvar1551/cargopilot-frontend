@@ -105,6 +105,7 @@ export const en = {
       "drivers": "Drivers",
       "warehouses": "Warehouses",
       "customers": "Customers",
+      "pricing": "Pricing",
       "createUser": "Users",
       "settings": "Settings"
     },
@@ -174,6 +175,116 @@ export const en = {
     "passwordUpdateFailed": "Failed to update password",
     "languageSectionTitle": "Language",
     "languageSectionHint": "Interface language only. Backend data and API codes remain unchanged."
+  },
+  "pricingPage": {
+    "badge": "Pricing control",
+    "title": "Pricing and service rules",
+    "subtitle": "Define service-facing regions, maintain the zone matrix, and publish tariff plans that later drive automatic price calculation for pickup point and delivery flows.",
+    "tabs": {
+      "regions": "Regions",
+      "zones": "Zone matrix",
+      "plans": "Tariff plans"
+    },
+    "stats": {
+      "regions": "Regions",
+      "zoneLinks": "Zone links",
+      "plans": "Tariff plans",
+      "activePlans": "Active plans"
+    },
+    "shared": {
+      "refresh": "Refresh",
+      "edit": "Edit",
+      "loading": "Loading...",
+      "cancelEdit": "Cancel edit",
+      "active": "Active",
+      "inactive": "Inactive"
+    },
+    "toast": {
+      "regionCreated": "Region created",
+      "regionUpdated": "Region updated",
+      "zoneSaved": "Zone matrix saved",
+      "planCreated": "Tariff plan created",
+      "planUpdated": "Tariff plan updated",
+      "actionFailed": "Action failed"
+    },
+    "regions": {
+      "createTitle": "Create pricing region",
+      "createDescription": "Regions are the business-level origin and destination nodes used by the client tariff logic.",
+      "editing": "Editing region details",
+      "code": "Code",
+      "name": "Name",
+      "namePlaceholder": "Tashkent",
+      "aliases": "Aliases",
+      "aliasesPlaceholder": "Comma-separated names, abbreviations, or legacy spellings",
+      "sortOrder": "Sort order",
+      "active": "Enabled for pricing",
+      "activeHint": "Keep inactive regions out of new pricing plans while preserving history.",
+      "addRegion": "Add region",
+      "saveRegion": "Save region",
+      "listTitle": "Current regions",
+      "listDescription": "These regions will later feed both the zone matrix and order-creation destination selection.",
+      "noAliases": "No aliases defined yet.",
+      "sortOrderValue": "Sort order: {value}",
+      "empty": "No pricing regions yet. Add the first region to unlock zone mapping."
+    },
+    "zones": {
+      "title": "Zone matrix",
+      "description": "Map every origin and destination region pair to a numeric zone. This is the bridge between geography and tariff lookup.",
+      "saveMatrix": "Save matrix",
+      "legend": "Use lower zone numbers for nearer routes and higher values for longer or more expensive lanes. Diagonal self-routes are typically zone 0.",
+      "originToDestination": "Origin → destination",
+      "empty": "Create at least one pricing region before editing the zone matrix."
+    },
+    "plans": {
+      "createTitle": "Create tariff plan",
+      "createDescription": "Each tariff plan groups service type, customer scope, and weight-zone pricing buckets.",
+      "editing": "Editing tariff plan",
+      "name": "Plan name",
+      "namePlaceholder": "Door to point - standard network",
+      "code": "Plan code",
+      "description": "Description",
+      "descriptionPlaceholder": "Optional internal description for managers and finance teams",
+      "status": "Status",
+      "statusAll": "All statuses",
+      "serviceType": "Service type",
+      "serviceTypeAll": "All service types",
+      "priceType": "Price type",
+      "currency": "Currency",
+      "priority": "Priority",
+      "customer": "Customer scope",
+      "customerAll": "All customers",
+      "default": "Default fallback plan",
+      "defaultHint": "Use this plan when no more specific customer plan matches.",
+      "ratesTitle": "Rate grid",
+      "ratesDescription": "Define weight buckets per zone. This is the pricing kernel the order calculator will consume later.",
+      "zone": "Zone",
+      "weightFrom": "Weight from (kg)",
+      "weightTo": "Weight to (kg)",
+      "price": "Price",
+      "addRate": "Add rate",
+      "removeRate": "Remove",
+      "createPlan": "Create tariff plan",
+      "savePlan": "Save tariff plan",
+      "listTitle": "Existing tariff plans",
+      "listDescription": "Review current pricing plans before we add rule resolution and automatic order price snapshots.",
+      "searchPlaceholder": "Search plan name or code",
+      "noCode": "No code",
+      "noDescription": "No description",
+      "priorityValue": "Priority {value}",
+      "ratesValue": "{value} rate row(s)",
+      "defaultEnabled": "Default enabled",
+      "defaultDisabled": "Not default",
+      "empty": "No tariff plans yet. Create the first one to start shaping client pricing."
+    },
+    "status": {
+      "draft": "Draft",
+      "active": "Active",
+      "archived": "Archived"
+    },
+    "priceType": {
+      "bucket": "Bucket",
+      "linear": "Linear"
+    }
   },
   "managerUsers": {
     "pill": "Identity and access",
@@ -465,6 +576,8 @@ export const en = {
       "mandatory": "Mandatory",
       "name": "Name",
       "phone": "Phone",
+      "phone2": "Phone 2",
+      "phone3": "Phone 3",
       "senderPlaceholder": "Sender name",
       "receiverPlaceholder": "Receiver full name",
       "routeTitle": "Route (mandatory)",
@@ -546,9 +659,9 @@ export const en = {
       "enum": {
         "serviceType": {
           "DOOR_TO_DOOR": "Door to door",
-          "EXPRESS": "Express",
-          "SAME_DAY": "Same day",
-          "ECONOMY": "Economy"
+          "DOOR_TO_POINT": "Door to point",
+          "POINT_TO_DOOR": "Point to door",
+          "POINT_TO_POINT": "Point to point"
         },
         "paidStatus": {
           "NOT_PAID": "Not paid",
@@ -560,6 +673,15 @@ export const en = {
     "payment": {
       "title": "Payment",
       "subtitle": "Who pays + service charge + recipient not available rule.",
+      "pricingTitle": "Live price quote",
+      "pricingSubtitle": "Tariff is resolved from service type, weight, and the origin/destination regions.",
+      "quoteApplied": "Auto applied",
+      "quoteStatus": "Quote status",
+      "quoteLoading": "Calculating...",
+      "quoteReady": "Quote ready",
+      "quoteZone": "Zone",
+      "quotePlan": "Tariff plan",
+      "quoteAmount": "Calculated charge",
       "stripeOptional": "Stripe amount is optional",
       "paymentType": "Payment type",
       "deliveryPaidBy": "Delivery charge paid by",
@@ -589,6 +711,14 @@ export const en = {
       "clear": "Clear",
       "cancel": "Cancel",
       "apply": "Apply",
+      "quoteReason": {
+        "missing_required_fields": "Fill structured origin, destination, and weight to calculate.",
+        "origin_region_not_found": "Origin region is not mapped yet.",
+        "destination_region_not_found": "Destination region is not mapped yet.",
+        "zone_not_found": "Zone matrix is missing for this route.",
+        "tariff_plan_not_found": "No active tariff plan matches this shipment.",
+        "rate_not_found": "No matching weight rate found in the tariff."
+      },
       "enum": {
         "paymentType": {
           "CASH": "Cash",
@@ -618,6 +748,10 @@ export const en = {
       "readyTitle": "Ready to create",
       "readySubtitle": "Double-check details. Labels will be generated per parcel after submit.",
       "paymentMode": "Payment mode",
+      "pricingStatus": "Pricing status",
+      "pricingReady": "Tariff applied",
+      "pricingZone": "Pricing zone",
+      "pricingPlan": "Pricing plan",
       "payNow": "Pay now",
       "manual": "Manual",
       "route": "Route",

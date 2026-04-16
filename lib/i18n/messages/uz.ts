@@ -105,6 +105,7 @@ export const uz = {
       "drivers": "Haydovchilar",
       "warehouses": "Omborlar",
       "customers": "Mijozlar",
+            "pricing": "Tariflar",
       "createUser": "Foydalanuvchilar",
       "settings": "Sozlamalar"
     },
@@ -174,6 +175,116 @@ export const uz = {
     "passwordUpdateFailed": "Parolni yangilab bo'lmadi",
     "languageSectionTitle": "Til",
     "languageSectionHint": "Faqat interfeys tarjima qilinadi. Backend ma'lumotlari va API kodlari o'zgarmaydi."
+  },
+  "pricingPage": {
+    "badge": "Tarif markazi",
+    "title": "Tariflar va servis qoidalari",
+    "subtitle": "Regionlar, zona matritsasi va tarif rejalari orqali keyinroq pickup point va delivery oqimlarida avtomatik narx hisobini boshqaring.",
+    "tabs": {
+      "regions": "Regionlar",
+      "zones": "Zona matritsasi",
+      "plans": "Tarif rejalari"
+    },
+    "stats": {
+      "regions": "Regionlar",
+      "zoneLinks": "Zona bog'lanishlari",
+      "plans": "Tarif rejalari",
+      "activePlans": "Faol rejalar"
+    },
+    "shared": {
+      "refresh": "Yangilash",
+      "edit": "Tahrirlash",
+      "loading": "Yuklanmoqda...",
+      "cancelEdit": "Tahrirni bekor qilish",
+      "active": "Faol",
+      "inactive": "Nofaol"
+    },
+    "toast": {
+      "regionCreated": "Region yaratildi",
+      "regionUpdated": "Region yangilandi",
+      "zoneSaved": "Zona matritsasi saqlandi",
+      "planCreated": "Tarif rejasi yaratildi",
+      "planUpdated": "Tarif rejasi yangilandi",
+      "actionFailed": "Amal bajarilmadi"
+    },
+    "regions": {
+      "createTitle": "Tarif regionini yaratish",
+      "createDescription": "Regionlar mijoz tarif logikasi ishlatadigan biznes darajadagi jo'natish va yetkazish nuqtalaridir.",
+      "editing": "Region tahrirlanmoqda",
+      "code": "Kod",
+      "name": "Nomi",
+      "namePlaceholder": "Toshkent",
+      "aliases": "Aliaslar",
+      "aliasesPlaceholder": "Vergul bilan ajratilgan nomlar, qisqartmalar yoki eski yozuvlar",
+      "sortOrder": "Saralash tartibi",
+      "active": "Tariflash uchun yoqilgan",
+      "activeHint": "Nofaol regionlar yangi rejalarda ishlatilmaydi, lekin tarix saqlanadi.",
+      "addRegion": "Region qo'shish",
+      "saveRegion": "Regionni saqlash",
+      "listTitle": "Joriy regionlar",
+      "listDescription": "Keyin bu regionlar zona matritsasi va buyurtma yaratishdagi yo'nalish tanloviga ulanadi.",
+      "noAliases": "Hali aliaslar yo'q.",
+      "sortOrderValue": "Tartib: {value}",
+      "empty": "Hali tarif regionlari yo'q. Zona matritsasini ochish uchun birinchi regionni qo'shing."
+    },
+    "zones": {
+      "title": "Zona matritsasi",
+      "description": "Har bir jo'natish va yetib borish region juftligiga zona raqamini biriktiring. Bu geografiya bilan tarif lookup orasidagi ko'prik.",
+      "saveMatrix": "Matritsani saqlash",
+      "legend": "Yaqin yo'nalishlar uchun kichik, uzoq yoki qimmatroq yo'nalishlar uchun katta zona raqamlaridan foydalaning. O'z-o'ziga marshrut odatda 0-zona bo'ladi.",
+      "originToDestination": "Qayerdan ? qayerga",
+      "empty": "Zona matritsasini tahrirlashdan oldin kamida bitta region yarating."
+    },
+    "plans": {
+      "createTitle": "Tarif rejasini yaratish",
+      "createDescription": "Tarif rejasi servis turi, mijoz ko'lami va vazn-zona narx qatorlarini birlashtiradi.",
+      "editing": "Tarif rejasi tahrirlanmoqda",
+      "name": "Reja nomi",
+      "namePlaceholder": "Eshikdan punktgacha - standart tarmoq",
+      "code": "Reja kodi",
+      "description": "Tavsif",
+      "descriptionPlaceholder": "Manager va finance jamoasi uchun ichki tavsif",
+      "status": "Holat",
+      "statusAll": "Barcha holatlar",
+      "serviceType": "Servis turi",
+      "serviceTypeAll": "Barcha servis turlari",
+      "priceType": "Narx turi",
+      "currency": "Valyuta",
+      "priority": "Ustuvorlik",
+      "customer": "Mijoz qamrovi",
+      "customerAll": "Barcha mijozlar",
+      "default": "Default fallback reja",
+      "defaultHint": "Agar aniqroq mijoz rejasi topilmasa, shu reja ishlatiladi.",
+      "ratesTitle": "Stavkalar jadvali",
+      "ratesDescription": "Zona bo'yicha vazn interval va narxlarni kiriting. Keyin bu buyurtma narx kalkulyatorining yadrosi bo'ladi.",
+      "zone": "Zona",
+      "weightFrom": "Vazn dan (kg)",
+      "weightTo": "Vazn gacha (kg)",
+      "price": "Narx",
+      "addRate": "Stavka qo'shish",
+      "removeRate": "Olib tashlash",
+      "createPlan": "Tarif rejasini yaratish",
+      "savePlan": "Tarif rejasini saqlash",
+      "listTitle": "Mavjud tarif rejalari",
+      "listDescription": "Keyingi bosqichda rule resolution va buyurtma price snapshot qo'shishdan oldin joriy tariflarni ko'rib chiqing.",
+      "searchPlaceholder": "Reja nomi yoki kodidan qidiring",
+      "noCode": "Kod yo'q",
+      "noDescription": "Tavsif yo'q",
+      "priorityValue": "Ustuvorlik {value}",
+      "ratesValue": "{value} ta stavka qatori",
+      "defaultEnabled": "Default yoqilgan",
+      "defaultDisabled": "Default emas",
+      "empty": "Hali tarif rejalari yo'q. Mijoz tariflashni boshlash uchun birinchisini yarating."
+    },
+    "status": {
+      "draft": "Qoralama",
+      "active": "Faol",
+      "archived": "Arxiv"
+    },
+    "priceType": {
+      "bucket": "Bucket",
+      "linear": "Linear"
+    }
   },
   "managerUsers": {
     "pill": "Kirish va rollar",
@@ -465,6 +576,8 @@ export const uz = {
       "mandatory": "Majburiy",
       "name": "Ism",
       "phone": "Telefon",
+      "phone2": "Telefon 2",
+      "phone3": "Telefon 3",
       "senderPlaceholder": "Jo'natuvchi ismi",
       "receiverPlaceholder": "Qabul qiluvchining to'liq ismi",
       "routeTitle": "Marshrut (majburiy)",
@@ -545,10 +658,10 @@ export const uz = {
       "select": "Tanlash",
       "enum": {
         "serviceType": {
-          "DOOR_TO_DOOR": "Door to door",
-          "EXPRESS": "Express",
-          "SAME_DAY": "Shu kunning o'zida",
-          "ECONOMY": "Ekonom"
+          "DOOR_TO_DOOR": "Eshikdan eshikkacha",
+          "DOOR_TO_POINT": "Eshikdan punktgacha",
+          "POINT_TO_DOOR": "Punktdan eshikkacha",
+          "POINT_TO_POINT": "Punktdan punktgacha"
         },
         "paidStatus": {
           "NOT_PAID": "To'lanmagan",
@@ -560,6 +673,15 @@ export const uz = {
     "payment": {
       "title": "To'lov",
       "subtitle": "Kim to'laydi + service charge + recipient topilmasa nima qilish.",
+      "pricingTitle": "Jonli narx hisobi",
+      "pricingSubtitle": "Tarif xizmat turi, vazn va jo'nash/yetib borish regionlariga qarab topiladi.",
+      "quoteApplied": "Avtomatik qo'llandi",
+      "quoteStatus": "Hisob holati",
+      "quoteLoading": "Hisoblanmoqda...",
+      "quoteReady": "Narx tayyor",
+      "quoteZone": "Zona",
+      "quotePlan": "Tarif rejasi",
+      "quoteAmount": "Hisoblangan narx",
       "stripeOptional": "Stripe summasi ixtiyoriy",
       "paymentType": "To'lov turi",
       "deliveryPaidBy": "Yetkazib berish uchun kim to'laydi",
@@ -589,6 +711,14 @@ export const uz = {
       "clear": "Tozalash",
       "cancel": "Bekor qilish",
       "apply": "Qo'llash",
+      "quoteReason": {
+        "missing_required_fields": "Hisoblash uchun jo'nash regioni, yetib borish regioni va vaznni to'ldiring.",
+        "origin_region_not_found": "Jo'nash regioni hali moslashtirilmagan.",
+        "destination_region_not_found": "Yetib borish regioni hali moslashtirilmagan.",
+        "zone_not_found": "Bu marshrut uchun zona matritsasi topilmadi.",
+        "tariff_plan_not_found": "Bu jo'natma uchun faol tarif rejasi yo'q.",
+        "rate_not_found": "Tarifda mos vazn oralig'i topilmadi."
+      },
       "enum": {
         "paymentType": {
           "CASH": "Naqd",
@@ -618,6 +748,10 @@ export const uz = {
       "readyTitle": "Yaratishga tayyor",
       "readySubtitle": "Tafsilotlarni tekshirib chiqing. Submitdan keyin har bir parcel uchun label yaratiladi.",
       "paymentMode": "To'lov rejimi",
+      "pricingStatus": "Tarif holati",
+      "pricingReady": "Tarif qo'llandi",
+      "pricingZone": "Tarif zonasi",
+      "pricingPlan": "Tarif rejasi",
       "payNow": "Hozir to'lash",
       "manual": "Manual",
       "route": "Marshrut",

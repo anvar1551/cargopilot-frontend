@@ -12,14 +12,20 @@ import {
 } from "lucide-react";
 
 import type { CreateOrderFormApi } from "@/components/orders/create-order-form.types";
+import type { PricingQuote } from "@/lib/pricing";
 
 import { useI18n } from "@/components/i18n/I18nProvider";
+import { getServiceTypeLabel } from "@/lib/i18n/labels";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 
 function safeNumber(value: unknown) {
   return typeof value === "number" && !Number.isNaN(value) ? value : null;
+}
+
+function collectPhones(...values: Array<string | null | undefined>) {
+  return values.map((value) => value?.trim()).filter((value): value is string => Boolean(value));
 }
 
 function prettyMoney(amount: number | null, currency?: string | null) {
@@ -31,9 +37,11 @@ function prettyMoney(amount: number | null, currency?: string | null) {
 export function ReviewStep({
   form,
   paymentsEnabled,
+  pricingQuote,
 }: {
   form: CreateOrderFormApi;
   paymentsEnabled?: boolean;
+  pricingQuote?: PricingQuote;
 }) {
   const { t } = useI18n();
   const pickup = form.watch("addresses.pickupAddress");
@@ -42,8 +50,12 @@ export function ReviewStep({
 
   const senderName = form.watch("sender.name");
   const senderPhone = form.watch("sender.phone");
+  const senderPhone2 = form.watch("sender.phone2");
+  const senderPhone3 = form.watch("sender.phone3");
   const receiverName = form.watch("receiver.name");
   const receiverPhone = form.watch("receiver.phone");
+  const receiverPhone2 = form.watch("receiver.phone2");
+  const receiverPhone3 = form.watch("receiver.phone3");
 
   const parcels = form.watch("shipment.parcels") ?? [];
   const pieceTotal = parcels.length;
@@ -60,6 +72,8 @@ export function ReviewStep({
   const note = form.watch("note");
   const schedulePickup = form.watch("schedule.plannedPickupAt");
   const scheduleDelivery = form.watch("schedule.plannedDeliveryAt");
+  const senderPhones = collectPhones(senderPhone, senderPhone2, senderPhone3);
+  const receiverPhones = collectPhones(receiverPhone, receiverPhone2, receiverPhone3);
 
   const missing: string[] = [];
   if (!pickup || pickup.trim().length < 3) missing.push(t("createOrder.review.pickup"));
@@ -146,12 +160,24 @@ export function ReviewStep({
           <div className="rounded-xl border border-border/60 bg-background/60 p-4">
             <p className="text-muted-foreground">{t("createOrder.review.sender")}</p>
             <p className="font-medium">{senderName || "-"}</p>
-            <p className="text-xs text-muted-foreground">{senderPhone || "-"}</p>
+            <div className="mt-1 space-y-1 text-xs text-muted-foreground">
+              {senderPhones.length ? (
+                senderPhones.map((phone) => <p key={phone}>{phone}</p>)
+              ) : (
+                <p>-</p>
+              )}
+            </div>
           </div>
           <div className="rounded-xl border border-border/60 bg-background/60 p-4">
             <p className="text-muted-foreground">{t("createOrder.review.receiver")}</p>
             <p className="font-medium">{receiverName || "-"}</p>
-            <p className="text-xs text-muted-foreground">{receiverPhone || "-"}</p>
+            <div className="mt-1 space-y-1 text-xs text-muted-foreground">
+              {receiverPhones.length ? (
+                receiverPhones.map((phone) => <p key={phone}>{phone}</p>)
+              ) : (
+                <p>-</p>
+              )}
+            </div>
           </div>
         </div>
       </Card>
@@ -166,7 +192,7 @@ export function ReviewStep({
         <div className="grid grid-cols-1 gap-3 text-sm md:grid-cols-4">
           <div className="rounded-xl border border-border/60 bg-background/60 p-4">
             <p className="text-muted-foreground">{t("createOrder.review.service")}</p>
-            <p className="font-medium">{serviceType || "-"}</p>
+            <p className="font-medium">{getServiceTypeLabel(serviceType, t)}</p>
           </div>
           <div className="rounded-xl border border-border/60 bg-background/60 p-4">
             <p className="text-muted-foreground">{t("createOrder.review.pieces")}</p>
@@ -233,6 +259,35 @@ export function ReviewStep({
           <div className="rounded-xl border border-border/60 bg-background/60 p-4">
             <p className="text-muted-foreground">{t("createOrder.review.currency")}</p>
             <p className="font-medium">{currency || "-"}</p>
+          </div>
+        </div>
+
+        <Separator className="my-4" />
+
+        <div className="grid grid-cols-1 gap-3 text-sm md:grid-cols-3">
+          <div className="rounded-xl border border-border/60 bg-background/60 p-4">
+            <p className="text-muted-foreground">{t("createOrder.review.pricingStatus")}</p>
+            <p className="font-medium">
+              {pricingQuote?.quoteAvailable
+                ? t("createOrder.review.pricingReady")
+                : t(`createOrder.payment.quoteReason.${pricingQuote?.reason ?? "missing_required_fields"}`)}
+            </p>
+          </div>
+          <div className="rounded-xl border border-border/60 bg-background/60 p-4">
+            <p className="text-muted-foreground">{t("createOrder.review.pricingZone")}</p>
+            <p className="font-medium">{pricingQuote?.zone ?? "-"}</p>
+          </div>
+          <div className="rounded-xl border border-border/60 bg-background/60 p-4">
+            <p className="text-muted-foreground">{t("createOrder.review.pricingPlan")}</p>
+            <p className="font-medium">{pricingQuote?.tariffPlan?.name ?? "-"}</p>
+          </div>
+          <div className="rounded-xl border border-border/60 bg-background/60 p-4">
+            <p className="text-muted-foreground">{t("createOrder.payment.quoteAmount")}</p>
+            <p className="font-medium">
+              {pricingQuote?.quoteAvailable && pricingQuote.serviceCharge != null
+                ? prettyMoney(pricingQuote.serviceCharge, pricingQuote.currency)
+                : "-"}
+            </p>
           </div>
         </div>
       </Card>

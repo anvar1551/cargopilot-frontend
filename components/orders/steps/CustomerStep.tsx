@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Building2, MapPin, Navigation, Phone, User } from "lucide-react";
 
 import { formatAddress, type Address } from "@/lib/addresses";
+import { fetchPricingRegions } from "@/lib/pricing";
 import type { CreateOrderFormApi } from "@/components/orders/create-order-form.types";
 
 import { useI18n } from "@/components/i18n/I18nProvider";
@@ -63,6 +65,12 @@ export function CustomerStep({
   const dropoffText = form.watch("addresses.dropoffAddress") ?? "";
   const savePickup = !!form.watch("addresses.savePickupToAddressBook");
   const saveDropoff = !!form.watch("addresses.saveDropoffToAddressBook");
+  const destinationCityOptionsQuery = useQuery({
+    queryKey: ["pricing", "regions", "active-options"],
+    queryFn: () => fetchPricingRegions({ isActive: true }),
+  });
+  const destinationRegionOptions = destinationCityOptionsQuery.data ?? [];
+  const destinationOptionsId = "order-destination-city-options";
 
   useEffect(() => {
     if (!canSaveAddresses) {
@@ -216,6 +224,28 @@ export function CustomerStep({
                 />
               </IconField>
             </div>
+
+            <div>
+              <Label>{t("createOrder.customer.phone2")}</Label>
+              <IconField icon={<Phone className="h-4 w-4" />}>
+                <Input
+                  className="rounded-2xl border-0 bg-transparent pl-3 focus-visible:ring-0 focus-visible:ring-offset-0"
+                  placeholder="+49..."
+                  {...form.register("sender.phone2")}
+                />
+              </IconField>
+            </div>
+
+            <div>
+              <Label>{t("createOrder.customer.phone3")}</Label>
+              <IconField icon={<Phone className="h-4 w-4" />}>
+                <Input
+                  className="rounded-2xl border-0 bg-transparent pl-3 focus-visible:ring-0 focus-visible:ring-offset-0"
+                  placeholder="+49..."
+                  {...form.register("sender.phone3")}
+                />
+              </IconField>
+            </div>
           </div>
         </Card>
 
@@ -251,6 +281,28 @@ export function CustomerStep({
                 />
               </IconField>
               <FieldError msg={receiverPhoneErr} />
+            </div>
+
+            <div>
+              <Label>{t("createOrder.customer.phone2")}</Label>
+              <IconField icon={<Phone className="h-4 w-4" />}>
+                <Input
+                  className="rounded-2xl border-0 bg-transparent pl-3 focus-visible:ring-0 focus-visible:ring-offset-0"
+                  placeholder="+49..."
+                  {...form.register("receiver.phone2")}
+                />
+              </IconField>
+            </div>
+
+            <div>
+              <Label>{t("createOrder.customer.phone3")}</Label>
+              <IconField icon={<Phone className="h-4 w-4" />}>
+                <Input
+                  className="rounded-2xl border-0 bg-transparent pl-3 focus-visible:ring-0 focus-visible:ring-offset-0"
+                  placeholder="+49..."
+                  {...form.register("receiver.phone3")}
+                />
+              </IconField>
             </div>
           </div>
         </Card>
@@ -310,7 +362,11 @@ export function CustomerStep({
                 <p className="text-xs text-muted-foreground">{t("createOrder.customer.structuredHint")}</p>
 
                 <div className="mt-3">
-                  <StructuredAddressFields form={form} prefix="addresses.senderAddress" />
+                  <StructuredAddressFields
+                    form={form}
+                    prefix="addresses.senderAddress"
+                    regionOptions={destinationRegionOptions}
+                  />
                 </div>
               </div>
             </div>
@@ -360,7 +416,11 @@ export function CustomerStep({
                 <p className="text-xs text-muted-foreground">{t("createOrder.customer.structuredHint")}</p>
 
                 <div className="mt-3">
-                  <StructuredAddressFields form={form} prefix="addresses.receiverAddress" />
+                  <StructuredAddressFields
+                    form={form}
+                    prefix="addresses.receiverAddress"
+                    regionOptions={destinationRegionOptions}
+                  />
                 </div>
               </div>
             </div>
@@ -369,11 +429,23 @@ export function CustomerStep({
               <Label className="text-xs">{t("createOrder.customer.destinationCity")}</Label>
               <IconField icon={<Building2 className="h-4 w-4" />}>
                 <Input
+                  list={destinationRegionOptions.length ? destinationOptionsId : undefined}
                   className="rounded-2xl border-0 bg-transparent pl-3 focus-visible:ring-0 focus-visible:ring-offset-0"
                   placeholder={t("createOrder.customer.destinationPlaceholder")}
                   {...form.register("addresses.destinationCity")}
                 />
               </IconField>
+              {destinationRegionOptions.length ? (
+                <datalist id={destinationOptionsId}>
+                  {destinationRegionOptions.map((region) => (
+                    <option
+                      key={region.id}
+                      value={region.name}
+                      label={[region.code, ...region.aliases].filter(Boolean).join(" · ")}
+                    />
+                  ))}
+                </datalist>
+              ) : null}
             </div>
           </div>
         </div>

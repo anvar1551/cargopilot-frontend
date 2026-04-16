@@ -5,6 +5,7 @@ import type {
   CreateOrderFormApi,
   CreateOrderParcelsFieldArray,
 } from "@/components/orders/create-order-form.types";
+import type { PricingQuote } from "@/lib/pricing";
 
 import { useI18n } from "@/components/i18n/I18nProvider";
 import { Button } from "@/components/ui/button";
@@ -22,17 +23,23 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 
 import { IconField } from "../IconField";
-
-const SERVICE_TYPES = ["DOOR_TO_DOOR", "EXPRESS", "SAME_DAY", "ECONOMY"] as const;
+import {
+  DEFAULT_SERVICE_TYPE,
+  SERVICE_TYPES,
+} from "@/lib/orders/service-types";
 const CURRENCIES = ["EUR", "USD", "UZS"] as const;
 const PAID_STATUS = ["NOT_PAID", "PAID", "PARTIAL"] as const;
 
 export function ShipmentStep({
   form,
   parcels,
+  pricingQuote,
+  pricingLoading,
 }: {
   form: CreateOrderFormApi;
   parcels: CreateOrderParcelsFieldArray;
+  pricingQuote?: PricingQuote;
+  pricingLoading?: boolean;
 }) {
   const { t } = useI18n();
   const codEnabled = form.watch("shipment.codEnabled") ?? false;
@@ -52,7 +59,10 @@ export function ShipmentStep({
               <Truck className="h-4 w-4 text-muted-foreground" />
               <div className="flex-1">
                 <Select
-                  value={(form.watch("shipment.serviceType") as string | undefined) ?? "DOOR_TO_DOOR"}
+                  value={
+                    (form.watch("shipment.serviceType") as string | undefined) ??
+                    DEFAULT_SERVICE_TYPE
+                  }
                   onValueChange={(value) =>
                     form.setValue("shipment.serviceType", value as never, {
                       shouldValidate: true,
@@ -103,6 +113,48 @@ export function ShipmentStep({
                 })}
               />
             </IconField>
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
+          <div className="rounded-xl border border-border/60 bg-background/60 p-4">
+            <p className="text-xs text-muted-foreground">
+              {t("createOrder.payment.quoteStatus")}
+            </p>
+            <p className="mt-1 font-medium">
+              {pricingLoading
+                ? t("createOrder.payment.quoteLoading")
+                : pricingQuote?.quoteAvailable
+                  ? t("createOrder.payment.quoteReady")
+                  : t(
+                      `createOrder.payment.quoteReason.${pricingQuote?.reason ?? "missing_required_fields"}`,
+                    )}
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-border/60 bg-background/60 p-4">
+            <p className="text-xs text-muted-foreground">
+              {t("createOrder.payment.quoteZone")}
+            </p>
+            <p className="mt-1 font-medium">{pricingQuote?.zone ?? "-"}</p>
+          </div>
+
+          <div className="rounded-xl border border-border/60 bg-background/60 p-4">
+            <p className="text-xs text-muted-foreground">
+              {t("createOrder.payment.quotePlan")}
+            </p>
+            <p className="mt-1 font-medium">{pricingQuote?.tariffPlan?.name ?? "-"}</p>
+          </div>
+
+          <div className="rounded-xl border border-border/60 bg-background/60 p-4">
+            <p className="text-xs text-muted-foreground">
+              {t("createOrder.payment.quoteAmount")}
+            </p>
+            <p className="mt-1 font-medium">
+              {pricingQuote?.quoteAvailable && pricingQuote.serviceCharge != null
+                ? `${pricingQuote.serviceCharge.toFixed(2)} ${pricingQuote.currency ?? ""}`.trim()
+                : "-"}
+            </p>
           </div>
         </div>
 

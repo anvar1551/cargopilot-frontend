@@ -3,13 +3,17 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 
-import { fetchWarehouses } from "@/lib/warehouses";
+import {
+  fetchWarehouses,
+  getWarehouseCapabilities,
+  getWarehouseTypeLabel,
+} from "@/lib/warehouses";
 
+import CreateWarehouseDialog from "@/components/manager/warehouses/CreateWarehouseDialog";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-
-import CreateWarehouseDialog from "@/components/manager/warehouses/CreateWarehouseDialog";
 
 export default function ManagerWarehousesPage() {
   const [open, setOpen] = React.useState(false);
@@ -24,12 +28,10 @@ export default function ManagerWarehousesPage() {
       <div className="space-y-6">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">
-              Warehouses
-            </h1>
+            <h1 className="text-2xl font-semibold tracking-tight">Warehouses</h1>
             <p className="text-sm text-muted-foreground">
-              Create hubs used for routing, scanning, and “arrived at
-              warehouse”.
+              Create operational nodes for routing, scanning, and physical handoff.
+              Standard warehouses and pickup points now share one safe foundation.
             </p>
           </div>
 
@@ -49,21 +51,39 @@ export default function ManagerWarehousesPage() {
               </div>
             ) : q.data?.length ? (
               <div className="divide-y rounded-xl border">
-                {q.data.map((w) => (
+                {q.data.map((warehouse) => (
                   <div
-                    key={w.id}
-                    className="p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"
+                    key={warehouse.id}
+                    className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"
                   >
-                    <div>
-                      <div className="font-medium">{w.name}</div>
+                    <div className="space-y-1.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="font-medium">{warehouse.name}</div>
+                        <Badge variant="outline" className="rounded-full">
+                          {getWarehouseTypeLabel(warehouse.type)}
+                        </Badge>
+                      </div>
+
                       <div className="text-sm text-muted-foreground">
-                        {w.location}
-                        {w.region ? ` • ${w.region}` : ""}
+                        {warehouse.location}
+                        {warehouse.region ? ` • ${warehouse.region}` : ""}
+                      </div>
+
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {getWarehouseCapabilities(warehouse.type).map((capability) => (
+                          <Badge
+                            key={`${warehouse.id}-${capability}`}
+                            variant="secondary"
+                            className="rounded-full"
+                          >
+                            {capability.replace(/_/g, " ")}
+                          </Badge>
+                        ))}
                       </div>
                     </div>
 
                     <div className="text-xs text-muted-foreground">
-                      {w.region ? `Region: ${w.region}` : "Warehouse ready"}
+                      {warehouse.region ? `Region: ${warehouse.region}` : "Ready for routing"}
                     </div>
                   </div>
                 ))}

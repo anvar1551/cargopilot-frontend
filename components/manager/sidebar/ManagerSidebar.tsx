@@ -18,6 +18,7 @@ import { useManagerSidebarStore } from "@/store/useManagerSidebarStore";
 
 import {
   Building2,
+  CircleDollarSign,
   ChevronLeft,
   ChevronRight,
   LayoutDashboard,
@@ -88,6 +89,11 @@ const NAV_GROUPS: NavGroup[] = [
         labelKey: "managerSidebar.item.customers",
         href: "/dashboard/manager/customers",
         icon: Building2,
+      },
+      {
+        labelKey: "managerSidebar.item.pricing",
+        href: "/dashboard/manager/pricing",
+        icon: CircleDollarSign,
       },
       {
         labelKey: "managerSidebar.item.createUser",

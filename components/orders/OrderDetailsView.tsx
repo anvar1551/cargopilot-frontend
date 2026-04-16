@@ -11,6 +11,7 @@ import { getInvoiceUrl, getOrderLabelUrls } from "@/lib/documents";
 import {
   getReasonCodeLabel,
   getRoleLabel,
+  getServiceTypeLabel,
   getStatusLabel,
   type Translate,
 } from "@/lib/i18n/labels";
@@ -118,9 +119,13 @@ type OrderDetails = {
 
   senderName?: string | null;
   senderPhone?: string | null;
+  senderPhone2?: string | null;
+  senderPhone3?: string | null;
   senderAddress?: string | null;
   receiverName?: string | null;
   receiverPhone?: string | null;
+  receiverPhone2?: string | null;
+  receiverPhone3?: string | null;
   receiverAddress?: string | null;
 
   customer?: LiteUser | null;
@@ -301,6 +306,12 @@ function formatAddressSnapshot(snapshot?: AddressSnapshot | null) {
     snapshot.landmark ? `Landmark: ${snapshot.landmark}` : null,
   ].filter(Boolean);
   return parts.length ? parts.join(", ") : null;
+}
+
+function collectPhones(...phones: Array<string | null | undefined>) {
+  return phones
+    .map((phone) => phone?.trim())
+    .filter((phone): phone is string => Boolean(phone));
 }
 
 function statusBadgeVariant(status?: string | null) {
@@ -705,6 +716,16 @@ export default function OrderDetailsView({
 
   const senderStructured = formatAddressSnapshot(order?.senderAddressObj);
   const receiverStructured = formatAddressSnapshot(order?.receiverAddressObj);
+  const senderPhones = collectPhones(
+    order?.senderPhone,
+    order?.senderPhone2,
+    order?.senderPhone3,
+  );
+  const receiverPhones = collectPhones(
+    order?.receiverPhone,
+    order?.receiverPhone2,
+    order?.receiverPhone3,
+  );
 
   if (isLoading) {
     return (
@@ -879,7 +900,17 @@ export default function OrderDetailsView({
                 <div className="rounded-xl border border-border/60 bg-background/60 p-4">
                   <p className="text-xs text-muted-foreground">Sender</p>
                   <p className="mt-1 font-medium">{order.senderName || "-"}</p>
-                  <p className="text-muted-foreground">{order.senderPhone || "-"}</p>
+                  <div className="space-y-1 pt-1">
+                    {senderPhones.length ? (
+                      senderPhones.map((phone, index) => (
+                        <p key={`${phone}-${index}`} className="text-muted-foreground">
+                          {index === 0 ? phone : `Alt ${index}: ${phone}`}
+                        </p>
+                      ))
+                    ) : (
+                      <p className="text-muted-foreground">-</p>
+                    )}
+                  </div>
                   <p className="mt-2 text-xs text-muted-foreground">
                     {senderStructured || order.senderAddress || "-"}
                   </p>
@@ -887,7 +918,17 @@ export default function OrderDetailsView({
                 <div className="rounded-xl border border-border/60 bg-background/60 p-4">
                   <p className="text-xs text-muted-foreground">Receiver</p>
                   <p className="mt-1 font-medium">{order.receiverName || "-"}</p>
-                  <p className="text-muted-foreground">{order.receiverPhone || "-"}</p>
+                  <div className="space-y-1 pt-1">
+                    {receiverPhones.length ? (
+                      receiverPhones.map((phone, index) => (
+                        <p key={`${phone}-${index}`} className="text-muted-foreground">
+                          {index === 0 ? phone : `Alt ${index}: ${phone}`}
+                        </p>
+                      ))
+                    ) : (
+                      <p className="text-muted-foreground">-</p>
+                    )}
+                  </div>
                   <p className="mt-2 text-xs text-muted-foreground">
                     {receiverStructured || order.receiverAddress || "-"}
                   </p>
@@ -967,7 +1008,7 @@ export default function OrderDetailsView({
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <div className="rounded-xl border border-border/60 bg-background/60 p-3 text-sm">
                   <p className="text-xs text-muted-foreground">Service Type</p>
-                  <p className="mt-1 font-medium">{prettyEnum(order.serviceType)}</p>
+                  <p className="mt-1 font-medium">{getServiceTypeLabel(order.serviceType, t)}</p>
                 </div>
                 <div className="rounded-xl border border-border/60 bg-background/60 p-3 text-sm">
                   <p className="text-xs text-muted-foreground">Total Weight</p>

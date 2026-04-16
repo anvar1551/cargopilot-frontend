@@ -14,6 +14,7 @@ import {
 
 import type { CreateOrderFormApi } from "@/components/orders/create-order-form.types";
 import type { CreateOrderFormValues } from "@/lib/validators/order";
+import type { PricingQuote } from "@/lib/pricing";
 
 import { useI18n } from "@/components/i18n/I18nProvider";
 import { Button } from "@/components/ui/button";
@@ -248,9 +249,13 @@ function DateTimeField({
 
 export function PaymentStep({
   form,
+  pricingQuote,
+  pricingLoading,
 }: {
   form: CreateOrderFormApi;
   paymentsEnabled?: boolean;
+  pricingQuote?: PricingQuote;
+  pricingLoading?: boolean;
 }) {
   const { t } = useI18n();
   const paymentType = form.watch("payment.paymentType");
@@ -263,6 +268,51 @@ export function PaymentStep({
 
   return (
     <div className="space-y-4">
+      <Card className="rounded-2xl border bg-background/60 p-5 backdrop-blur">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="font-semibold">{t("createOrder.payment.pricingTitle")}</h3>
+            <p className="text-sm text-muted-foreground">
+              {t("createOrder.payment.pricingSubtitle")}
+            </p>
+          </div>
+          {pricingQuote?.quoteAvailable ? (
+            <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-700">
+              {t("createOrder.payment.quoteApplied")}
+            </span>
+          ) : null}
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
+          <div className="rounded-xl border border-border/60 bg-background/60 p-4">
+            <p className="text-xs text-muted-foreground">{t("createOrder.payment.quoteStatus")}</p>
+            <p className="mt-1 font-medium">
+              {pricingLoading
+                ? t("createOrder.payment.quoteLoading")
+                : pricingQuote?.quoteAvailable
+                  ? t("createOrder.payment.quoteReady")
+                  : t(`createOrder.payment.quoteReason.${pricingQuote?.reason ?? "missing_required_fields"}`)}
+            </p>
+          </div>
+          <div className="rounded-xl border border-border/60 bg-background/60 p-4">
+            <p className="text-xs text-muted-foreground">{t("createOrder.payment.quoteZone")}</p>
+            <p className="mt-1 font-medium">{pricingQuote?.zone ?? "-"}</p>
+          </div>
+          <div className="rounded-xl border border-border/60 bg-background/60 p-4">
+            <p className="text-xs text-muted-foreground">{t("createOrder.payment.quotePlan")}</p>
+            <p className="mt-1 font-medium">{pricingQuote?.tariffPlan?.name ?? "-"}</p>
+          </div>
+          <div className="rounded-xl border border-border/60 bg-background/60 p-4">
+            <p className="text-xs text-muted-foreground">{t("createOrder.payment.quoteAmount")}</p>
+            <p className="mt-1 font-medium">
+              {pricingQuote?.quoteAvailable && pricingQuote.serviceCharge != null
+                ? `${pricingQuote.serviceCharge.toFixed(2)} ${pricingQuote.currency ?? ""}`.trim()
+                : "-"}
+            </p>
+          </div>
+        </div>
+      </Card>
+
       <Card className="rounded-2xl border bg-linear-to-b from-violet-500/10 to-background p-5">
         <div className="flex items-center justify-between">
           <div>

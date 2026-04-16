@@ -1,5 +1,6 @@
 import { api } from "./api";
 import { CreateOrderPayload } from "./validators/order";
+import type { ServiceType } from "./orders/service-types";
 
 export type ParcelInput = {
   weightKg?: number;
@@ -40,7 +41,7 @@ export type Order = {
   updatedAt?: string | null;
   plannedDeliveryAt?: string | null;
   destinationCity?: string | null;
-  serviceType?: string | null;
+  serviceType?: ServiceType | null;
   labelUrl?: string | null;
   parcels?: Array<{
     id?: string | null;
@@ -72,8 +73,12 @@ export type Order = {
   } | null;
   senderName?: string | null;
   senderPhone?: string | null;
+  senderPhone2?: string | null;
+  senderPhone3?: string | null;
   receiverName?: string | null;
   receiverPhone?: string | null;
+  receiverPhone2?: string | null;
+  receiverPhone3?: string | null;
   currentWarehouse?: {
     id?: string | null;
     name?: string | null;
@@ -131,7 +136,7 @@ export type OrderImportPreviewRow = {
     receiverName: string;
     pickupAddress: string;
     dropoffAddress: string;
-    serviceType: string;
+    serviceType: ServiceType | string;
     codAmount: number | null;
     referenceId: string | null;
   };

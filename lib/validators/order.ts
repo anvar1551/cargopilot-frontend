@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DEFAULT_SERVICE_TYPE, SERVICE_TYPES } from "@/lib/orders/service-types";
 
 export const addressSchema = z.object({
   country: z.string().optional().nullable(),
@@ -38,6 +39,8 @@ export const createOrderPayloadSchema = z
       .object({
         name: z.string().optional().nullable(),
         phone: z.string().optional().nullable(),
+        phone2: z.string().optional().nullable(),
+        phone3: z.string().optional().nullable(),
       })
       .optional()
       .nullable(),
@@ -46,6 +49,8 @@ export const createOrderPayloadSchema = z
       .object({
         name: z.string().optional().nullable(),
         phone: z.string().optional().nullable(),
+        phone2: z.string().optional().nullable(),
+        phone3: z.string().optional().nullable(),
       })
       .optional()
       .nullable(),
@@ -67,7 +72,11 @@ export const createOrderPayloadSchema = z
     }),
 
     shipment: z.object({
-      serviceType: z.string().optional().nullable(),
+      serviceType: z
+        .enum(SERVICE_TYPES)
+        .optional()
+        .nullable()
+        .default(DEFAULT_SERVICE_TYPE),
       weightKg: optionalNumber().refine(
         (v) => v == null || v > 0,
         "Amount must be > 0",

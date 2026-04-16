@@ -5,6 +5,11 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { createWarehouse } from "@/lib/warehouses";
+import {
+  DEFAULT_WAREHOUSE_TYPE,
+  WAREHOUSE_TYPES,
+  type WarehouseType,
+} from "@/lib/warehouses";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -16,6 +21,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 type Props = {
   open: boolean;
@@ -37,12 +49,14 @@ export default function CreateWarehouseDialog({ open, onOpenChange }: Props) {
   const qc = useQueryClient();
 
   const [name, setName] = React.useState("");
+  const [type, setType] = React.useState<WarehouseType>(DEFAULT_WAREHOUSE_TYPE);
   const [location, setLocation] = React.useState("");
   const [region, setRegion] = React.useState("");
 
   React.useEffect(() => {
     if (!open) {
       setName("");
+      setType(DEFAULT_WAREHOUSE_TYPE);
       setLocation("");
       setRegion("");
     }
@@ -55,6 +69,7 @@ export default function CreateWarehouseDialog({ open, onOpenChange }: Props) {
 
       return createWarehouse({
         name: name.trim(),
+        type,
         location: location.trim(),
         region: region.trim() ? region.trim() : undefined,
       });
@@ -84,6 +99,22 @@ export default function CreateWarehouseDialog({ open, onOpenChange }: Props) {
               onChange={(e) => setName(e.target.value)}
               placeholder="Hamburg Hub"
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Node type</Label>
+            <Select value={type} onValueChange={(value) => setType(value as WarehouseType)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select type" />
+              </SelectTrigger>
+              <SelectContent>
+                {WAREHOUSE_TYPES.map((item) => (
+                  <SelectItem key={item} value={item}>
+                    {item === "pickup_point" ? "Pickup point" : "Warehouse"}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="space-y-2">

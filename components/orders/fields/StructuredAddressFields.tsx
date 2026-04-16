@@ -22,6 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import type { PricingRegion } from "@/lib/pricing";
 
 function IconWrap({
   icon,
@@ -44,12 +45,15 @@ type AddressTypeValue = "RESIDENTIAL" | "BUSINESS";
 export function StructuredAddressFields({
   form,
   prefix,
+  regionOptions = [],
 }: {
   form: CreateOrderFormApi;
   prefix: Prefix;
+  regionOptions?: PricingRegion[];
 }) {
   const { t } = useI18n();
   const typePath = `${prefix}.addressType` as const;
+  const cityOptionsId = `${prefix.replace(/\./g, "-")}-city-options`;
 
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -68,11 +72,23 @@ export function StructuredAddressFields({
         <Label>{t("createOrder.addressFields.city")}</Label>
         <IconWrap icon={<MapPin className="h-4 w-4" />}>
           <Input
+            list={regionOptions.length ? cityOptionsId : undefined}
             placeholder={t("createOrder.addressFields.cityPlaceholder")}
             className="border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
             {...form.register(`${prefix}.city` as const)}
           />
         </IconWrap>
+        {regionOptions.length ? (
+          <datalist id={cityOptionsId}>
+            {regionOptions.map((region) => (
+              <option
+                key={region.id}
+                value={region.name}
+                label={[region.code, ...region.aliases].filter(Boolean).join(" · ")}
+              />
+            ))}
+          </datalist>
+        ) : null}
       </div>
 
       <div className="space-y-2">
