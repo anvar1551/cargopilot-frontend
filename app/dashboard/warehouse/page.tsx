@@ -19,6 +19,7 @@ import {
   Search,
   Truck,
   Warehouse,
+  Wallet,
 } from "lucide-react";
 
 import DispatchCenter from "@/components/manager/dispatch/DispatchCenter";
@@ -37,11 +38,24 @@ import {
   printDriverManifest,
 } from "@/lib/driver-manifest";
 import { getStatusLabel } from "@/lib/i18n/labels";
-import { fetchOrders, type OrdersResponse } from "@/lib/orders";
+import {
+  collectOrderCash,
+  collectOrderCashBulk,
+  fetchOrders,
+  fetchCashQueue,
+  fetchCashQueueSummary,
+  handoffOrderCashBulk,
+  updateOrdersStatusBulk,
+  type CashQueueKind,
+  type CashQueueStatus,
+  type CashQueueItem,
+  type CashQueueSummary,
+  type OrdersResponse,
+} from "@/lib/orders";
 import { fetchDrivers, type DriverLite } from "@/lib/manager";
 import { playScanSound, primeScanSound } from "@/lib/scan-sound";
 import { loadUserSettings } from "@/lib/user-settings";
-import { fetchWarehouses } from "@/lib/warehouses";
+import { fetchWarehouses, normalizeWarehouseType } from "@/lib/warehouses";
 import {
   Select,
   SelectContent,
@@ -51,6 +65,17 @@ import {
 } from "@/components/ui/select";
 
 type OrderItem = React.ComponentProps<typeof DispatchCenter>["orders"][number];
+type RawOrder = OrdersResponse["orders"][number];
+type TokenSearchOrder = {
+  id: string;
+  orderNumber?: string | number | null;
+  parcels?: Array<{ parcelCode?: string | null }> | null;
+};
+type DueCashItem = {
+  kind: CashQueueKind;
+  expectedAmount: number;
+  currency: string | null;
+};
 
 type StatusTone = "default" | "secondary" | "destructive" | "outline";
 type LastScanFeedback = {
@@ -145,6 +170,70 @@ const copy = {
     manifestPrinting: "Preparing...",
     manifestEmpty: "This driver has no active assigned orders.",
     manifestFailed: "Failed to print driver manifest.",
+    ppIntakeQueue: "Arrived at pickup point",
+    ppIntakeQueueHint: "Ready for counter intake and customer notification.",
+    ppOnFloor: "Ready for customer handover",
+    ppOnFloorHint: "Out for delivery orders handled from pickup counter.",
+    ppOutboundWave: "Inter-branch movement",
+    ppOutboundWaveHint: "Parcels moving between hubs and pickup points.",
+    ppExceptions: "Pickup point exceptions",
+    ppExceptionsHint: "Handover issues and return flow need action.",
+    ppInboundLane: "Counter intake lane",
+    ppInboundLaneHint: "Parcels physically received at pickup point.",
+    ppSortLane: "Ready for customer lane",
+    ppSortLaneHint: "Use when customer comes for self-pickup handover.",
+    ppOutboundLane: "Inter-branch transfer",
+    ppOutboundLaneHint: "Shipments moving to another location.",
+    ppIssueLane: "Counter issues",
+    ppIssueLaneHint: "Requires manual review before next movement.",
+    ppHandoverTitle: "Customer handover",
+    ppHandoverHint:
+      "Confirm self-pickup handover from this pickup point. Only orders in Out for delivery are allowed.",
+    ppHandoverInputPlaceholder: "Scan order number / parcel code / order ID...",
+    ppHandoverNotePlaceholder: "Note (optional)",
+    ppHandoverReadyLabel: "Ready to hand over",
+    ppHandoverSelected: "Selected order",
+    ppHandoverNeedsWarehouse: "Pickup point is not linked to your account.",
+    ppHandoverNoMatch: "Order not found in loaded queue.",
+    ppHandoverWrongStatus:
+      "Only orders in Out for delivery can be handed over at pickup point.",
+    ppHandoverButton: "Confirm handover",
+    ppHandoverSubmitting: "Confirming...",
+    ppHandoverSuccess: "Customer handover confirmed.",
+    ppHandoverCashDue: "Cash due before handover",
+    ppHandoverCollect: "Collect {kind}",
+    ppHandoverCollecting: "Saving...",
+    ppHandoverCashPending:
+      "COD/service charge is still expected. Collect due amounts before handover.",
+    cashQueueTitle: "Cash action queue",
+    cashQueueHint: "Expected and held cash items that need operational follow-up.",
+    cashQueueStatus: "Status",
+    cashQueueKind: "Kind",
+    cashQueueFrom: "From",
+    cashQueueTo: "To",
+    cashQueueAll: "All",
+    cashQueueExpected: "Expected",
+    cashQueueHeld: "Held",
+    cashQueueSettled: "Settled",
+    cashQueueCOD: "COD",
+    cashQueueServiceCharge: "Service charge",
+    cashQueueCollectSelected: "Collect selected",
+    cashQueueHandoffSelected: "Handoff selected",
+    cashQueueDriver: "Driver",
+    cashQueuePickDriver: "Select driver",
+    cashQueueNoItems: "No cash queue items for this filter.",
+    cashQueueSelected: "{count} selected",
+    cashQueuePage: "Page {page} / {pageCount}",
+    cashQueueSummaryExpected: "Expected",
+    cashQueueSummaryHeld: "On hand",
+    cashQueueSummaryTotal: "Total in view",
+    cashQueueCollectSuccess: "Cash collected for selected items.",
+    cashQueueHandoffSuccess: "Cash handed off to selected driver.",
+    cashQueueCollectFailed: "Failed to collect cash in bulk.",
+    cashQueueHandoffFailed: "Failed to hand off cash in bulk.",
+    cashQueuePickDriverError: "Select a driver for handoff.",
+    cashQueueNoHeldItems: "Select at least one held cash item.",
+    cashQueueNoExpectedItems: "Select at least one expected cash item.",
   },
   ru: {
     badge: "\u0421\u043a\u043b\u0430\u0434\u0441\u043a\u0430\u044f \u0437\u043e\u043d\u0430",
@@ -237,6 +326,70 @@ const copy = {
     manifestPrinting: "\u041f\u043e\u0434\u0433\u043e\u0442\u043e\u0432\u043a\u0430...",
     manifestEmpty: "\u0423 \u044d\u0442\u043e\u0433\u043e \u0432\u043e\u0434\u0438\u0442\u0435\u043b\u044f \u043d\u0435\u0442 \u0430\u043a\u0442\u0438\u0432\u043d\u044b\u0445 \u043d\u0430\u0437\u043d\u0430\u0447\u0435\u043d\u043d\u044b\u0445 \u0437\u0430\u043a\u0430\u0437\u043e\u0432.",
     manifestFailed: "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0440\u0430\u0441\u043f\u0435\u0447\u0430\u0442\u0430\u0442\u044c \u043c\u0430\u043d\u0438\u0444\u0435\u0441\u0442 \u0432\u043e\u0434\u0438\u0442\u0435\u043b\u044f.",
+    ppIntakeQueue: "Прибыло в ПВЗ",
+    ppIntakeQueueHint: "Готово к приёмке на стойке и уведомлению клиента.",
+    ppOnFloor: "Готово к выдаче клиенту",
+    ppOnFloorHint: "Заказы Out for delivery выдаются через стойку ПВЗ.",
+    ppOutboundWave: "Межфилиальное движение",
+    ppOutboundWaveHint: "Отправления в пути между хабами и ПВЗ.",
+    ppExceptions: "Исключения ПВЗ",
+    ppExceptionsHint: "Проблемы выдачи и возвратов требуют действий.",
+    ppInboundLane: "Линия приёмки стойки",
+    ppInboundLaneHint: "Отправления физически приняты в ПВЗ.",
+    ppSortLane: "Линия готовности к выдаче",
+    ppSortLaneHint: "Используйте, когда клиент пришел за самовывозом.",
+    ppOutboundLane: "Межфилиальная передача",
+    ppOutboundLaneHint: "Отправления двигаются в другую локацию.",
+    ppIssueLane: "Проблемы на стойке",
+    ppIssueLaneHint: "Требует ручной проверки до следующего шага.",
+    ppHandoverTitle: "Выдача клиенту",
+    ppHandoverHint:
+      "Подтвердите самовывоз в этом ПВЗ. Разрешены только заказы в статусе Out for delivery.",
+    ppHandoverInputPlaceholder: "Скан номера заказа / кода места / ID...",
+    ppHandoverNotePlaceholder: "Комментарий (необязательно)",
+    ppHandoverReadyLabel: "Готово к выдаче",
+    ppHandoverSelected: "Выбранный заказ",
+    ppHandoverNeedsWarehouse: "ПВЗ не привязан к вашей учетной записи.",
+    ppHandoverNoMatch: "Заказ не найден в загруженной очереди.",
+    ppHandoverWrongStatus:
+      "Выдать в ПВЗ можно только заказы в статусе Out for delivery.",
+    ppHandoverButton: "Подтвердить выдачу",
+    ppHandoverSubmitting: "Подтверждение...",
+    ppHandoverSuccess: "Выдача клиенту подтверждена.",
+    ppHandoverCashDue: "Деньги к сбору до выдачи",
+    ppHandoverCollect: "Собрать: {kind}",
+    ppHandoverCollecting: "Сохранение...",
+    ppHandoverCashPending:
+      "COD/сервисный сбор ещё ожидается. Сначала соберите сумму, затем подтверждайте выдачу.",
+    cashQueueTitle: "Очередь денежных действий",
+    cashQueueHint: "Ожидаемые и удерживаемые суммы, требующие обработки.",
+    cashQueueStatus: "Статус",
+    cashQueueKind: "Тип",
+    cashQueueFrom: "С",
+    cashQueueTo: "По",
+    cashQueueAll: "Все",
+    cashQueueExpected: "Ожидается",
+    cashQueueHeld: "На руках",
+    cashQueueSettled: "Сдано",
+    cashQueueCOD: "Наложенный платеж",
+    cashQueueServiceCharge: "Сервисный сбор",
+    cashQueueCollectSelected: "Собрать выбранное",
+    cashQueueHandoffSelected: "Передать выбранное",
+    cashQueueDriver: "Водитель",
+    cashQueuePickDriver: "Выберите водителя",
+    cashQueueNoItems: "По этому фильтру записей нет.",
+    cashQueueSelected: "Выбрано: {count}",
+    cashQueuePage: "Страница {page} / {pageCount}",
+    cashQueueSummaryExpected: "Ожидается",
+    cashQueueSummaryHeld: "На руках",
+    cashQueueSummaryTotal: "Всего в срезе",
+    cashQueueCollectSuccess: "Деньги по выбранным позициям сохранены.",
+    cashQueueHandoffSuccess: "Деньги переданы выбранному водителю.",
+    cashQueueCollectFailed: "Не удалось собрать деньги пачкой.",
+    cashQueueHandoffFailed: "Не удалось передать деньги пачкой.",
+    cashQueuePickDriverError: "Выберите водителя для передачи.",
+    cashQueueNoHeldItems: "Выберите хотя бы одну позицию со статусом 'на руках'.",
+    cashQueueNoExpectedItems: "Выберите хотя бы одну позицию со статусом 'ожидается'.",
   },
   uz: {
     badge: "Ombor maydoni",
@@ -318,6 +471,70 @@ const copy = {
     manifestPrinting: "Tayyorlanmoqda...",
     manifestEmpty: "Bu haydovchida faol biriktirilgan buyurtmalar yo'q.",
     manifestFailed: "Haydovchi manifestini chop etib bo'lmadi.",
+    ppIntakeQueue: "Pickup point ga yetib kelgan",
+    ppIntakeQueueHint: "Counter intake va mijoz xabarnomasi uchun tayyor.",
+    ppOnFloor: "Mijozga topshirishga tayyor",
+    ppOnFloorHint: "Out for delivery buyurtmalarini counterdan topshirasiz.",
+    ppOutboundWave: "Filiallar orasidagi harakat",
+    ppOutboundWaveHint: "Hub va pickup point orasida harakatlanayotgan jo'natmalar.",
+    ppExceptions: "Pickup point istisnolari",
+    ppExceptionsHint: "Topshirish muammosi va return flow qo'lda ko'riladi.",
+    ppInboundLane: "Counter intake lane",
+    ppInboundLaneHint: "Jo'natmalar pickup pointda fizik qabul qilindi.",
+    ppSortLane: "Mijozga tayyor lane",
+    ppSortLaneHint: "Mijoz self-pickup uchun kelganda shu navbat ishlatiladi.",
+    ppOutboundLane: "Filiallararo transfer",
+    ppOutboundLaneHint: "Boshqa lokatsiyaga jo'natilayotgan shipmentlar.",
+    ppIssueLane: "Counter muammolari",
+    ppIssueLaneHint: "Keyingi harakatdan oldin qo'lda tekshiruv kerak.",
+    ppHandoverTitle: "Mijozga topshirish",
+    ppHandoverHint:
+      "Shu pickup pointda self-pickup topshirishni tasdiqlang. Faqat Out for delivery statusi ruxsat etiladi.",
+    ppHandoverInputPlaceholder: "Order raqami / parcel code / order ID ni skan qiling...",
+    ppHandoverNotePlaceholder: "Izoh (ixtiyoriy)",
+    ppHandoverReadyLabel: "Topshirishga tayyor",
+    ppHandoverSelected: "Tanlangan order",
+    ppHandoverNeedsWarehouse: "Pickup point akkauntingizga biriktirilmagan.",
+    ppHandoverNoMatch: "Order yuklangan navbatda topilmadi.",
+    ppHandoverWrongStatus:
+      "Pickup pointda faqat Out for delivery buyurtmani topshirish mumkin.",
+    ppHandoverButton: "Topshiruvni tasdiqlash",
+    ppHandoverSubmitting: "Tasdiqlanmoqda...",
+    ppHandoverSuccess: "Mijozga topshirish tasdiqlandi.",
+    ppHandoverCashDue: "Topshirishdan oldin yig'iladigan pul",
+    ppHandoverCollect: "{kind} yig'ish",
+    ppHandoverCollecting: "Saqlanmoqda...",
+    ppHandoverCashPending:
+      "COD/xizmat haqi hali kutilmoqda. Topshirishdan oldin mablag'ni yig'ing.",
+    cashQueueTitle: "Naqd pul navbati",
+    cashQueueHint: "Operatsion kuzatuv talab qiladigan expected va held yozuvlar.",
+    cashQueueStatus: "Status",
+    cashQueueKind: "Turi",
+    cashQueueFrom: "Dan",
+    cashQueueTo: "Gacha",
+    cashQueueAll: "Barchasi",
+    cashQueueExpected: "Kutilmoqda",
+    cashQueueHeld: "Qo'lda",
+    cashQueueSettled: "Moliya ga topshirilgan",
+    cashQueueCOD: "COD",
+    cashQueueServiceCharge: "Xizmat haqi",
+    cashQueueCollectSelected: "Tanlanganini yig'ish",
+    cashQueueHandoffSelected: "Tanlanganini topshirish",
+    cashQueueDriver: "Haydovchi",
+    cashQueuePickDriver: "Haydovchini tanlang",
+    cashQueueNoItems: "Ushbu filtr bo'yicha yozuv topilmadi.",
+    cashQueueSelected: "{count} ta tanlandi",
+    cashQueuePage: "Sahifa {page} / {pageCount}",
+    cashQueueSummaryExpected: "Kutilmoqda",
+    cashQueueSummaryHeld: "Qo'lda",
+    cashQueueSummaryTotal: "Jami (filtrda)",
+    cashQueueCollectSuccess: "Tanlangan yozuvlar bo'yicha pul yig'ildi.",
+    cashQueueHandoffSuccess: "Tanlangan pul haydovchiga topshirildi.",
+    cashQueueCollectFailed: "Pulni bulk yig'ib bo'lmadi.",
+    cashQueueHandoffFailed: "Pulni bulk topshirib bo'lmadi.",
+    cashQueuePickDriverError: "Topshirish uchun haydovchini tanlang.",
+    cashQueueNoHeldItems: "Kamida bitta held yozuvni tanlang.",
+    cashQueueNoExpectedItems: "Kamida bitta expected yozuvni tanlang.",
   },
 } as const;
 
@@ -351,8 +568,82 @@ function statusVariant(status?: string | null): StatusTone {
   return "outline";
 }
 
-function orderRef(order: OrderItem, fallback: string) {
+function orderRef(order: TokenSearchOrder, fallback: string) {
   return order.orderNumber ? `#${order.orderNumber}` : fallback;
+}
+
+function findOrderByToken<T extends TokenSearchOrder>(orders: T[], tokenRaw: string): T | null {
+  const token = tokenRaw.trim().toLowerCase();
+  if (!token) return null;
+
+  return (
+    orders.find((order) => {
+      const id = String(order.id ?? "").trim().toLowerCase();
+      const orderNumber = String(order.orderNumber ?? "").trim().toLowerCase();
+      if (id && id === token) return true;
+      if (orderNumber && orderNumber === token) return true;
+
+      const parcels = Array.isArray(order.parcels) ? order.parcels : [];
+      return parcels.some((parcel) => {
+        const parcelCode = String(parcel.parcelCode ?? "").trim().toLowerCase();
+        return parcelCode !== "" && parcelCode === token;
+      });
+    }) ?? null
+  );
+}
+
+function toPositiveNumber(value: unknown) {
+  const num = Number(value ?? 0);
+  return Number.isFinite(num) && num > 0 ? num : 0;
+}
+
+function getOrderDueCash(order: RawOrder | null): DueCashItem[] {
+  if (!order) return [];
+  const currency = typeof order.currency === "string" ? order.currency : null;
+  const fromCollections =
+    Array.isArray(order.cashCollections)
+      ? order.cashCollections
+          .filter(
+            (row) =>
+              (row?.kind === "cod" || row?.kind === "service_charge") &&
+              row?.status === "expected" &&
+              toPositiveNumber(row?.expectedAmount) > 0,
+          )
+          .map((row) => ({
+            kind: row!.kind as CashQueueKind,
+            expectedAmount: toPositiveNumber(row?.expectedAmount),
+            currency: row?.currency ?? currency,
+          }))
+      : [];
+
+  if (fromCollections.length > 0) {
+    const seen = new Set<string>();
+    return fromCollections.filter((row) => {
+      const key = row.kind;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  const fallback: DueCashItem[] = [];
+  const codAmount = toPositiveNumber((order as any)?.codAmount);
+  const codStatus = String((order as any)?.codPaidStatus ?? "").toUpperCase();
+  if (codAmount > 0 && codStatus !== "PAID") {
+    fallback.push({ kind: "cod", expectedAmount: codAmount, currency });
+  }
+
+  const serviceAmount = toPositiveNumber((order as any)?.serviceCharge);
+  const serviceStatus = String((order as any)?.serviceChargePaidStatus ?? "").toUpperCase();
+  if (serviceAmount > 0 && serviceStatus !== "PAID") {
+    fallback.push({
+      kind: "service_charge",
+      expectedAmount: serviceAmount,
+      currency,
+    });
+  }
+
+  return fallback;
 }
 
 function sameLocalDay(left: Date, right: Date) {
@@ -361,6 +652,20 @@ function sameLocalDay(left: Date, right: Date) {
     left.getMonth() === right.getMonth() &&
     left.getDate() === right.getDate()
   );
+}
+
+function formatCashAmount(amount: number, currency: string | null | undefined, locale: string) {
+  const safeAmount = Number.isFinite(amount) ? amount : 0;
+  const currencyCode = (currency || "UZS").toUpperCase();
+  try {
+    return new Intl.NumberFormat(locale, {
+      style: "currency",
+      currency: currencyCode,
+      maximumFractionDigits: 0,
+    }).format(safeAmount);
+  } catch {
+    return `${safeAmount.toLocaleString(locale)} ${currencyCode}`;
+  }
 }
 
 function StatTile({
@@ -402,6 +707,15 @@ export default function WarehouseDashboardPage() {
   const [q, setQ] = useState("");
   const [activeQuickFilter, setActiveQuickFilter] = useState<QuickFilterKey>("all");
   const [quickScanValue, setQuickScanValue] = useState("");
+  const [handoverToken, setHandoverToken] = useState("");
+  const [handoverNote, setHandoverNote] = useState("");
+  const [cashStatusFilter, setCashStatusFilter] = useState<"all" | CashQueueStatus>("all");
+  const [cashKindFilter, setCashKindFilter] = useState<"all" | CashQueueKind>("all");
+  const [cashFrom, setCashFrom] = useState("");
+  const [cashTo, setCashTo] = useState("");
+  const [cashPage, setCashPage] = useState(1);
+  const [cashSelectedIds, setCashSelectedIds] = useState<string[]>([]);
+  const [cashHandoffDriverId, setCashHandoffDriverId] = useState("");
   const [manifestDriverId, setManifestDriverId] = useState("");
   const [externalScanRequest, setExternalScanRequest] = useState<{
     id: number;
@@ -424,6 +738,10 @@ export default function WarehouseDashboardPage() {
     setSearchCursorIndex(0);
   }, [debouncedQ]);
 
+  React.useEffect(() => {
+    setCashPage(1);
+  }, [cashStatusFilter, cashKindFilter, cashFrom, cashTo]);
+
   const warehousesQuery = useQuery({
     queryKey: ["warehouses", "warehouse-dashboard"],
     queryFn: fetchWarehouses,
@@ -439,14 +757,20 @@ export default function WarehouseDashboardPage() {
   });
 
   const baseQuery = useQuery<OrdersResponse>({
-    queryKey: ["warehouse-orders", "base", baseCursorStack[baseCursorIndex] ?? null],
+    queryKey: [
+      "warehouse-orders",
+      "base",
+      user?.warehouseId ?? null,
+      baseCursorStack[baseCursorIndex] ?? null,
+    ],
     queryFn: () =>
       fetchOrders({
         limit: 120,
         mode: "cursor",
         cursor: baseCursorStack[baseCursorIndex] ?? undefined,
+        warehouseId: user?.warehouseId ?? undefined,
       }),
-    enabled: !isSearchMode,
+    enabled: !isSearchMode && Boolean(user?.warehouseId),
     placeholderData: (prev) => prev,
   });
 
@@ -454,6 +778,7 @@ export default function WarehouseDashboardPage() {
     queryKey: [
       "warehouse-orders",
       "search",
+      user?.warehouseId ?? null,
       debouncedQ,
       searchCursorStack[searchCursorIndex] ?? null,
     ],
@@ -463,8 +788,9 @@ export default function WarehouseDashboardPage() {
         limit: 50,
         mode: "cursor",
         cursor: searchCursorStack[searchCursorIndex] ?? undefined,
+        warehouseId: user?.warehouseId ?? undefined,
       }),
-    enabled: isSearchMode,
+    enabled: isSearchMode && Boolean(user?.warehouseId),
     placeholderData: (prev) => prev,
   });
 
@@ -494,6 +820,98 @@ export default function WarehouseDashboardPage() {
 
   const activeQuery = isSearchMode ? searchQuery : baseQuery;
 
+  const cashFilters = useMemo(() => {
+    const toStartIso = (dateValue: string) => {
+      if (!dateValue) return undefined;
+      return new Date(`${dateValue}T00:00:00`).toISOString();
+    };
+    const toEndExclusiveIso = (dateValue: string) => {
+      if (!dateValue) return undefined;
+      const end = new Date(`${dateValue}T00:00:00`);
+      end.setDate(end.getDate() + 1);
+      return end.toISOString();
+    };
+
+    return {
+      page: cashPage,
+      pageSize: 20,
+      statuses: cashStatusFilter === "all" ? undefined : [cashStatusFilter],
+      kinds: cashKindFilter === "all" ? undefined : [cashKindFilter],
+      from: toStartIso(cashFrom),
+      to: toEndExclusiveIso(cashTo),
+    };
+  }, [cashFrom, cashKindFilter, cashPage, cashStatusFilter, cashTo]);
+
+  const cashQueueQuery = useQuery({
+    queryKey: [
+      "warehouse-cash-queue",
+      user?.warehouseId ?? null,
+      cashFilters.page,
+      cashFilters.pageSize,
+      cashFilters.statuses?.join(",") ?? "all",
+      cashFilters.kinds?.join(",") ?? "all",
+      cashFilters.from ?? null,
+      cashFilters.to ?? null,
+    ],
+    queryFn: () => fetchCashQueue(cashFilters),
+    enabled: Boolean(user?.warehouseId),
+    placeholderData: (prev) => prev,
+  });
+
+  const cashSummaryQuery = useQuery({
+    queryKey: [
+      "warehouse-cash-queue-summary",
+      user?.warehouseId ?? null,
+      cashFilters.statuses?.join(",") ?? "all",
+      cashFilters.kinds?.join(",") ?? "all",
+      cashFilters.from ?? null,
+      cashFilters.to ?? null,
+    ],
+    queryFn: () =>
+      fetchCashQueueSummary({
+        statuses: cashFilters.statuses,
+        kinds: cashFilters.kinds,
+        from: cashFilters.from,
+        to: cashFilters.to,
+      }),
+    enabled: Boolean(user?.warehouseId),
+    placeholderData: (prev) => prev,
+  });
+
+  const cashQueueItems = cashQueueQuery.data?.items ?? [];
+  const cashQueueMeta = cashQueueQuery.data?.meta ?? {
+    page: cashPage,
+    pageSize: 20,
+    total: 0,
+    pageCount: 1,
+    hasPrev: false,
+    hasNext: false,
+  };
+  const cashSummary: CashQueueSummary = cashSummaryQuery.data ?? {
+    expectedCount: 0,
+    expectedAmount: 0,
+    heldCount: 0,
+    heldAmount: 0,
+    settledCount: 0,
+    settledAmount: 0,
+    totalCount: 0,
+    totalAmount: 0,
+  };
+
+  React.useEffect(() => {
+    setCashSelectedIds((prev) => {
+      if (!prev.length) return prev;
+      const allowed = new Set(cashQueueItems.map((item) => item.id));
+      return prev.filter((id) => allowed.has(id));
+    });
+  }, [cashQueueItems]);
+
+  const selectedCashRows = useMemo<CashQueueItem[]>(() => {
+    if (cashSelectedIds.length === 0) return [];
+    const map = new Map(cashQueueItems.map((item) => [item.id, item]));
+    return cashSelectedIds.map((id) => map.get(id)).filter(Boolean) as CashQueueItem[];
+  }, [cashQueueItems, cashSelectedIds]);
+
   React.useEffect(() => {
     if (activeQuery.dataUpdatedAt) {
       setLastSyncedAt(new Date(activeQuery.dataUpdatedAt));
@@ -521,8 +939,9 @@ export default function WarehouseDashboardPage() {
           pieceNo: parcel.pieceNo ?? null,
           pieceTotal: parcel.pieceTotal ?? null,
         })) ?? null,
-    }));
+      }));
   }, [activeQuery.data]);
+  const rawOrders = activeQuery.data?.orders ?? [];
   const page = isSearchMode ? searchCursorIndex + 1 : baseCursorIndex + 1;
   const canPrev = page > 1;
   const canNext = Boolean(activeQuery.data?.hasMore);
@@ -610,12 +1029,24 @@ export default function WarehouseDashboardPage() {
     setBaseCursorIndex((current) => current + 1);
   };
 
-  const warehouseName = useMemo(() => {
+  const attachedWarehouse = useMemo(() => {
     const attached = user?.warehouseId;
-    if (!attached) return text.unlinkedWarehouse;
-    const match = warehousesQuery.data?.find((warehouse) => warehouse.id === attached);
-    return match?.name ?? attached;
-  }, [text.unlinkedWarehouse, user?.warehouseId, warehousesQuery.data]);
+    if (!attached) return null;
+    return (
+      warehousesQuery.data?.find((warehouse) => warehouse.id === attached) ?? null
+    );
+  }, [user?.warehouseId, warehousesQuery.data]);
+
+  const warehouseName = useMemo(() => {
+    if (!user?.warehouseId) return text.unlinkedWarehouse;
+    return attachedWarehouse?.name ?? user.warehouseId;
+  }, [attachedWarehouse?.name, text.unlinkedWarehouse, user?.warehouseId]);
+
+  const attachedLocationType = normalizeWarehouseType(attachedWarehouse?.type);
+  const attachedLocationTypeLabel =
+    attachedLocationType === "pickup_point"
+      ? t("managerAnalytics.finance.holderTypes.pickup_point")
+      : t("managerAnalytics.finance.holderTypes.warehouse");
 
   const manifestDrivers = useMemo(() => driversQuery.data ?? [], [driversQuery.data]);
   const selectedManifestDriver = useMemo(
@@ -661,12 +1092,28 @@ export default function WarehouseDashboardPage() {
     return counts;
   }, [orders]);
 
-  const needsIntake = statusCounts.get("picked_up") ?? 0;
-  const onFloor = statusCounts.get("at_warehouse") ?? 0;
-  const outboundWave =
-    (statusCounts.get("in_transit") ?? 0) + (statusCounts.get("out_for_delivery") ?? 0);
+  const isPickupPoint = attachedLocationType === "pickup_point";
+  const needsIntake = isPickupPoint
+    ? statusCounts.get("at_warehouse") ?? 0
+    : statusCounts.get("picked_up") ?? 0;
+  const onFloor = isPickupPoint
+    ? statusCounts.get("out_for_delivery") ?? 0
+    : statusCounts.get("at_warehouse") ?? 0;
+  const outboundWave = isPickupPoint
+    ? statusCounts.get("in_transit") ?? 0
+    : (statusCounts.get("in_transit") ?? 0) +
+      (statusCounts.get("out_for_delivery") ?? 0);
   const exceptions =
     (statusCounts.get("exception") ?? 0) + (statusCounts.get("return_in_progress") ?? 0);
+
+  const intakeTitle = isPickupPoint ? text.ppIntakeQueue : text.intakeQueue;
+  const intakeHint = isPickupPoint ? text.ppIntakeQueueHint : text.intakeQueueHint;
+  const onFloorTitle = isPickupPoint ? text.ppOnFloor : text.onFloor;
+  const onFloorHint = isPickupPoint ? text.ppOnFloorHint : text.onFloorHint;
+  const outboundTitle = isPickupPoint ? text.ppOutboundWave : text.outboundWave;
+  const outboundHint = isPickupPoint ? text.ppOutboundWaveHint : text.outboundWaveHint;
+  const exceptionTitle = isPickupPoint ? text.ppExceptions : text.exceptions;
+  const exceptionHint = isPickupPoint ? text.ppExceptionsHint : text.exceptionsHint;
 
   const deliveredToday = useMemo(() => {
     const today = new Date();
@@ -690,34 +1137,35 @@ export default function WarehouseDashboardPage() {
 
   const laneCards = [
     {
-      title: text.inboundLane,
-      hint: text.inboundLaneHint,
-      count: needsIntake,
-      statuses: ["picked_up"],
+      title: isPickupPoint ? text.ppInboundLane : text.inboundLane,
+      hint: isPickupPoint ? text.ppInboundLaneHint : text.inboundLaneHint,
+      statuses: isPickupPoint ? ["at_warehouse"] : ["picked_up"],
       icon: ScanLine,
     },
     {
-      title: text.sortLane,
-      hint: text.sortLaneHint,
-      count: onFloor,
-      statuses: ["at_warehouse"],
+      title: isPickupPoint ? text.ppSortLane : text.sortLane,
+      hint: isPickupPoint ? text.ppSortLaneHint : text.sortLaneHint,
+      statuses: isPickupPoint ? ["out_for_delivery"] : ["at_warehouse"],
       icon: Warehouse,
     },
     {
-      title: text.outboundLane,
-      hint: text.outboundLaneHint,
-      count: outboundWave,
-      statuses: ["in_transit", "out_for_delivery"],
+      title: isPickupPoint ? text.ppOutboundLane : text.outboundLane,
+      hint: isPickupPoint ? text.ppOutboundLaneHint : text.outboundLaneHint,
+      statuses: isPickupPoint
+        ? ["in_transit"]
+        : ["in_transit", "out_for_delivery"],
       icon: ArrowRightLeft,
     },
     {
-      title: text.issueLane,
-      hint: text.issueLaneHint,
-      count: exceptions,
+      title: isPickupPoint ? text.ppIssueLane : text.issueLane,
+      hint: isPickupPoint ? text.ppIssueLaneHint : text.issueLaneHint,
       statuses: ["exception", "return_in_progress"],
       icon: AlertTriangle,
     },
   ] as const;
+
+  const laneCount = (statuses: readonly string[]) =>
+    statuses.reduce((sum, status) => sum + (statusCounts.get(status) ?? 0), 0);
 
   const quickFilterMeta: Array<{
     key: QuickFilterKey;
@@ -725,32 +1173,196 @@ export default function WarehouseDashboardPage() {
     count: number;
   }> = [
     { key: "all", label: text.filterAll, count: orders.length },
-    { key: "needs_intake", label: text.filterNeedsIntake, count: needsIntake },
-    { key: "on_floor", label: text.filterOnFloor, count: onFloor },
-    { key: "outbound", label: text.filterOutbound, count: outboundWave },
-    { key: "exceptions", label: text.filterExceptions, count: exceptions },
+    { key: "needs_intake", label: intakeTitle, count: needsIntake },
+    { key: "on_floor", label: onFloorTitle, count: onFloor },
+    { key: "outbound", label: outboundTitle, count: outboundWave },
+    { key: "exceptions", label: exceptionTitle, count: exceptions },
   ];
 
+  const quickFilterStatuses: Record<QuickFilterKey, string[] | null> = {
+    all: null,
+    needs_intake: isPickupPoint ? ["at_warehouse"] : ["picked_up"],
+    on_floor: isPickupPoint ? ["out_for_delivery"] : ["at_warehouse"],
+    outbound: isPickupPoint
+      ? ["in_transit"]
+      : ["in_transit", "out_for_delivery"],
+    exceptions: ["exception", "return_in_progress"],
+  };
+
   const filteredOrders = useMemo(() => {
-    switch (activeQuickFilter) {
-      case "needs_intake":
-        return orders.filter((order) => order.status === "picked_up");
-      case "on_floor":
-        return orders.filter((order) => order.status === "at_warehouse");
-      case "outbound":
-        return orders.filter(
-          (order) =>
-            order.status === "in_transit" || order.status === "out_for_delivery",
-        );
-      case "exceptions":
-        return orders.filter(
-          (order) =>
-            order.status === "exception" || order.status === "return_in_progress",
-        );
-      default:
-        return orders;
-    }
-  }, [activeQuickFilter, orders]);
+    const statuses = quickFilterStatuses[activeQuickFilter];
+    if (!statuses || statuses.length === 0) return orders;
+    return orders.filter((order) => statuses.includes(order.status));
+  }, [activeQuickFilter, orders, quickFilterStatuses]);
+
+  const handoverMatchedOrder = useMemo(
+    () => findOrderByToken(rawOrders, handoverToken),
+    [handoverToken, rawOrders],
+  );
+  const handoverDueCash = useMemo(
+    () => getOrderDueCash(handoverMatchedOrder),
+    [handoverMatchedOrder],
+  );
+
+  const handoverCollectMutation = useMutation({
+    mutationFn: async (item: DueCashItem) => {
+      if (!handoverMatchedOrder) throw new Error(text.ppHandoverNoMatch);
+      return collectOrderCash({
+        orderId: handoverMatchedOrder.id,
+        kind: item.kind,
+        amount: item.expectedAmount,
+        note:
+          handoverNote.trim() ||
+          "Pickup point handover cash collected by warehouse operator",
+      });
+    },
+    onSuccess: () => {
+      void Promise.all([
+        handleRefresh(),
+        cashQueueQuery.refetch(),
+        cashSummaryQuery.refetch(),
+      ]);
+    },
+    onError: (error: unknown) => {
+      const message =
+        error instanceof Error && error.message
+          ? error.message
+          : "Failed to collect handover cash";
+      toast.error(message);
+    },
+  });
+
+  const handoverMutation = useMutation({
+    mutationFn: async () => {
+      if (!isPickupPoint) {
+        throw new Error("Pickup point handover is disabled for this location type.");
+      }
+      if (!user?.warehouseId) {
+        throw new Error(text.ppHandoverNeedsWarehouse);
+      }
+      if (!handoverMatchedOrder) {
+        throw new Error(text.ppHandoverNoMatch);
+      }
+      if (handoverMatchedOrder.status !== "out_for_delivery") {
+        throw new Error(text.ppHandoverWrongStatus);
+      }
+      if (handoverDueCash.length > 0) {
+        throw new Error(text.ppHandoverCashPending);
+      }
+
+      return updateOrdersStatusBulk({
+        orderIds: [handoverMatchedOrder.id],
+        status: "delivered",
+        warehouseId: user.warehouseId,
+        note:
+          handoverNote.trim() || "Pickup point handover confirmed by warehouse operator",
+      });
+    },
+    onSuccess: () => {
+      toast.success(text.ppHandoverSuccess);
+      setHandoverToken("");
+      setHandoverNote("");
+      setCashSelectedIds([]);
+      void Promise.all([
+        handleRefresh(),
+        cashQueueQuery.refetch(),
+        cashSummaryQuery.refetch(),
+      ]);
+    },
+    onError: (error: unknown) => {
+      const message =
+        error instanceof Error && error.message
+          ? error.message
+          : "Failed to confirm customer handover";
+      toast.error(message);
+    },
+  });
+
+  const selectedExpectedRows = useMemo(
+    () => selectedCashRows.filter((row) => row.status === "expected"),
+    [selectedCashRows],
+  );
+  const selectedHeldRows = useMemo(
+    () => selectedCashRows.filter((row) => row.status === "held"),
+    [selectedCashRows],
+  );
+  const cashKindLabel = React.useCallback(
+    (kind: CashQueueKind) =>
+      kind === "cod" ? text.cashQueueCOD : text.cashQueueServiceCharge,
+    [text.cashQueueCOD, text.cashQueueServiceCharge],
+  );
+
+  const toggleCashSelected = React.useCallback((id: string) => {
+    setCashSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
+    );
+  }, []);
+
+  const collectQueueMutation = useMutation({
+    mutationFn: async () => {
+      if (selectedExpectedRows.length === 0) {
+        throw new Error(text.cashQueueNoExpectedItems);
+      }
+      return collectOrderCashBulk({
+        items: selectedExpectedRows.map((row) => ({
+          orderId: row.orderId,
+          kind: row.kind,
+          amount: row.expectedAmount,
+        })),
+      });
+    },
+    onSuccess: () => {
+      toast.success(text.cashQueueCollectSuccess);
+      setCashSelectedIds([]);
+      void Promise.all([
+        cashQueueQuery.refetch(),
+        cashSummaryQuery.refetch(),
+        handleRefresh(),
+      ]);
+    },
+    onError: (error: unknown) => {
+      const message =
+        error instanceof Error && error.message
+          ? error.message
+          : text.cashQueueCollectFailed;
+      toast.error(message);
+    },
+  });
+
+  const handoffQueueMutation = useMutation({
+    mutationFn: async () => {
+      if (selectedHeldRows.length === 0) {
+        throw new Error(text.cashQueueNoHeldItems);
+      }
+      if (!cashHandoffDriverId) {
+        throw new Error(text.cashQueuePickDriverError);
+      }
+      return handoffOrderCashBulk({
+        items: selectedHeldRows.map((row) => ({
+          orderId: row.orderId,
+          kind: row.kind,
+        })),
+        toHolderType: "driver",
+        toDriverId: cashHandoffDriverId,
+      });
+    },
+    onSuccess: () => {
+      toast.success(text.cashQueueHandoffSuccess);
+      setCashSelectedIds([]);
+      void Promise.all([
+        cashQueueQuery.refetch(),
+        cashSummaryQuery.refetch(),
+        handleRefresh(),
+      ]);
+    },
+    onError: (error: unknown) => {
+      const message =
+        error instanceof Error && error.message
+          ? error.message
+          : text.cashQueueHandoffFailed;
+      toast.error(message);
+    },
+  });
 
   return (
     <PageShell>
@@ -773,31 +1385,31 @@ export default function WarehouseDashboardPage() {
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <div className="rounded-3xl border border-white/15 bg-white/10 p-4 backdrop-blur">
                   <p className="text-xs uppercase tracking-[0.18em] text-white/70">
-                    {text.intakeQueue}
+                    {intakeTitle}
                   </p>
                   <p className="mt-3 text-3xl font-semibold">{needsIntake}</p>
-                  <p className="mt-2 text-xs text-white/70">{text.intakeQueueHint}</p>
+                  <p className="mt-2 text-xs text-white/70">{intakeHint}</p>
                 </div>
                 <div className="rounded-3xl border border-white/15 bg-white/10 p-4 backdrop-blur">
                   <p className="text-xs uppercase tracking-[0.18em] text-white/70">
-                    {text.onFloor}
+                    {onFloorTitle}
                   </p>
                   <p className="mt-3 text-3xl font-semibold">{onFloor}</p>
-                  <p className="mt-2 text-xs text-white/70">{text.onFloorHint}</p>
+                  <p className="mt-2 text-xs text-white/70">{onFloorHint}</p>
                 </div>
                 <div className="rounded-3xl border border-white/15 bg-white/10 p-4 backdrop-blur">
                   <p className="text-xs uppercase tracking-[0.18em] text-white/70">
-                    {text.outboundWave}
+                    {outboundTitle}
                   </p>
                   <p className="mt-3 text-3xl font-semibold">{outboundWave}</p>
-                  <p className="mt-2 text-xs text-white/70">{text.outboundWaveHint}</p>
+                  <p className="mt-2 text-xs text-white/70">{outboundHint}</p>
                 </div>
                 <div className="rounded-3xl border border-white/15 bg-white/10 p-4 backdrop-blur">
                   <p className="text-xs uppercase tracking-[0.18em] text-white/70">
-                    {text.exceptions}
+                    {exceptionTitle}
                   </p>
                   <p className="mt-3 text-3xl font-semibold">{exceptions}</p>
-                  <p className="mt-2 text-xs text-white/70">{text.exceptionsHint}</p>
+                  <p className="mt-2 text-xs text-white/70">{exceptionHint}</p>
                 </div>
               </div>
             </div>
@@ -810,6 +1422,7 @@ export default function WarehouseDashboardPage() {
                       {text.attachedWarehouse}
                     </p>
                     <p className="mt-2 text-xl font-semibold">{warehouseName}</p>
+                    <p className="mt-1 text-xs text-white/70">{attachedLocationTypeLabel}</p>
                   </div>
                   <Badge className="rounded-full border-white/15 bg-white/10 text-white hover:bg-white/10">
                     {user?.warehouseId ? text.liveView : text.unlinkedWarehouse}
@@ -1040,29 +1653,29 @@ export default function WarehouseDashboardPage() {
           </CardContent>
         </Card>
 
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_360px]">
+        <div className="space-y-4">
           <Card className="rounded-3xl border-border/70">
-            <CardHeader className="pb-3">
+            <CardHeader className="pb-2">
               <CardTitle className="text-base">{text.queueHealth}</CardTitle>
               <p className="text-sm text-muted-foreground">{text.queueHealthHint}</p>
             </CardHeader>
-            <CardContent className="grid gap-3 sm:grid-cols-2">
+            <CardContent className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
               {laneCards.map((lane) => {
                 const Icon = lane.icon;
                 return (
-                  <div key={lane.title} className="rounded-3xl border border-border/70 bg-muted/15 p-4">
-                    <div className="flex items-start justify-between gap-3">
+                  <div key={lane.title} className="rounded-3xl border border-border/70 bg-muted/15 p-3">
+                    <div className="flex items-start justify-between gap-2">
                       <div>
-                        <p className="text-sm font-medium">{lane.title}</p>
+                        <p className="text-sm font-medium leading-tight">{lane.title}</p>
                         <p className="mt-1 text-xs text-muted-foreground">{lane.hint}</p>
                       </div>
-                      <div className="rounded-2xl border border-border/70 bg-background p-2">
-                        <Icon className="h-4 w-4 text-muted-foreground" />
+                      <div className="rounded-2xl border border-border/70 bg-background p-1.5">
+                        <Icon className="h-3.5 w-3.5 text-muted-foreground" />
                       </div>
                     </div>
-                    <div className="mt-4 flex items-end justify-between">
-                      <p className="text-3xl font-semibold">{lane.count}</p>
-                      <div className="flex flex-wrap justify-end gap-1">
+                    <div className="mt-3 flex items-end justify-between gap-2">
+                      <p className="text-2xl font-semibold">{laneCount(lane.statuses)}</p>
+                      <div className="flex max-w-[70%] flex-wrap justify-end gap-1">
                         {lane.statuses.map((status) => (
                           <Badge key={status} variant={statusVariant(status)} className="rounded-full">
                             {getStatusLabel(status, t)}
@@ -1076,7 +1689,329 @@ export default function WarehouseDashboardPage() {
             </CardContent>
           </Card>
 
-          <div className="space-y-4">
+          <div className="grid gap-4 xl:grid-cols-2">
+            {isPickupPoint ? (
+              <Card className="rounded-3xl border-border/70">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">{text.ppHandoverTitle}</CardTitle>
+                  <p className="text-sm text-muted-foreground">{text.ppHandoverHint}</p>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <Input
+                    value={handoverToken}
+                    onChange={(event) => setHandoverToken(event.target.value)}
+                    placeholder={text.ppHandoverInputPlaceholder}
+                  />
+                  <Input
+                    value={handoverNote}
+                    onChange={(event) => setHandoverNote(event.target.value)}
+                    placeholder={text.ppHandoverNotePlaceholder}
+                  />
+
+                  {handoverMatchedOrder ? (
+                    <div className="rounded-3xl border border-border/70 bg-muted/20 p-3">
+                      <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                        {text.ppHandoverSelected}
+                      </p>
+                      <p className="mt-1 text-sm font-medium">
+                        {orderRef(handoverMatchedOrder, text.unnumbered)}
+                      </p>
+                      <div className="mt-2 flex items-center gap-2">
+                        <Badge variant={statusVariant(handoverMatchedOrder.status)}>
+                          {getStatusLabel(handoverMatchedOrder.status, t)}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {text.ppHandoverReadyLabel}: {getStatusLabel("out_for_delivery", t)}
+                        </span>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {handoverDueCash.length > 0 ? (
+                    <div className="rounded-3xl border border-amber-300/60 bg-amber-50 p-3 space-y-2">
+                      <p className="text-xs uppercase tracking-[0.18em] text-amber-900">
+                        {text.ppHandoverCashDue}
+                      </p>
+                      {handoverDueCash.map((item) => (
+                        <div
+                          key={item.kind}
+                          className="rounded-2xl border border-amber-300/50 bg-white/80 px-3 py-2"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div>
+                              <p className="text-sm font-medium">{cashKindLabel(item.kind)}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {formatCashAmount(item.expectedAmount, item.currency, locale)}
+                              </p>
+                            </div>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handoverCollectMutation.mutate(item)}
+                              disabled={handoverCollectMutation.isPending}
+                            >
+                              {handoverCollectMutation.isPending
+                                ? text.ppHandoverCollecting
+                                : formatText(text.ppHandoverCollect, {
+                                    kind: cashKindLabel(item.kind),
+                                  })}
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                      <p className="text-xs text-amber-900">{text.ppHandoverCashPending}</p>
+                    </div>
+                  ) : null}
+
+                  <Button
+                    type="button"
+                    className="w-full gap-2"
+                    onClick={() => handoverMutation.mutate()}
+                    disabled={
+                      !handoverToken.trim() ||
+                      handoverMutation.isPending ||
+                      handoverCollectMutation.isPending ||
+                      handoverDueCash.length > 0
+                    }
+                  >
+                    <PackageCheck className="h-4 w-4" />
+                    {handoverMutation.isPending
+                      ? text.ppHandoverSubmitting
+                      : text.ppHandoverButton}
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : null}
+
+            <Card className={`rounded-3xl border-border/70 ${isPickupPoint ? "" : "xl:col-span-2"}`}>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">{text.cashQueueTitle}</CardTitle>
+                <p className="text-sm text-muted-foreground">{text.cashQueueHint}</p>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                      {text.cashQueueStatus}
+                    </p>
+                    <Select
+                      value={cashStatusFilter}
+                      onValueChange={(value) =>
+                        setCashStatusFilter(value as "all" | CashQueueStatus)
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">{text.cashQueueAll}</SelectItem>
+                        <SelectItem value="expected">{text.cashQueueExpected}</SelectItem>
+                        <SelectItem value="held">{text.cashQueueHeld}</SelectItem>
+                        <SelectItem value="settled">{text.cashQueueSettled}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                      {text.cashQueueKind}
+                    </p>
+                    <Select
+                      value={cashKindFilter}
+                      onValueChange={(value) =>
+                        setCashKindFilter(value as "all" | CashQueueKind)
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">{text.cashQueueAll}</SelectItem>
+                        <SelectItem value="cod">{text.cashQueueCOD}</SelectItem>
+                        <SelectItem value="service_charge">
+                          {text.cashQueueServiceCharge}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                      {text.cashQueueFrom}
+                    </p>
+                    <Input
+                      type="date"
+                      value={cashFrom}
+                      onChange={(event) => setCashFrom(event.target.value)}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                      {text.cashQueueTo}
+                    </p>
+                    <Input
+                      type="date"
+                      value={cashTo}
+                      onChange={(event) => setCashTo(event.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <div className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-2">
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                      {text.cashQueueSummaryExpected}
+                    </p>
+                    <p className="mt-1 text-sm font-semibold">
+                      {formatCashAmount(cashSummary.expectedAmount, "UZS", locale)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">{cashSummary.expectedCount}</p>
+                  </div>
+                  <div className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-2">
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                      {text.cashQueueSummaryHeld}
+                    </p>
+                    <p className="mt-1 text-sm font-semibold">
+                      {formatCashAmount(cashSummary.heldAmount, "UZS", locale)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">{cashSummary.heldCount}</p>
+                  </div>
+                  <div className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-2">
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                      {text.cashQueueSummaryTotal}
+                    </p>
+                    <p className="mt-1 text-sm font-semibold">
+                      {formatCashAmount(cashSummary.totalAmount, "UZS", locale)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">{cashSummary.totalCount}</p>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-border/70">
+                  <div className="max-h-[260px] overflow-y-auto divide-y">
+                    {cashQueueQuery.isLoading ? (
+                      <div className="p-3 space-y-2">
+                        <Skeleton className="h-14 w-full" />
+                        <Skeleton className="h-14 w-full" />
+                      </div>
+                    ) : cashQueueItems.length === 0 ? (
+                      <div className="p-3 text-sm text-muted-foreground">{text.cashQueueNoItems}</div>
+                    ) : (
+                      cashQueueItems.map((item) => (
+                        <label
+                          key={item.id}
+                          className="flex cursor-pointer items-start gap-3 px-3 py-2"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={cashSelectedIds.includes(item.id)}
+                            onChange={() => toggleCashSelected(item.id)}
+                            className="mt-1 h-4 w-4 rounded border-border"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <Badge variant="outline" className="rounded-full">
+                                {item.orderNumber ? `#${item.orderNumber}` : text.unnumbered}
+                              </Badge>
+                              <Badge variant={statusVariant(item.orderStatus)}>
+                                {getStatusLabel(item.orderStatus, t)}
+                              </Badge>
+                              <Badge variant="secondary">
+                                {item.status === "expected"
+                                  ? text.cashQueueExpected
+                                  : item.status === "held"
+                                    ? text.cashQueueHeld
+                                    : text.cashQueueSettled}
+                              </Badge>
+                            </div>
+                            <p className="mt-1 text-sm font-medium">
+                              {cashKindLabel(item.kind)} ·{" "}
+                              {formatCashAmount(item.amount, item.currency, locale)}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {item.currentHolderLabel || "-"} · {item.ageHours}h
+                            </p>
+                          </div>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                  <span>{formatText(text.cashQueueSelected, { count: cashSelectedIds.length })}</span>
+                  <span>
+                    {formatText(text.cashQueuePage, {
+                      page: cashQueueMeta.page,
+                      pageCount: cashQueueMeta.pageCount,
+                    })}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-7 w-7"
+                      onClick={() => setCashPage((current) => Math.max(1, current - 1))}
+                      disabled={!cashQueueMeta.hasPrev || cashQueueQuery.isFetching}
+                    >
+                      <ChevronLeft className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-7 w-7"
+                      onClick={() => setCashPage((current) => current + 1)}
+                      disabled={!cashQueueMeta.hasNext || cashQueueQuery.isFetching}
+                    >
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="grid gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full gap-2"
+                    disabled={collectQueueMutation.isPending || selectedExpectedRows.length === 0}
+                    onClick={() => collectQueueMutation.mutate()}
+                  >
+                    <Wallet className="h-4 w-4" />
+                    {text.cashQueueCollectSelected}
+                  </Button>
+
+                  <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                    <Select value={cashHandoffDriverId} onValueChange={setCashHandoffDriverId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder={text.cashQueuePickDriver} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {manifestDrivers.map((driver) => (
+                          <SelectItem key={driver.id} value={driver.id}>
+                            {driver.name} - {driver.email}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      type="button"
+                      className="w-full gap-2 sm:w-auto"
+                      disabled={handoffQueueMutation.isPending || selectedHeldRows.length === 0}
+                      onClick={() => handoffQueueMutation.mutate()}
+                    >
+                      {text.cashQueueHandoffSelected}
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-3">
             <Card className="rounded-3xl border-border/70">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">{text.manifestTitle}</CardTitle>

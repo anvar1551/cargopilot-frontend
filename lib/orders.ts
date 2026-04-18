@@ -31,6 +31,75 @@ export type DriverWorkload = {
   byStatus: Record<string, number>;
 };
 
+export type CashQueueStatus = "expected" | "held" | "settled";
+export type CashQueueKind = "cod" | "service_charge";
+export type CashHolderType =
+  | "none"
+  | "driver"
+  | "warehouse"
+  | "pickup_point"
+  | "finance";
+
+export type CashQueueItem = {
+  id: string;
+  orderId: string;
+  orderNumber: string | number | null;
+  orderStatus: string | null;
+  orderPickupAddress: string | null;
+  orderDropoffAddress: string | null;
+  kind: CashQueueKind;
+  status: CashQueueStatus;
+  expectedAmount: number;
+  collectedAmount: number | null;
+  amount: number;
+  currency: string | null;
+  currentHolderType: CashHolderType | null;
+  currentHolderLabel: string | null;
+  currentHolderUser: {
+    id: string;
+    name: string | null;
+    email: string | null;
+    role: string;
+  } | null;
+  currentHolderWarehouse: {
+    id: string;
+    name: string;
+    type: string;
+    location: string | null;
+    region: string | null;
+  } | null;
+  updatedAt: string;
+  ageHours: number;
+  canCollect: boolean;
+  canHandoff: boolean;
+  canSettle: boolean;
+};
+
+export type CashQueueMeta = {
+  page: number;
+  pageSize: number;
+  total: number;
+  pageCount: number;
+  hasPrev: boolean;
+  hasNext: boolean;
+};
+
+export type CashQueueResponse = {
+  items: CashQueueItem[];
+  meta: CashQueueMeta;
+};
+
+export type CashQueueSummary = {
+  expectedCount: number;
+  expectedAmount: number;
+  heldCount: number;
+  heldAmount: number;
+  settledCount: number;
+  settledAmount: number;
+  totalCount: number;
+  totalAmount: number;
+};
+
 export type Order = {
   id: string;
   orderNumber?: string | number | null;
@@ -96,6 +165,37 @@ export type Order = {
     status?: string | null;
     timestamp?: string | null;
     note?: string | null;
+  }> | null;
+  cashCollections?: Array<{
+    id?: string | null;
+    kind?: string | null;
+    status?: string | null;
+    expectedAmount?: number | null;
+    collectedAmount?: number | null;
+    currency?: string | null;
+    currentHolderType?: string | null;
+    currentHolderLabel?: string | null;
+    collectedAt?: string | null;
+    settledAt?: string | null;
+    note?: string | null;
+    currentHolderUser?: {
+      id?: string | null;
+      name?: string | null;
+      email?: string | null;
+    } | null;
+    currentHolderWarehouse?: {
+      id?: string | null;
+      name?: string | null;
+      location?: string | null;
+      region?: string | null;
+    } | null;
+    events?: Array<{
+      id?: string | null;
+      eventType?: string | null;
+      amount?: number | null;
+      note?: string | null;
+      createdAt?: string | null;
+    }> | null;
   }> | null;
   [key: string]: unknown;
 };
@@ -215,6 +315,112 @@ export async function fetchOrderById(id: string) {
   return res.data;
 }
 
+export async function collectOrderCash(payload: {
+  orderId: string;
+  kind: "cod" | "service_charge";
+  amount?: number | null;
+  note?: string | null;
+}) {
+  const res = await api.post(`/api/orders/${payload.orderId}/cash/collect`, {
+    kind: payload.kind,
+    amount: payload.amount ?? null,
+    note: payload.note ?? null,
+  });
+  return res.data as { success: boolean; message: string; order: Order };
+}
+
+export async function collectOrderCashBulk(payload: {
+  items: Array<{
+    orderId: string;
+    kind: "cod" | "service_charge";
+    amount?: number | null;
+    note?: string | null;
+  }>;
+  note?: string | null;
+}) {
+  const res = await api.post(`/api/orders/cash/collect-bulk`, {
+    items: payload.items,
+    note: payload.note ?? null,
+  });
+  return res.data as {
+    success: boolean;
+    count: number;
+    failedCount: number;
+    orders: Order[];
+    failed: Array<{ orderId: string; kind: "cod" | "service_charge"; error: string }>;
+  };
+}
+
+export async function handoffOrderCash(payload: {
+  orderId: string;
+  kind: "cod" | "service_charge";
+  toHolderType: "driver" | "warehouse" | "pickup_point";
+  toDriverId?: string | null;
+  toWarehouseId?: string | null;
+  note?: string | null;
+}) {
+  const res = await api.post(`/api/orders/${payload.orderId}/cash/handoff`, {
+    kind: payload.kind,
+    toHolderType: payload.toHolderType,
+    toDriverId: payload.toDriverId ?? null,
+    toWarehouseId: payload.toWarehouseId ?? null,
+    note: payload.note ?? null,
+  });
+  return res.data as { success: boolean; message: string; order: Order };
+}
+
+export async function settleOrderCash(payload: {
+  orderId: string;
+  kind: "cod" | "service_charge";
+  note?: string | null;
+}) {
+  const res = await api.post(`/api/orders/${payload.orderId}/cash/settle`, {
+    kind: payload.kind,
+    note: payload.note ?? null,
+  });
+  return res.data as { success: boolean; message: string; order: Order };
+}
+
+export async function handoffOrderCashBulk(payload: {
+  items: Array<{ orderId: string; kind: "cod" | "service_charge" }>;
+  toHolderType: "driver" | "warehouse" | "pickup_point";
+  toDriverId?: string | null;
+  toWarehouseId?: string | null;
+  note?: string | null;
+}) {
+  const res = await api.post(`/api/orders/cash/handoff-bulk`, {
+    items: payload.items,
+    toHolderType: payload.toHolderType,
+    toDriverId: payload.toDriverId ?? null,
+    toWarehouseId: payload.toWarehouseId ?? null,
+    note: payload.note ?? null,
+  });
+  return res.data as {
+    success: boolean;
+    count: number;
+    failedCount: number;
+    orders: Order[];
+    failed: Array<{ orderId: string; kind: "cod" | "service_charge"; error: string }>;
+  };
+}
+
+export async function settleOrderCashBulk(payload: {
+  items: Array<{ orderId: string; kind: "cod" | "service_charge" }>;
+  note?: string | null;
+}) {
+  const res = await api.post(`/api/orders/cash/settle-bulk`, {
+    items: payload.items,
+    note: payload.note ?? null,
+  });
+  return res.data as {
+    success: boolean;
+    count: number;
+    failedCount: number;
+    orders: Order[];
+    failed: Array<{ orderId: string; kind: "cod" | "service_charge"; error: string }>;
+  };
+}
+
 export async function assignDriversBulk(payload: {
   orderIds: string[];
   driverId: string;
@@ -271,4 +477,42 @@ export async function updateOrdersStatusBulk(payload: {
 export async function fetchDriverWorkloads(): Promise<DriverWorkload[]> {
   const res = await api.get(`/api/orders/driver-workloads`);
   return Array.isArray(res.data) ? res.data : (res.data?.workloads ?? []);
+}
+
+export async function fetchCashQueue(params?: {
+  page?: number;
+  pageSize?: number;
+  statuses?: CashQueueStatus[];
+  kinds?: CashQueueKind[];
+  from?: string;
+  to?: string;
+}) {
+  const res = await api.get("/api/orders/cash/queue", {
+    params: {
+      page: params?.page,
+      pageSize: params?.pageSize,
+      statuses: params?.statuses?.join(",") || undefined,
+      kinds: params?.kinds?.join(",") || undefined,
+      from: params?.from,
+      to: params?.to,
+    },
+  });
+  return res.data as CashQueueResponse;
+}
+
+export async function fetchCashQueueSummary(params?: {
+  statuses?: CashQueueStatus[];
+  kinds?: CashQueueKind[];
+  from?: string;
+  to?: string;
+}) {
+  const res = await api.get("/api/orders/cash/queue-summary", {
+    params: {
+      statuses: params?.statuses?.join(",") || undefined,
+      kinds: params?.kinds?.join(",") || undefined,
+      from: params?.from,
+      to: params?.to,
+    },
+  });
+  return res.data as CashQueueSummary;
 }

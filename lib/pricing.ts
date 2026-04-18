@@ -36,6 +36,32 @@ export type TariffRate = {
 
 export type TariffPlanStatus = "draft" | "active" | "archived";
 export type TariffPriceType = "bucket" | "linear";
+export type DeliverySlaRule = {
+  id: string;
+  name: string;
+  description?: string | null;
+  serviceType: ServiceType;
+  originRegionId?: string | null;
+  destinationRegionId?: string | null;
+  zone?: number | null;
+  deliveryDays: number;
+  priority: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  originRegion?: PricingRegion | null;
+  destinationRegion?: PricingRegion | null;
+};
+
+export type OperationalSlaPolicy = {
+  id: string;
+  singletonKey: string;
+  staleHours: number;
+  dueSoonHours: number;
+  overdueGraceHours: number;
+  createdAt: string;
+  updatedAt: string;
+};
 
 export type TariffPlanSummary = {
   id: string;
@@ -171,6 +197,64 @@ export async function fetchTariffPlans(params?: {
 
 export async function fetchTariffPlan(id: string): Promise<TariffPlanDetail> {
   const res = await api.get(`/api/pricing/tariff-plans/${id}`);
+  return res.data;
+}
+
+export async function fetchDeliverySlaRules(params?: {
+  q?: string;
+  serviceType?: ServiceType;
+  isActive?: boolean;
+}): Promise<DeliverySlaRule[]> {
+  const res = await api.get("/api/pricing/sla-rules", {
+    params,
+  });
+  return Array.isArray(res.data) ? res.data : [];
+}
+
+export async function fetchOperationalSlaPolicy(): Promise<OperationalSlaPolicy> {
+  const res = await api.get("/api/pricing/sla-policy");
+  return res.data;
+}
+
+export async function updateOperationalSlaPolicy(payload: {
+  staleHours: number;
+  dueSoonHours: number;
+  overdueGraceHours: number;
+}): Promise<OperationalSlaPolicy> {
+  const res = await api.put("/api/pricing/sla-policy", payload);
+  return res.data;
+}
+
+export async function createDeliverySlaRule(payload: {
+  name: string;
+  description?: string | null;
+  serviceType: ServiceType;
+  originRegionId?: string | null;
+  destinationRegionId?: string | null;
+  zone?: number | null;
+  deliveryDays: number;
+  priority?: number;
+  isActive?: boolean;
+}): Promise<DeliverySlaRule> {
+  const res = await api.post("/api/pricing/sla-rules", payload);
+  return res.data;
+}
+
+export async function updateDeliverySlaRule(
+  id: string,
+  payload: {
+    name: string;
+    description?: string | null;
+    serviceType: ServiceType;
+    originRegionId?: string | null;
+    destinationRegionId?: string | null;
+    zone?: number | null;
+    deliveryDays: number;
+    priority?: number;
+    isActive?: boolean;
+  },
+): Promise<DeliverySlaRule> {
+  const res = await api.put(`/api/pricing/sla-rules/${id}`, payload);
   return res.data;
 }
 

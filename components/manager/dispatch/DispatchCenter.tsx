@@ -13,7 +13,12 @@ import { useI18n } from "@/components/i18n/I18nProvider";
 import {
   updateOrdersStatusBulk,
 } from "@/lib/orders";
-import { fetchWarehouses, type Warehouse as WarehouseLite } from "@/lib/warehouses";
+import {
+  fetchWarehouses,
+  normalizeWarehouseType,
+  type Warehouse as WarehouseLite,
+  type WarehouseType,
+} from "@/lib/warehouses";
 import { getUser, type Role } from "@/lib/auth";
 import { getReasonCodeLabel, getStatusLabel } from "@/lib/i18n/labels";
 
@@ -153,6 +158,18 @@ const COMMON_REASON_CODES = [
   "DAMAGED",
 ];
 
+const LOCATION_STATUS_OPTIONS: Record<WarehouseType, OrderStatus[]> = {
+  warehouse: ["at_warehouse", "in_transit", "out_for_delivery", "exception"],
+  pickup_point: [
+    "at_warehouse",
+    "in_transit",
+    "out_for_delivery",
+    "delivered",
+    "exception",
+    "return_in_progress",
+  ],
+};
+
 function orderLabel(order: OrderItem) {
   return order.orderNumber ? `#${order.orderNumber}` : "Unnumbered order";
 }
@@ -232,13 +249,37 @@ export default function DispatchCenter({
   const needsWarehouseSelection =
     role === "manager" &&
     (statusTarget === "at_warehouse" ||
-      statusTarget === "in_transit");
+      statusTarget === "in_transit" ||
+      statusTarget === "out_for_delivery");
 
   const warehousesQuery = useQuery<WarehouseLite[]>({
     queryKey: ["warehouses", "status-bulk"],
     queryFn: fetchWarehouses,
-    enabled: canOperateTasks && operationMode === "status" && needsWarehouseSelection,
+    enabled:
+      canOperateTasks &&
+      operationMode === "status" &&
+      (needsWarehouseSelection || role === "warehouse"),
   });
+
+  const attachedWarehouseType = useMemo<WarehouseType>(() => {
+    if (role !== "warehouse") return "warehouse";
+    const attached = (warehousesQuery.data ?? []).find(
+      (item) => item.id === attachedWarehouseId,
+    );
+    return normalizeWarehouseType(attached?.type);
+  }, [attachedWarehouseId, role, warehousesQuery.data]);
+
+  const warehouseStatusOptions = useMemo<OrderStatus[]>(() => {
+    if (role === "manager") return ORDER_STATUSES;
+    return LOCATION_STATUS_OPTIONS[attachedWarehouseType];
+  }, [attachedWarehouseType, role]);
+
+  React.useEffect(() => {
+    if (!statusTarget) return;
+    if (!warehouseStatusOptions.includes(statusTarget)) {
+      setStatusTarget("");
+    }
+  }, [statusTarget, warehouseStatusOptions]);
 
   const statusMutation = useMutation({
     mutationFn: async () => {
@@ -726,17 +767,11 @@ export default function DispatchCenter({
                   <SelectValue placeholder={t("dispatch.selectStatus")} />
                 </SelectTrigger>
                 <SelectContent>
-                  {role === "manager"
-                    ? ORDER_STATUSES.map((status) => (
-                        <SelectItem key={status} value={status}>
-                          {getStatusLabel(status, t)}
-                        </SelectItem>
-                      ))
-                    : ["at_warehouse", "in_transit"].map((status) => (
-                        <SelectItem key={status} value={status}>
-                          {getStatusLabel(status, t)}
-                        </SelectItem>
-                      ))}
+                  {warehouseStatusOptions.map((status) => (
+                    <SelectItem key={status} value={status}>
+                      {getStatusLabel(status, t)}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -787,6 +822,13 @@ export default function DispatchCenter({
               <div className="rounded-xl border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
                 {t("dispatch.warehouseFromProfile")}
                 <span className="ml-1 font-mono">{attachedWarehouseId ?? "not set"}</span>
+                <span className="ml-2">
+                  (
+                  {attachedWarehouseType === "pickup_point"
+                    ? t("managerAnalytics.finance.holderTypes.pickup_point")
+                    : t("managerAnalytics.finance.holderTypes.warehouse")}
+                  )
+                </span>
               </div>
             ) : null}
 

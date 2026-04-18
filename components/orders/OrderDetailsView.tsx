@@ -6,9 +6,19 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { useI18n } from "@/components/i18n/I18nProvider";
-import { fetchOrderById } from "@/lib/orders";
+import { getUser } from "@/lib/auth";
+import {
+  collectOrderCash,
+  fetchOrderById,
+  handoffOrderCash,
+  settleOrderCash,
+} from "@/lib/orders";
 import { getInvoiceUrl, getOrderLabelUrls } from "@/lib/documents";
 import {
+  getPaidByLabel,
+  getPaidStatusLabel,
+  getPaymentTypeLabel,
+  getRecipientUnavailableLabel,
   getReasonCodeLabel,
   getRoleLabel,
   getServiceTypeLabel,
@@ -90,6 +100,36 @@ type Parcel = {
   parcelCode?: string | null;
   labelKey?: string | null;
   createdAt?: string | null;
+};
+
+type CashCollectionEvent = {
+  id: string;
+  eventType?: string | null;
+  amount?: number | null;
+  note?: string | null;
+  fromHolderType?: string | null;
+  fromHolderName?: string | null;
+  toHolderType?: string | null;
+  toHolderName?: string | null;
+  createdAt?: string | null;
+  actor?: LiteUser | null;
+};
+
+type CashCollection = {
+  id: string;
+  kind?: string | null;
+  status?: string | null;
+  expectedAmount?: number | null;
+  collectedAmount?: number | null;
+  currency?: string | null;
+  currentHolderType?: string | null;
+  currentHolderLabel?: string | null;
+  currentHolderUser?: LiteUser | null;
+  currentHolderWarehouse?: LiteWarehouse | null;
+  collectedAt?: string | null;
+  settledAt?: string | null;
+  note?: string | null;
+  events?: CashCollectionEvent[] | null;
 };
 
 type TrackingEvent = {
@@ -187,6 +227,7 @@ type OrderDetails = {
     size?: number | null;
     createdAt?: string | null;
   }>;
+  cashCollections?: CashCollection[];
 
   invoice?: {
     id?: string;
@@ -255,6 +296,38 @@ function displayEnum(value: string | null | undefined, t: Translate) {
     return getRoleLabel(value, t);
   }
   return prettyEnum(value);
+}
+
+function displayPaidStatus(value: string | null | undefined, t: Translate) {
+  if (!value) return "-";
+  return getPaidStatusLabel(value, t);
+}
+
+function displayCashKind(value: string | null | undefined, t: Translate) {
+  if (!value) return "-";
+  return t(`orderDetails.cash.kind.${value}`);
+}
+
+function displayCashStatus(value: string | null | undefined, t: Translate) {
+  if (!value) return "-";
+  return t(`orderDetails.cash.status.${value}`);
+}
+
+function displayCashHolder(
+  collection: CashCollection,
+  t: Translate,
+) {
+  if (collection.currentHolderUser?.name) return collection.currentHolderUser.name;
+  if (collection.currentHolderWarehouse?.name) return collection.currentHolderWarehouse.name;
+  if (collection.currentHolderLabel) return collection.currentHolderLabel;
+  if (!collection.currentHolderType || collection.currentHolderType === "none") {
+    return t("orderDetails.cash.notCollected");
+  }
+  return t(`orderDetails.cash.holder.${collection.currentHolderType}`);
+}
+
+function cashActionId(collection: CashCollection, action: string) {
+  return `${collection.id}:${action}`;
 }
 
 function formatDateTime(value?: string | null) {
@@ -398,22 +471,25 @@ function getTrackingHeadline(
 
   if (assignedMatch) {
     return {
-      title: `Driver ${getReadableDriverLabel(order) ?? "-"} assigned (${prettyEnum(
-        assignedMatch[1],
-      )})`,
+      title: t("orderDetails.timeline.driverAssigned", {
+        driver: getReadableDriverLabel(order) ?? "-",
+        cycle: prettyEnum(assignedMatch[1]),
+      }),
       hideNote: true,
     };
   }
 
   if (evt.status) {
     return {
-      title: `Status changed to ${displayEnum(evt.status, t)}`,
+      title: t("orderDetails.timeline.statusChanged", {
+        status: displayEnum(evt.status, t),
+      }),
       hideNote: false,
     };
   }
 
   return {
-    title: "Tracking updated",
+    title: t("orderDetails.timeline.updated"),
     hideNote: false,
   };
 }
@@ -551,6 +627,7 @@ export default function OrderDetailsView({
 }) {
   const { t } = useI18n();
   const queryClient = useQueryClient();
+  const currentUser = getUser();
 
   const {
     data: order,
@@ -569,6 +646,7 @@ export default function OrderDetailsView({
     null,
   );
   const [assignOpen, setAssignOpen] = React.useState(false);
+  const [cashActionKey, setCashActionKey] = React.useState<string | null>(null);
 
   const [eventKind, setEventKind] = React.useState<"all" | "status">("all");
   const [parcelFilter, setParcelFilter] = React.useState("all");
@@ -585,6 +663,7 @@ export default function OrderDetailsView({
   const trackingEvents = normalizeTracking(
     order?.trackingEvents ?? order?.tracking ?? [],
   );
+  const cashCollections = order?.cashCollections ?? [];
   const progress = buildProgress(order?.status, trackingEvents);
 
   const totalParcelWeight = parcels.reduce((acc, p) => {
@@ -644,6 +723,33 @@ export default function OrderDetailsView({
       return sortDirection === "desc" ? tb - ta : ta - tb;
     });
   }, [eventKind, parcelFilter, sortDirection, trackingEvents, trackingQuery]);
+
+  const refreshOrderQueries = React.useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["order", orderId] });
+    queryClient.invalidateQueries({ queryKey: ["orders"] });
+    queryClient.invalidateQueries({ queryKey: ["manager-analytics-summary"] });
+  }, [orderId, queryClient]);
+
+  const runCashAction = React.useCallback(
+    async (
+      key: string,
+      action: () => Promise<{ success: boolean; message: string }>,
+      fallbackSuccess: string,
+      fallbackError: string,
+    ) => {
+      try {
+        setCashActionKey(key);
+        const result = await action();
+        toast.success(result.message || fallbackSuccess);
+        refreshOrderQueries();
+      } catch (err: unknown) {
+        toast.error(extractErrorMessage(err, fallbackError));
+      } finally {
+        setCashActionKey(null);
+      }
+    },
+    [refreshOrderQueries],
+  );
 
   const openLabel = async () => {
     if (!order?.id) return;
@@ -730,12 +836,12 @@ export default function OrderDetailsView({
   if (isLoading) {
     return (
       <div className="p-6">
-        <Card className="max-w-3xl">
+          <Card className="max-w-3xl">
           <CardHeader>
-            <CardTitle>Loading order...</CardTitle>
+            <CardTitle>{t("orderDetails.loadingTitle")}</CardTitle>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground">
-            Please wait while we fetch the latest details.
+            {t("orderDetails.loadingSubtitle")}
           </CardContent>
         </Card>
       </div>
@@ -747,10 +853,10 @@ export default function OrderDetailsView({
       <div className="p-6">
         <Card className="max-w-3xl">
           <CardHeader>
-            <CardTitle>Order not available</CardTitle>
+            <CardTitle>{t("orderDetails.missingTitle")}</CardTitle>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground">
-            We could not load this order. Please try again.
+            {t("orderDetails.missingSubtitle")}
           </CardContent>
         </Card>
       </div>
@@ -792,20 +898,19 @@ export default function OrderDetailsView({
                   disabled={toLower(order.status) === "delivered"}
                   title={
                     toLower(order.status) === "delivered"
-                      ? "Delivered orders cannot be reassigned"
-                      : "Assign driver"
+                      ? t("orderDetails.assignDriverDisabled")
+                      : t("orderDetails.assignDriver")
                   }
                 >
                   <UserPlus className="h-4 w-4" />
-                  Assign driver
+                  {t("orderDetails.assignDriver")}
                 </Button>
                 <AssignDriverDialog
                   open={assignOpen}
                   onOpenChange={setAssignOpen}
                   singleOrderId={order.id}
                   onAssigned={() => {
-                    queryClient.invalidateQueries({ queryKey: ["order", orderId] });
-                    queryClient.invalidateQueries({ queryKey: ["orders"] });
+                    refreshOrderQueries();
                   }}
                 />
               </>
@@ -814,7 +919,7 @@ export default function OrderDetailsView({
             <Button asChild variant="outline">
               <Link href={backHref}>
                 <ArrowLeft className="mr-2 h-4 w-4" />
-                Back
+                {t("common.back")}
               </Link>
             </Button>
           </div>
@@ -824,13 +929,13 @@ export default function OrderDetailsView({
           <CardContent className="p-6">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">Current Stage</p>
+                <p className="text-sm text-muted-foreground">{t("orderDetails.currentStage")}</p>
                 <p className="text-lg font-semibold">
                   {displayEnum(order.status ?? progress.inferredStatus, t)}
                 </p>
               </div>
               <div className="space-y-1 text-right">
-                <p className="text-sm text-muted-foreground">Last Updated</p>
+                <p className="text-sm text-muted-foreground">{t("orderDetails.lastUpdated")}</p>
                 <p className="text-sm font-medium">{formatDateTime(order.updatedAt)}</p>
               </div>
             </div>
@@ -847,29 +952,29 @@ export default function OrderDetailsView({
               </div>
               <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
                 <span>{displayEnum(progress.inferredStatus, t)}</span>
-                <span>{progress.percent}% of main flow completed</span>
+                <span>{t("orderDetails.progressCompleted", { percent: progress.percent })}</span>
               </div>
             </div>
 
             <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-xl border border-border/60 bg-background/70 p-3">
-                <p className="text-xs text-muted-foreground">Driver</p>
+                <p className="text-xs text-muted-foreground">{t("orderDetails.driver")}</p>
                 <p className="font-medium">
                   {order.assignedDriver?.name || order.assignedDriver?.email || "-"}
                 </p>
               </div>
               <div className="rounded-xl border border-border/60 bg-background/70 p-3">
-                <p className="text-xs text-muted-foreground">Warehouse</p>
+                <p className="text-xs text-muted-foreground">{t("orderDetails.warehouse")}</p>
                 <p className="font-medium">
                   {order.currentWarehouse?.name || order.currentWarehouse?.location || "-"}
                 </p>
               </div>
               <div className="rounded-xl border border-border/60 bg-background/70 p-3">
-                <p className="text-xs text-muted-foreground">Parcels</p>
+                <p className="text-xs text-muted-foreground">{t("orderDetails.parcels")}</p>
                 <p className="font-medium">{parcels.length || 0}</p>
               </div>
               <div className="rounded-xl border border-border/60 bg-background/70 p-3">
-                <p className="text-xs text-muted-foreground">Attempts</p>
+                <p className="text-xs text-muted-foreground">{t("orderDetails.attempts")}</p>
                 <p className="font-medium">
                   P{safeNumber(order.pickupAttemptCount) ?? 0} / D
                   {safeNumber(order.deliveryAttemptCount) ?? 0}
@@ -882,29 +987,29 @@ export default function OrderDetailsView({
         <div className="grid gap-4 lg:grid-cols-3">
           <Card className="lg:col-span-2">
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">Route and Contacts</CardTitle>
+              <CardTitle className="text-base">{t("orderDetails.routeAndContacts")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 text-sm">
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                  <p className="text-xs text-muted-foreground">Pickup</p>
+                  <p className="text-xs text-muted-foreground">{t("orderDetails.pickup")}</p>
                   <p className="mt-1 font-medium">{order.pickupAddress || "-"}</p>
                 </div>
                 <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                  <p className="text-xs text-muted-foreground">Dropoff</p>
+                  <p className="text-xs text-muted-foreground">{t("orderDetails.dropoff")}</p>
                   <p className="mt-1 font-medium">{order.dropoffAddress || "-"}</p>
                 </div>
               </div>
 
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                  <p className="text-xs text-muted-foreground">Sender</p>
+                  <p className="text-xs text-muted-foreground">{t("orderDetails.sender")}</p>
                   <p className="mt-1 font-medium">{order.senderName || "-"}</p>
                   <div className="space-y-1 pt-1">
                     {senderPhones.length ? (
                       senderPhones.map((phone, index) => (
                         <p key={`${phone}-${index}`} className="text-muted-foreground">
-                          {index === 0 ? phone : `Alt ${index}: ${phone}`}
+                          {index === 0 ? phone : t("orderDetails.altPhone", { index, phone })}
                         </p>
                       ))
                     ) : (
@@ -916,13 +1021,13 @@ export default function OrderDetailsView({
                   </p>
                 </div>
                 <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                  <p className="text-xs text-muted-foreground">Receiver</p>
+                  <p className="text-xs text-muted-foreground">{t("orderDetails.receiver")}</p>
                   <p className="mt-1 font-medium">{order.receiverName || "-"}</p>
                   <div className="space-y-1 pt-1">
                     {receiverPhones.length ? (
                       receiverPhones.map((phone, index) => (
                         <p key={`${phone}-${index}`} className="text-muted-foreground">
-                          {index === 0 ? phone : `Alt ${index}: ${phone}`}
+                          {index === 0 ? phone : t("orderDetails.altPhone", { index, phone })}
                         </p>
                       ))
                     ) : (
@@ -936,7 +1041,7 @@ export default function OrderDetailsView({
               </div>
 
               <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                <p className="text-xs text-muted-foreground">Destination City</p>
+                <p className="text-xs text-muted-foreground">{t("orderDetails.destinationCity")}</p>
                 <p className="mt-1 font-medium">{order.destinationCity || "-"}</p>
               </div>
             </CardContent>
@@ -944,11 +1049,11 @@ export default function OrderDetailsView({
 
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">Customer and Operations</CardTitle>
+              <CardTitle className="text-base">{t("orderDetails.customerAndOperations")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
               <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                <p className="text-xs text-muted-foreground">Customer User</p>
+                <p className="text-xs text-muted-foreground">{t("orderDetails.customerUser")}</p>
                 <p className="mt-1 font-medium">
                   {order.customer?.name || order.customer?.email || "-"}
                 </p>
@@ -958,7 +1063,7 @@ export default function OrderDetailsView({
               </div>
 
               <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                <p className="text-xs text-muted-foreground">Customer Entity</p>
+                <p className="text-xs text-muted-foreground">{t("orderDetails.customerEntity")}</p>
                 <p className="mt-1 font-medium">
                   {order.customerEntity?.name || order.customerEntity?.companyName || "-"}
                 </p>
@@ -968,14 +1073,14 @@ export default function OrderDetailsView({
               </div>
 
               <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                <p className="text-xs text-muted-foreground">Driver</p>
+                <p className="text-xs text-muted-foreground">{t("orderDetails.driver")}</p>
                 <p className="mt-1 font-medium">
                   {order.assignedDriver?.name || order.assignedDriver?.email || "-"}
                 </p>
               </div>
 
               <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                <p className="text-xs text-muted-foreground">Current Warehouse</p>
+                <p className="text-xs text-muted-foreground">{t("orderDetails.currentWarehouse")}</p>
                 <p className="mt-1 font-medium">
                   {order.currentWarehouse?.name || order.currentWarehouse?.location || "-"}
                 </p>
@@ -985,11 +1090,11 @@ export default function OrderDetailsView({
               </div>
 
               <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                <p className="text-xs text-muted-foreground">Exception Snapshot</p>
+                <p className="text-xs text-muted-foreground">{t("orderDetails.exceptionSnapshot")}</p>
                 <p className="mt-1 font-medium">
                   {order.lastExceptionReason
                     ? displayEnum(order.lastExceptionReason, t)
-                    : "None"}
+                    : t("orderDetails.none")}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {order.lastExceptionAt ? formatDateTime(order.lastExceptionAt) : "-"}
@@ -1002,38 +1107,38 @@ export default function OrderDetailsView({
         <div className="grid gap-4 lg:grid-cols-3">
           <Card className="lg:col-span-2">
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">Shipment and Parcels</CardTitle>
+              <CardTitle className="text-base">{t("orderDetails.shipmentAndParcels")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <div className="rounded-xl border border-border/60 bg-background/60 p-3 text-sm">
-                  <p className="text-xs text-muted-foreground">Service Type</p>
+                  <p className="text-xs text-muted-foreground">{t("orderDetails.serviceType")}</p>
                   <p className="mt-1 font-medium">{getServiceTypeLabel(order.serviceType, t)}</p>
                 </div>
                 <div className="rounded-xl border border-border/60 bg-background/60 p-3 text-sm">
-                  <p className="text-xs text-muted-foreground">Total Weight</p>
+                  <p className="text-xs text-muted-foreground">{t("orderDetails.totalWeight")}</p>
                   <p className="mt-1 font-medium">
                     {(totalParcelWeight || safeNumber(order.weightKg) || 0).toFixed(2)} kg
                   </p>
                 </div>
                 <div className="rounded-xl border border-border/60 bg-background/60 p-3 text-sm">
-                  <p className="text-xs text-muted-foreground">Item Value</p>
+                  <p className="text-xs text-muted-foreground">{t("orderDetails.itemValue")}</p>
                   <p className="mt-1 font-medium">
                     {formatMoney(order.itemValue, order.currency)}
                   </p>
                 </div>
                 <div className="rounded-xl border border-border/60 bg-background/60 p-3 text-sm">
-                  <p className="text-xs text-muted-foreground">Handling</p>
+                  <p className="text-xs text-muted-foreground">{t("orderDetails.handling")}</p>
                   <div className="mt-1 flex flex-wrap gap-1.5">
-                    {order.fragile ? <Badge variant="secondary">Fragile</Badge> : null}
+                    {order.fragile ? <Badge variant="secondary">{t("orderDetails.fragile")}</Badge> : null}
                     {order.dangerousGoods ? (
-                      <Badge variant="secondary">Dangerous</Badge>
+                      <Badge variant="secondary">{t("orderDetails.dangerous")}</Badge>
                     ) : null}
                     {order.shipmentInsurance ? (
-                      <Badge variant="secondary">Insurance</Badge>
+                      <Badge variant="secondary">{t("orderDetails.insurance")}</Badge>
                     ) : null}
                     {!order.fragile && !order.dangerousGoods && !order.shipmentInsurance ? (
-                      <span className="text-sm text-muted-foreground">Standard</span>
+                      <span className="text-sm text-muted-foreground">{t("orderDetails.standard")}</span>
                     ) : null}
                   </div>
                 </div>
@@ -1051,7 +1156,7 @@ export default function OrderDetailsView({
                       <div className="flex items-start justify-between gap-2">
                         <div>
                           <p className="text-sm font-medium">
-                            Piece {p.pieceNo ?? "-"}
+                            {t("orderDetails.piece", { pieceNo: p.pieceNo ?? "-" })}
                             {p.pieceTotal ? ` / ${p.pieceTotal}` : ""}
                           </p>
                           <p className="text-xs text-muted-foreground">
@@ -1073,10 +1178,11 @@ export default function OrderDetailsView({
                       <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
                         <div>
                           <p className="text-xs text-muted-foreground">Weight</p>
+                          <p className="text-xs text-muted-foreground">{t("orderDetails.weight")}</p>
                           <p>{safeNumber(p.weightKg)?.toFixed(2) ?? "-"} kg</p>
                         </div>
                         <div>
-                          <p className="text-xs text-muted-foreground">Dimensions</p>
+                          <p className="text-xs text-muted-foreground">{t("orderDetails.dimensions")}</p>
                           <p>
                             {safeNumber(p.lengthCm) ?? "-"} x {safeNumber(p.widthCm) ?? "-"} x{" "}
                             {safeNumber(p.heightCm) ?? "-"} cm
@@ -1087,20 +1193,20 @@ export default function OrderDetailsView({
                   ))}
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground">No parcels found.</p>
+                <p className="text-sm text-muted-foreground">{t("orderDetails.noParcels")}</p>
               )}
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">Payment and Planning</CardTitle>
+              <CardTitle className="text-base">{t("orderDetails.paymentAndPlanning")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
               <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                <p className="text-xs text-muted-foreground">Invoice Status</p>
+                <p className="text-xs text-muted-foreground">{t("orderDetails.invoiceStatus")}</p>
                 <p className="mt-1 font-medium">
-                  {displayEnum(invoice?.status, t) || "Not created"}
+                  {displayEnum(invoice?.status, t) || t("orderDetails.notCreated")}
                 </p>
                 {paymentUrl && invoiceStatus !== "paid" ? (
                   <a
@@ -1109,39 +1215,191 @@ export default function OrderDetailsView({
                     target="_blank"
                     rel="noreferrer"
                   >
-                    Pay now <ExternalLink className="h-4 w-4 opacity-70" />
+                    {t("orderDetails.payNow")} <ExternalLink className="h-4 w-4 opacity-70" />
                   </a>
                 ) : null}
               </div>
 
               <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                <p className="text-xs text-muted-foreground">Billing</p>
-                <p className="mt-1">Payment type: {prettyEnum(order.paymentType)}</p>
-                <p>Delivery paid by: {prettyEnum(order.deliveryChargePaidBy)}</p>
-                <p>Recipient unavailable: {prettyEnum(order.ifRecipientNotAvailable)}</p>
+                <p className="text-xs text-muted-foreground">{t("orderDetails.billing")}</p>
+                <p className="mt-1">{t("orderDetails.paymentType")}: {getPaymentTypeLabel(order.paymentType, t)}</p>
+                <p>{t("orderDetails.deliveryPaidBy")}: {getPaidByLabel(order.deliveryChargePaidBy, t)}</p>
+                <p>{t("orderDetails.recipientUnavailable")}: {getRecipientUnavailableLabel(order.ifRecipientNotAvailable, t)}</p>
               </div>
 
               <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                <p className="text-xs text-muted-foreground">Amounts</p>
-                <p className="mt-1">COD: {formatMoney(order.codAmount, order.currency)}</p>
-                <p>COD status: {displayEnum(order.codPaidStatus, t)}</p>
-                <p>Service charge: {formatMoney(order.serviceCharge, order.currency)}</p>
-                <p>Service status: {displayEnum(order.serviceChargePaidStatus, t)}</p>
+                <p className="text-xs text-muted-foreground">{t("orderDetails.amounts")}</p>
+                <p className="mt-1">{t("orderDetails.cod")}: {formatMoney(order.codAmount, order.currency)}</p>
+                <p>{t("orderDetails.codStatus")}: {displayPaidStatus(order.codPaidStatus, t)}</p>
+                <p>{t("orderDetails.serviceCharge")}: {formatMoney(order.serviceCharge, order.currency)}</p>
+                <p>{t("orderDetails.serviceStatus")}: {displayPaidStatus(order.serviceChargePaidStatus, t)}</p>
               </div>
 
               <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                <p className="text-xs text-muted-foreground">Schedule</p>
-                <p className="mt-1">Pickup: {formatDateTime(order.plannedPickupAt)}</p>
-                <p>Delivery: {formatDateTime(order.plannedDeliveryAt)}</p>
-                <p>Promise: {formatDateTime(order.promiseDate)}</p>
+                <p className="text-xs text-muted-foreground">{t("orderDetails.cash.title")}</p>
+                {cashCollections.length ? (
+                  <div className="mt-3 space-y-3">
+                    {cashCollections.map((collection) => {
+                      const latestEvent = collection.events?.[collection.events.length - 1] ?? null;
+                      const isWarehouseUser =
+                        currentUser?.role === "warehouse" &&
+                        Boolean(currentUser.warehouseId) &&
+                        order?.currentWarehouse?.id === currentUser.warehouseId;
+                      const canAcceptToWarehouse =
+                        isWarehouseUser &&
+                        (collection.status === "expected" ||
+                          collection.currentHolderType === "driver");
+                      const canSettleToFinance =
+                        currentUser?.role === "manager" &&
+                        collection.status === "held";
+                      return (
+                        <div
+                          key={collection.id}
+                          className="rounded-xl border border-border/60 bg-background/70 p-3"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="font-medium">
+                                {displayCashKind(collection.kind, t)}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {displayCashStatus(collection.status, t)}
+                              </p>
+                            </div>
+                            <Badge variant="outline" className="rounded-full">
+                              {displayCashHolder(collection, t)}
+                            </Badge>
+                          </div>
+
+                          <div className="mt-3 space-y-1 text-sm">
+                            <p>
+                              {t("orderDetails.cash.expected")}:{" "}
+                              {formatMoney(collection.expectedAmount, collection.currency ?? order.currency)}
+                            </p>
+                            <p>
+                              {t("orderDetails.cash.currentAmount")}:{" "}
+                              {formatMoney(
+                                collection.collectedAmount ?? collection.expectedAmount,
+                                collection.currency ?? order.currency,
+                              )}
+                            </p>
+                            <p>
+                              {t("orderDetails.cash.collectedAt")}:{" "}
+                              {formatDateTime(collection.collectedAt)}
+                            </p>
+                            <p>
+                              {t("orderDetails.cash.settledAt")}:{" "}
+                              {formatDateTime(collection.settledAt)}
+                            </p>
+                          </div>
+
+                          {latestEvent ? (
+                            <div className="mt-3 rounded-lg border border-dashed border-border/60 px-3 py-2 text-xs text-muted-foreground">
+                              <span className="font-medium text-foreground">
+                                {t("orderDetails.cash.latestEvent")}:
+                              </span>{" "}
+                              {prettyEnum(latestEvent.eventType)} · {formatDateTime(latestEvent.createdAt)}
+                              {latestEvent.note ? ` · ${latestEvent.note}` : ""}
+                            </div>
+                          ) : null}
+
+                          {canAcceptToWarehouse || canSettleToFinance ? (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {canAcceptToWarehouse ? (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={cashActionKey === cashActionId(collection, "accept")}
+                                  onClick={() => {
+                                    const actionKey = cashActionId(collection, "accept");
+                                    if (collection.currentHolderType === "driver") {
+                                      void runCashAction(
+                                        actionKey,
+                                        () =>
+                                          handoffOrderCash({
+                                            orderId,
+                                            kind: (collection.kind as "cod" | "service_charge") ?? "cod",
+                                            toHolderType: "warehouse",
+                                            toWarehouseId: currentUser?.warehouseId ?? null,
+                                          }),
+                                        t("orderDetails.cash.actions.accept"),
+                                        t("orderDetails.cash.errors.accept"),
+                                      );
+                                      return;
+                                    }
+
+                                    void runCashAction(
+                                      actionKey,
+                                      () =>
+                                        collectOrderCash({
+                                          orderId,
+                                          kind: (collection.kind as "cod" | "service_charge") ?? "cod",
+                                        }),
+                                      t("orderDetails.cash.actions.accept"),
+                                      t("orderDetails.cash.errors.accept"),
+                                    );
+                                  }}
+                                >
+                                  {cashActionKey === cashActionId(collection, "accept") ? (
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                  ) : null}
+                                  {collection.currentHolderType === "driver"
+                                    ? t("orderDetails.cash.actions.acceptFromDriver")
+                                    : t("orderDetails.cash.actions.accept")}
+                                </Button>
+                              ) : null}
+
+                              {canSettleToFinance ? (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  disabled={cashActionKey === cashActionId(collection, "settle")}
+                                  onClick={() =>
+                                    void runCashAction(
+                                      cashActionId(collection, "settle"),
+                                      () =>
+                                        settleOrderCash({
+                                          orderId,
+                                          kind: (collection.kind as "cod" | "service_charge") ?? "cod",
+                                        }),
+                                      t("orderDetails.cash.actions.settle"),
+                                      t("orderDetails.cash.errors.settle"),
+                                    )
+                                  }
+                                >
+                                  {cashActionKey === cashActionId(collection, "settle") ? (
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                  ) : null}
+                                  {t("orderDetails.cash.actions.settle")}
+                                </Button>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {t("orderDetails.cash.empty")}
+                  </p>
+                )}
               </div>
 
               <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                <p className="text-xs text-muted-foreground">Reference</p>
-                <p className="mt-1">Reference ID: {order.referenceId || "-"}</p>
-                <p>Shelf ID: {order.shelfId || "-"}</p>
-                <p>Promo: {order.promoCode || "-"}</p>
-                <p>Calls: {safeNumber(order.numberOfCalls) ?? "-"}</p>
+                <p className="text-xs text-muted-foreground">{t("orderDetails.schedule")}</p>
+                <p className="mt-1">{t("orderDetails.pickup")}: {formatDateTime(order.plannedPickupAt)}</p>
+                <p>{t("orderDetails.delivery")}: {formatDateTime(order.plannedDeliveryAt)}</p>
+                <p>{t("orderDetails.promise")}: {formatDateTime(order.promiseDate)}</p>
+              </div>
+
+              <div className="rounded-xl border border-border/60 bg-background/60 p-4">
+                <p className="text-xs text-muted-foreground">{t("orderDetails.reference")}</p>
+                <p className="mt-1">{t("orderDetails.referenceId")}: {order.referenceId || "-"}</p>
+                <p>{t("orderDetails.shelfId")}: {order.shelfId || "-"}</p>
+                <p>{t("orderDetails.promo")}: {order.promoCode || "-"}</p>
+                <p>{t("orderDetails.calls")}: {safeNumber(order.numberOfCalls) ?? "-"}</p>
               </div>
             </CardContent>
           </Card>
@@ -1150,7 +1408,7 @@ export default function OrderDetailsView({
         <Card>
           <CardHeader className="pb-3">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <CardTitle className="text-base">Tracking Timeline</CardTitle>
+              <CardTitle className="text-base">{t("orderDetails.trackingTimeline")}</CardTitle>
               <div className="flex flex-wrap items-center gap-2">
                 <div className="w-44">
                   <Select

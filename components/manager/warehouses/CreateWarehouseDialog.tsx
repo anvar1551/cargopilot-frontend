@@ -4,10 +4,11 @@ import * as React from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-import { createWarehouse } from "@/lib/warehouses";
+import { createWarehouse, updateWarehouse } from "@/lib/warehouses";
 import {
   DEFAULT_WAREHOUSE_TYPE,
   WAREHOUSE_TYPES,
+  type Warehouse,
   type WarehouseType,
 } from "@/lib/warehouses";
 
@@ -32,6 +33,7 @@ import {
 type Props = {
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  warehouse?: Warehouse | null;
 };
 
 function getErrorMessage(error: unknown) {
@@ -45,13 +47,18 @@ function getErrorMessage(error: unknown) {
   return candidate.response?.data?.error ?? candidate.message ?? "Failed";
 }
 
-export default function CreateWarehouseDialog({ open, onOpenChange }: Props) {
+export default function CreateWarehouseDialog({
+  open,
+  onOpenChange,
+  warehouse,
+}: Props) {
   const qc = useQueryClient();
 
   const [name, setName] = React.useState("");
   const [type, setType] = React.useState<WarehouseType>(DEFAULT_WAREHOUSE_TYPE);
   const [location, setLocation] = React.useState("");
   const [region, setRegion] = React.useState("");
+  const isEdit = Boolean(warehouse?.id);
 
   React.useEffect(() => {
     if (!open) {
@@ -59,23 +66,39 @@ export default function CreateWarehouseDialog({ open, onOpenChange }: Props) {
       setType(DEFAULT_WAREHOUSE_TYPE);
       setLocation("");
       setRegion("");
+      return;
     }
-  }, [open]);
+
+    if (warehouse) {
+      setName(warehouse.name ?? "");
+      setType(
+        (warehouse.type as WarehouseType | null) ?? DEFAULT_WAREHOUSE_TYPE,
+      );
+      setLocation(warehouse.location ?? "");
+      setRegion(warehouse.region ?? "");
+    }
+  }, [open, warehouse]);
 
   const mutation = useMutation({
     mutationFn: async () => {
       if (!name.trim()) throw new Error("Name is required");
       if (!location.trim()) throw new Error("Location is required");
 
-      return createWarehouse({
+      const payload = {
         name: name.trim(),
         type,
         location: location.trim(),
         region: region.trim() ? region.trim() : undefined,
-      });
+      };
+
+      if (warehouse?.id) {
+        return updateWarehouse(warehouse.id, payload);
+      }
+
+      return createWarehouse(payload);
     },
     onSuccess: () => {
-      toast.success("Warehouse created");
+      toast.success(isEdit ? "Warehouse updated" : "Warehouse created");
       qc.invalidateQueries({ queryKey: ["warehouses"] });
       onOpenChange(false);
     },
@@ -88,7 +111,7 @@ export default function CreateWarehouseDialog({ open, onOpenChange }: Props) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Create warehouse</DialogTitle>
+          <DialogTitle>{isEdit ? "Edit location" : "Create warehouse"}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-3">
@@ -145,7 +168,13 @@ export default function CreateWarehouseDialog({ open, onOpenChange }: Props) {
             Cancel
           </Button>
           <Button onClick={() => mutation.mutate()} disabled={mutation.isPending}>
-            {mutation.isPending ? "Creating..." : "Create"}
+            {mutation.isPending
+              ? isEdit
+                ? "Saving..."
+                : "Creating..."
+              : isEdit
+                ? "Save changes"
+                : "Create"}
           </Button>
         </DialogFooter>
       </DialogContent>

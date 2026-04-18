@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { useManagerSidebarStore } from "@/store/useManagerSidebarStore";
 
 import {
+  Activity,
   Building2,
   CircleDollarSign,
   ChevronLeft,
@@ -49,6 +50,11 @@ const NAV_GROUPS: NavGroup[] = [
         labelKey: "managerSidebar.item.dashboard",
         href: "/dashboard/manager",
         icon: LayoutDashboard,
+      },
+      {
+        labelKey: "managerSidebar.item.analytics",
+        href: "/dashboard/manager/analytics",
+        icon: Activity,
       },
     ],
   },

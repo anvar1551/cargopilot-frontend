@@ -203,7 +203,8 @@ const copy = {
     exceptions: "Istisnolar",
     throughput: "O'tkazuvchanlik (oxirgi 7 kun)",
     operationalRadar: "Operatsion radar",
-    radarHealthy: "Operatsiyalar sog'lom ko'rinmoqda. Hozircha jiddiy bottleneck yo'q.",
+    radarHealthy:
+      "Operatsiyalar sog'lom ko'rinmoqda. Hozircha jiddiy bottleneck yo'q.",
     radarPending: "Pending backlog yuqori ({count}).",
     radarException: "{count} ta buyurtma exception oqimida.",
     radarWarehouse: "Ombor navbati og'irlashgan ({count}).",
@@ -298,13 +299,22 @@ export default function ManagerDashboardPage() {
   const overviewQuery = useQuery<ManagerOverview>({
     queryKey: ["manager-overview"],
     queryFn: fetchManagerOverview,
-    refetchInterval: 30000,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: false,
   });
 
   const ordersQuery = useQuery<OrdersResponseLike | OrderLite[]>({
     queryKey: ["manager-dashboard-orders"],
-    queryFn: () => fetchOrders({ limit: 300 }),
-    refetchInterval: 30000,
+    queryFn: () =>
+      fetchOrders({
+        mode: "cursor",
+        scope: "fast",
+        limit: 80,
+      }),
+    staleTime: 20_000,
+    refetchInterval: 45_000,
+    refetchOnWindowFocus: false,
   });
 
   const orders = useMemo(() => {
@@ -350,7 +360,8 @@ export default function ManagerDashboardPage() {
   const deliveredToday = useMemo(() => {
     const today = new Date();
     return orders.filter((order) => {
-      if (String(order.status ?? "").toLowerCase() !== "delivered") return false;
+      if (String(order.status ?? "").toLowerCase() !== "delivered")
+        return false;
       if (!order.createdAt) return false;
       const date = new Date(order.createdAt);
       if (Number.isNaN(date.getTime())) return false;
@@ -444,8 +455,12 @@ export default function ManagerDashboardPage() {
                   <Boxes className="h-3.5 w-3.5" />
                   {text.badge}
                 </div>
-                <h1 className="text-2xl font-semibold tracking-tight">{text.title}</h1>
-                <p className="max-w-2xl text-sm text-slate-100/85">{text.subtitle}</p>
+                <h1 className="text-2xl font-semibold tracking-tight">
+                  {text.title}
+                </h1>
+                <p className="max-w-2xl text-sm text-slate-100/85">
+                  {text.subtitle}
+                </p>
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
@@ -453,13 +468,13 @@ export default function ManagerDashboardPage() {
                   mode="manager"
                   triggerClassName="h-10 rounded-md border-white/20 bg-white px-4 text-slate-950 shadow-none hover:bg-white/90"
                 />
-                <Button asChild variant="secondary">
+                <Button asChild variant="secondary" className="h-10">
                   <Link href="/dashboard/manager/dispatch" className="gap-2">
                     <Send className="h-4 w-4" />
                     {text.openDispatch}
                   </Link>
                 </Button>
-                <Button asChild variant="secondary">
+                <Button asChild variant="secondary" className="h-10">
                   <Link href="/dashboard/manager/orders" className="gap-2">
                     <Package className="h-4 w-4" />
                     {text.ordersQueue}
@@ -541,7 +556,9 @@ export default function ManagerDashboardPage() {
                   <Skeleton className="h-16 w-full" />
                 </div>
               ) : recentOrders.length === 0 ? (
-                <div className="text-sm text-muted-foreground">{text.noOrders}</div>
+                <div className="text-sm text-muted-foreground">
+                  {text.noOrders}
+                </div>
               ) : (
                 <div className="overflow-hidden rounded-xl border bg-background">
                   <div className="divide-y">
@@ -555,10 +572,15 @@ export default function ManagerDashboardPage() {
                           <div className="min-w-0 space-y-2">
                             <div className="flex flex-wrap items-center gap-2">
                               <Badge
-                                variant={statusVariant(String(order.status ?? ""))}
+                                variant={statusVariant(
+                                  String(order.status ?? ""),
+                                )}
                                 className="capitalize"
                               >
-                                {getStatusLabel(String(order.status ?? "unknown"), t)}
+                                {getStatusLabel(
+                                  String(order.status ?? "unknown"),
+                                  t,
+                                )}
                               </Badge>
                               <span className="text-xs font-mono text-muted-foreground">
                                 {orderRef(order, text.unnumberedOrder)}
@@ -578,7 +600,9 @@ export default function ManagerDashboardPage() {
 
                             <div className="truncate text-sm font-medium">
                               {order.pickupAddress || "-"}{" "}
-                              <span className="text-muted-foreground">{"->"}</span>{" "}
+                              <span className="text-muted-foreground">
+                                {"->"}
+                              </span>{" "}
                               {order.dropoffAddress || "-"}
                             </div>
 
@@ -641,10 +665,14 @@ export default function ManagerDashboardPage() {
                 <span className="font-medium text-foreground">{inTransit}</span>
                 {" | "}
                 {text.outForDelivery}:{" "}
-                <span className="font-medium text-foreground">{outForDelivery}</span>
+                <span className="font-medium text-foreground">
+                  {outForDelivery}
+                </span>
                 {" | "}
                 {text.exceptions}:{" "}
-                <span className="font-medium text-foreground">{exceptions}</span>
+                <span className="font-medium text-foreground">
+                  {exceptions}
+                </span>
               </div>
             </CardContent>
           </Card>
@@ -658,7 +686,10 @@ export default function ManagerDashboardPage() {
             <CardContent>
               <div className="grid grid-cols-7 gap-2">
                 {last7Days.map((day) => (
-                  <div key={day.key} className="rounded-xl border bg-background/70 p-2">
+                  <div
+                    key={day.key}
+                    className="rounded-xl border bg-background/70 p-2"
+                  >
                     <div className="flex h-24 items-end">
                       <div
                         className="w-full rounded-md bg-gradient-to-t from-primary to-primary/40"
@@ -668,7 +699,9 @@ export default function ManagerDashboardPage() {
                     <div className="mt-2 text-center text-xs text-muted-foreground">
                       {day.label}
                     </div>
-                    <div className="text-center text-sm font-medium">{day.count}</div>
+                    <div className="text-center text-sm font-medium">
+                      {day.count}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -677,7 +710,9 @@ export default function ManagerDashboardPage() {
 
           <Card className="rounded-2xl border-border/70">
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">{text.operationalRadar}</CardTitle>
+              <CardTitle className="text-base">
+                {text.operationalRadar}
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
               {alerts.map((alert) => (

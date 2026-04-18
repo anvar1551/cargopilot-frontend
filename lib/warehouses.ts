@@ -82,3 +82,18 @@ export async function createWarehouse(payload: {
   // your backend returns the warehouse object directly
   return res.data;
 }
+
+export async function updateWarehouse(
+  id: string,
+  payload: {
+    name: string;
+    type?: WarehouseType;
+    location: string;
+    region?: string | null;
+  },
+): Promise<Warehouse> {
+  const res = await api.put(`/api/warehouses/${id}`, payload, {
+    headers: authHeaders(),
+  });
+  return res.data;
+}

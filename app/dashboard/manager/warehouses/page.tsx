@@ -14,14 +14,34 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export default function ManagerWarehousesPage() {
   const [open, setOpen] = React.useState(false);
+  const [editingWarehouseId, setEditingWarehouseId] = React.useState<string | null>(null);
+  const [typeFilter, setTypeFilter] = React.useState<"all" | "warehouse" | "pickup_point">("all");
 
   const q = useQuery({
     queryKey: ["warehouses"],
     queryFn: fetchWarehouses,
   });
+
+  const editingWarehouse = React.useMemo(
+    () => (q.data ?? []).find((item) => item.id === editingWarehouseId) ?? null,
+    [editingWarehouseId, q.data],
+  );
+
+  const filteredWarehouses = React.useMemo(() => {
+    const list = q.data ?? [];
+    if (typeFilter === "all") return list;
+    return list.filter((warehouse) => warehouse.type === typeFilter);
+  }, [q.data, typeFilter]);
 
   return (
     <div className="p-6">
@@ -34,8 +54,24 @@ export default function ManagerWarehousesPage() {
               Standard warehouses and pickup points now share one safe foundation.
             </p>
           </div>
-
-          <Button onClick={() => setOpen(true)}>Create warehouse</Button>
+          <div className="flex items-center gap-2">
+            <Select
+              value={typeFilter}
+              onValueChange={(value: "all" | "warehouse" | "pickup_point") =>
+                setTypeFilter(value)
+              }
+            >
+              <SelectTrigger className="w-[190px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All node types</SelectItem>
+                <SelectItem value="warehouse">Warehouse</SelectItem>
+                <SelectItem value="pickup_point">Pickup point</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button onClick={() => setOpen(true)}>Create warehouse</Button>
+          </div>
         </div>
 
         <Card>
@@ -49,9 +85,9 @@ export default function ManagerWarehousesPage() {
                 <Skeleton className="h-10 w-72" />
                 <Skeleton className="h-40 w-full" />
               </div>
-            ) : q.data?.length ? (
+            ) : filteredWarehouses.length ? (
               <div className="divide-y rounded-xl border">
-                {q.data.map((warehouse) => (
+                {filteredWarehouses.map((warehouse) => (
                   <div
                     key={warehouse.id}
                     className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"
@@ -82,21 +118,37 @@ export default function ManagerWarehousesPage() {
                       </div>
                     </div>
 
-                    <div className="text-xs text-muted-foreground">
-                      {warehouse.region ? `Region: ${warehouse.region}` : "Ready for routing"}
+                    <div className="flex items-center gap-2">
+                      <div className="text-xs text-muted-foreground">
+                        {warehouse.region ? `Region: ${warehouse.region}` : "Ready for routing"}
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setEditingWarehouseId(warehouse.id)}
+                      >
+                        Edit
+                      </Button>
                     </div>
                   </div>
                 ))}
               </div>
             ) : (
               <div className="text-sm text-muted-foreground">
-                No warehouses yet. Create one to enable warehouse workflows.
+                No locations found for this filter.
               </div>
             )}
           </CardContent>
         </Card>
 
         <CreateWarehouseDialog open={open} onOpenChange={setOpen} />
+        <CreateWarehouseDialog
+          open={Boolean(editingWarehouse)}
+          onOpenChange={(nextOpen) => {
+            if (!nextOpen) setEditingWarehouseId(null);
+          }}
+          warehouse={editingWarehouse}
+        />
       </div>
     </div>
   );
