@@ -1,27 +1,16 @@
 import axios from "axios";
 import { clearAuth, getToken } from "./auth";
 
-function resolveBaseUrl() {
-  const envBaseUrl = process.env.NEXT_PUBLIC_API_URL?.trim() ?? "";
-  if (typeof window === "undefined") return "";
+function isLocalhostHost(hostname: string) {
+  return hostname === "localhost" || hostname === "127.0.0.1";
+}
 
-  const { protocol, hostname } = window.location;
-  const isLocalhost = hostname === "localhost" || hostname === "127.0.0.1";
-  const normalizedEnvBaseUrl = envBaseUrl.replace(/\/+$/, "");
+function isIpv4Host(hostname: string) {
+  return /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname);
+}
 
-  if (normalizedEnvBaseUrl) {
-    const isRelativeEnvBaseUrl = normalizedEnvBaseUrl.startsWith("/");
-
-    // Production uses a dedicated API subdomain. If an old relative `/api`
-    // value is still baked into the build, route directly to the API host.
-    if (!isLocalhost && isRelativeEnvBaseUrl && normalizedEnvBaseUrl === "/api") {
-      return `${protocol}//api.${hostname}`;
-    }
-
-    return normalizedEnvBaseUrl;
-  }
-
-  if (isLocalhost) {
+function deriveApiHost(protocol: string, hostname: string) {
+  if (isLocalhostHost(hostname)) {
     return `${protocol}//${hostname}:4000`;
   }
 
@@ -30,6 +19,53 @@ function resolveBaseUrl() {
   }
 
   return `${protocol}//api.${hostname}`;
+}
+
+function resolveBaseUrl() {
+  if (typeof window === "undefined") return "";
+
+  const envBaseUrl = process.env.NEXT_PUBLIC_API_URL?.trim() ?? "";
+  const { protocol, hostname } = window.location;
+  const isLocalhost = isLocalhostHost(hostname);
+  const normalizedEnvBaseUrl = envBaseUrl.replace(/\/+$/, "");
+  const derivedApiHost = deriveApiHost(protocol, hostname);
+
+  if (normalizedEnvBaseUrl) {
+    const isRelativeEnvBaseUrl = normalizedEnvBaseUrl.startsWith("/");
+
+    // Production uses a dedicated API subdomain. If an old relative `/api`
+    // value is still baked into the build, route directly to the API host.
+    if (!isLocalhost && isRelativeEnvBaseUrl && normalizedEnvBaseUrl === "/api") {
+      return derivedApiHost;
+    }
+
+    // Guardrail: if someone accidentally sets a raw IP in production env,
+    // force routing back to the domain-based API host.
+    try {
+      const parsed = new URL(normalizedEnvBaseUrl);
+      const parsedIsIpv4 = isIpv4Host(parsed.hostname);
+      const windowIsDomain = !isLocalhost && !isIpv4Host(hostname);
+
+      if (windowIsDomain && parsedIsIpv4) {
+        return derivedApiHost;
+      }
+
+      if (
+        !isLocalhost &&
+        protocol === "https:" &&
+        parsed.protocol === "http:" &&
+        !isLocalhostHost(parsed.hostname)
+      ) {
+        return `${derivedApiHost}${parsed.pathname === "/" ? "" : parsed.pathname}`;
+      }
+
+      return `${parsed.origin}${parsed.pathname === "/" ? "" : parsed.pathname}`;
+    } catch {
+      return normalizedEnvBaseUrl;
+    }
+  }
+
+  return derivedApiHost;
 }
 
 const normalizedBaseUrl = resolveBaseUrl();

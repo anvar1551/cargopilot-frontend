@@ -148,7 +148,6 @@ export async function fetchDrivers(): Promise<DriverLite[]> {
 }
 
 export async function fetchWarehouses() {
-  const res = await fetch("/api/manager/warehouses");
-  if (!res.ok) throw new Error("Failed to load warehouses");
-  return res.json();
+  const res = await api.get("/api/warehouses");
+  return Array.isArray(res.data) ? res.data : res.data?.warehouses ?? [];
 }

@@ -28,7 +28,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { fetchDrivers, fetchManagerAnalyticsSummary } from "@/lib/manager";
+import {
+  fetchDrivers,
+  fetchManagerAnalyticsSummary,
+  type ManagerAnalyticsSummary,
+} from "@/lib/manager";
 import { handoffOrderCashBulk, settleOrderCashBulk } from "@/lib/orders";
 import { fetchWarehouses } from "@/lib/warehouses";
 import { getServiceTypeLabel, getStatusLabel } from "@/lib/i18n/labels";
@@ -105,7 +109,7 @@ export default function ManagerAnalyticsPage() {
   const [handoffToWarehouseId, setHandoffToWarehouseId] = useState<string>("");
   const [selectedQueueIds, setSelectedQueueIds] = useState<string[]>([]);
 
-  const analyticsQuery = useQuery({
+  const analyticsQuery = useQuery<ManagerAnalyticsSummary, any>({
     queryKey: [
       "manager-analytics-summary",
       rangeDays,
@@ -132,7 +136,50 @@ export default function ManagerAnalyticsPage() {
   });
 
   const data = analyticsQuery.data;
+  const analyticsErrorMessage =
+    analyticsQuery.error?.response?.data?.error ||
+    analyticsQuery.error?.message ||
+    t("common.error.UNKNOWN_ERROR");
   const queueMeta = data?.finance.queueMeta;
+  const locationThroughput = useMemo(() => {
+    const fallback = {
+      warehouse: {
+        activeOrders: 0,
+        atWarehouseOrders: 0,
+        outForDeliveryOrders: 0,
+        deliveredInRange: 0,
+      },
+      pickupPoint: {
+        activeOrders: 0,
+        atWarehouseOrders: 0,
+        outForDeliveryOrders: 0,
+        deliveredInRange: 0,
+      },
+    };
+
+    if (!data?.operations?.locationThroughput) return fallback;
+
+    return {
+      warehouse: {
+        activeOrders: data.operations.locationThroughput.warehouse?.activeOrders ?? 0,
+        atWarehouseOrders:
+          data.operations.locationThroughput.warehouse?.atWarehouseOrders ?? 0,
+        outForDeliveryOrders:
+          data.operations.locationThroughput.warehouse?.outForDeliveryOrders ?? 0,
+        deliveredInRange:
+          data.operations.locationThroughput.warehouse?.deliveredInRange ?? 0,
+      },
+      pickupPoint: {
+        activeOrders: data.operations.locationThroughput.pickupPoint?.activeOrders ?? 0,
+        atWarehouseOrders:
+          data.operations.locationThroughput.pickupPoint?.atWarehouseOrders ?? 0,
+        outForDeliveryOrders:
+          data.operations.locationThroughput.pickupPoint?.outForDeliveryOrders ?? 0,
+        deliveredInRange:
+          data.operations.locationThroughput.pickupPoint?.deliveredInRange ?? 0,
+      },
+    };
+  }, [data]);
 
   const driversQuery = useQuery({
     queryKey: ["manager-drivers-for-cash-handoff"],
@@ -430,7 +477,24 @@ export default function ManagerAnalyticsPage() {
         </div>
       </section>
 
-      {!data ? (
+      {analyticsQuery.isError && !data ? (
+        <Card className="border-destructive/30">
+          <CardHeader>
+            <CardTitle>{t("common.error.OOPS")}</CardTitle>
+            <CardDescription>{analyticsErrorMessage}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button
+              variant="outline"
+              onClick={() => analyticsQuery.refetch()}
+              disabled={analyticsQuery.isFetching}
+            >
+              <RefreshCw className="mr-2 h-4 w-4" />
+              {t("managerAnalytics.refresh")}
+            </Button>
+          </CardContent>
+        </Card>
+      ) : !data ? (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {Array.from({ length: 8 }).map((_, index) => (
             <Skeleton key={index} className="h-32 w-full rounded-2xl" />
@@ -533,12 +597,12 @@ export default function ManagerAnalyticsPage() {
                   {
                     key: "warehouse",
                     label: t("managerAnalytics.finance.holderTypes.warehouse"),
-                    values: data.operations.locationThroughput.warehouse,
+                    values: locationThroughput.warehouse,
                   },
                   {
                     key: "pickup_point",
                     label: t("managerAnalytics.finance.holderTypes.pickup_point"),
-                    values: data.operations.locationThroughput.pickupPoint,
+                    values: locationThroughput.pickupPoint,
                   },
                 ].map((item) => (
                   <div
