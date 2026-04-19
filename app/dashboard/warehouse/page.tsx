@@ -2173,7 +2173,7 @@ export default function WarehouseDashboardPage() {
                 onRefresh={handleRefresh}
                 detailsBasePath="/dashboard/warehouse/orders"
                 externalScanRequest={externalScanRequest}
-                onExternalScanProcessed={handleExternalScanProcessed}
+                onExternalScanProcessedAction={handleExternalScanProcessed}
               />
             )}
           </CardContent>

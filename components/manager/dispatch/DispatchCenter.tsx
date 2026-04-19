@@ -96,7 +96,7 @@ type Props = {
     id: number;
     raw: string;
   } | null;
-  onExternalScanProcessed?: (result: {
+  onExternalScanProcessedAction?: (result: {
     requestId: number | null;
     raw: string;
     addedOrderIds: string[];
@@ -195,7 +195,7 @@ export default function DispatchCenter({
   role = "manager",
   detailsBasePath,
   externalScanRequest,
-  onExternalScanProcessed,
+  onExternalScanProcessedAction,
 }: Props) {
   const router = useRouter();
   const { t } = useI18n();
@@ -509,7 +509,7 @@ export default function DispatchCenter({
         setScanError(null);
       }
 
-      onExternalScanProcessed?.({
+      onExternalScanProcessedAction?.({
         requestId: externalScanRequest?.id ?? null,
         raw,
         addedOrderIds,
@@ -517,7 +517,7 @@ export default function DispatchCenter({
         skippedByLimit,
       });
     },
-    [orders, batchSet, externalScanRequest?.id, onExternalScanProcessed],
+    [orders, batchSet, externalScanRequest?.id, onExternalScanProcessedAction],
   );
 
   const onScanAdd = () => {
