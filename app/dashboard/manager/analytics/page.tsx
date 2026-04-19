@@ -375,28 +375,106 @@ export default function ManagerAnalyticsPage() {
 
   const guidance = useMemo(() => {
     if (!data) return [];
-    const notes: string[] = [];
-    if (data.sla.overdueOpenOrders > 0) {
-      notes.push(t("managerAnalytics.guidance.overdue", { count: data.sla.overdueOpenOrders }));
+
+    type GuidanceOrder = {
+      id: string;
+      orderNumber: string | null;
+      status: string;
+      extra?: string;
+    };
+
+    type GuidanceItem = {
+      id: string;
+      message: string;
+      total: number;
+      orders: GuidanceOrder[];
+    };
+
+    const items: GuidanceItem[] = [];
+    const overdueTotal = data.warnings?.overdueTotal ?? data.sla.overdueOpenOrders;
+    if (overdueTotal > 0) {
+      items.push({
+        id: "overdue",
+        message: t("managerAnalytics.guidance.overdue", { count: overdueTotal }),
+        total: overdueTotal,
+        orders:
+          data.warnings?.overdueOrders?.map((order) => ({
+            id: order.id,
+            orderNumber: order.orderNumber,
+            status: order.status,
+          })) ?? [],
+      });
     }
-    if (data.operations.staleOpenOrders > 0) {
-      notes.push(t("managerAnalytics.guidance.stale", { count: data.operations.staleOpenOrders }));
+
+    const staleTotal = data.warnings?.staleTotal ?? data.operations.staleOpenOrders;
+    if (staleTotal > 0) {
+      items.push({
+        id: "stale",
+        message: t("managerAnalytics.guidance.stale", { count: staleTotal }),
+        total: staleTotal,
+        orders:
+          data.warnings?.staleOrders?.map((order) => ({
+            id: order.id,
+            orderNumber: order.orderNumber,
+            status: order.status,
+          })) ?? [],
+      });
     }
-    const financeExposure = data.finance.unpaidCodCount + data.finance.unpaidServiceCount;
-    if (financeExposure > 0) {
-      notes.push(t("managerAnalytics.guidance.finance", { count: financeExposure }));
+
+    const defaultFinanceExposure =
+      data.finance.unpaidCodCount + data.finance.unpaidServiceCount;
+    const financeExposureTotal =
+      data.warnings?.financeExposureTotal ?? defaultFinanceExposure;
+    if (financeExposureTotal > 0) {
+      items.push({
+        id: "finance",
+        message: t("managerAnalytics.guidance.finance", {
+          count: financeExposureTotal,
+        }),
+        total: financeExposureTotal,
+        orders:
+          data.warnings?.financeExposureOrders?.map((order) => ({
+            id: order.id,
+            orderNumber: order.orderNumber,
+            status: order.status,
+            extra: `${t("orderDetails.cash.kind.cod")}: ${formatMoney(
+              order.codDue,
+              locale,
+            )}, ${t("orderDetails.cash.kind.service_charge")}: ${formatMoney(
+              order.serviceChargeDue,
+              locale,
+            )}`,
+          })) ?? [],
+      });
     }
+
     if (data.finance.driverHeldAmount > 0) {
-      notes.push(
-        t("managerAnalytics.guidance.driverCash", {
+      items.push({
+        id: "driver-cash",
+        message: t("managerAnalytics.guidance.driverCash", {
           amount: formatMoney(data.finance.driverHeldAmount, locale),
         }),
-      );
+        total: data.warnings?.driverHeldOrders?.length ?? 0,
+        orders:
+          data.warnings?.driverHeldOrders?.map((order) => ({
+            id: order.orderId,
+            orderNumber: order.orderNumber,
+            status: order.status,
+            extra: `${formatMoney(order.amount, locale)} ${order.currency || "EUR"}`,
+          })) ?? [],
+      });
     }
-    if (notes.length === 0) {
-      notes.push(t("managerAnalytics.guidance.healthy"));
+
+    if (items.length === 0) {
+      items.push({
+        id: "healthy",
+        message: t("managerAnalytics.guidance.healthy"),
+        total: 0,
+        orders: [],
+      });
     }
-    return notes;
+
+    return items;
   }, [data, locale, t]);
 
   const locationSplitText = useMemo(() => {
@@ -447,11 +525,11 @@ export default function ManagerAnalyticsPage() {
             </div>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             <div className="space-y-2">
               <div className="text-xs uppercase tracking-[0.22em] text-muted-foreground">{t("managerAnalytics.filters.rangeDays")}</div>
               <Select value={rangeDays} onValueChange={setRangeDays}>
-                <SelectTrigger className="w-[180px] bg-background/90"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="w-full bg-background/90 sm:w-[180px]"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="7">{t("managerAnalytics.filters.last7Days")}</SelectItem>
                   <SelectItem value="30">{t("managerAnalytics.filters.last30Days")}</SelectItem>
@@ -463,12 +541,12 @@ export default function ManagerAnalyticsPage() {
               <div className="text-xs uppercase tracking-[0.22em] text-muted-foreground">
                 {t("managerAnalytics.filters.staleHours")}
               </div>
-              <div className="h-10 min-w-[180px] rounded-md border bg-background/90 px-3 py-2 text-sm text-foreground">
+              <div className="h-10 w-full rounded-md border bg-background/90 px-3 py-2 text-sm text-foreground sm:min-w-[180px]">
                 {data?.slaPolicy?.staleHoursApplied ?? "-"}h
               </div>
             </div>
             <div className="flex items-end">
-              <Button variant="outline" onClick={() => analyticsQuery.refetch()} disabled={analyticsQuery.isFetching} className="bg-background/90">
+              <Button variant="outline" onClick={() => analyticsQuery.refetch()} disabled={analyticsQuery.isFetching} className="w-full bg-background/90 sm:w-auto">
                 <RefreshCw className="mr-2 h-4 w-4" />
                 {t("managerAnalytics.refresh")}
               </Button>
@@ -975,7 +1053,13 @@ export default function ManagerAnalyticsPage() {
               </CardHeader>
               <CardContent>
                 {data.finance.queue.length ? (
-                  <div className="space-y-3">
+                  <div
+                    className={`space-y-3 ${
+                      data.finance.queue.length > 4
+                        ? "max-h-[620px] overflow-y-auto pr-2"
+                        : ""
+                    }`}
+                  >
                     {data.finance.queue.map((item) => (
                       <div
                         key={item.id}
@@ -1076,8 +1160,8 @@ export default function ManagerAnalyticsPage() {
                       </div>
                     </div>
 
-                    <div className="rounded-2xl border bg-background/80 p-4">
-                      <div className="grid h-28 grid-cols-14 items-end gap-2">
+                    <div className="overflow-x-auto rounded-2xl border bg-background/80 p-4">
+                      <div className="grid h-28 min-w-[560px] grid-cols-14 items-end gap-2">
                         {trendViewport.map((item) => {
                           return (
                           <div key={item.date} className="space-y-1">
@@ -1135,9 +1219,68 @@ export default function ManagerAnalyticsPage() {
                 <CardDescription>{t("managerAnalytics.subtitle")}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                {guidance.map((note) => (
-                  <div key={note} className="rounded-2xl border bg-background/80 px-4 py-3 text-sm text-foreground">
-                    {note}
+                {guidance.map((item) => (
+                  <div
+                    key={item.id}
+                    className="rounded-2xl border bg-background/80 px-4 py-3 text-sm text-foreground"
+                  >
+                    <p>{item.message}</p>
+
+                    {item.orders.length > 0 ? (
+                      <div className="mt-3 space-y-2">
+                        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                          {t("managerAnalytics.guidance.affectedOrders")}
+                        </p>
+                        <div
+                          className={`space-y-2 ${
+                            item.orders.length > 4
+                              ? "max-h-40 overflow-y-auto pr-1"
+                              : ""
+                          }`}
+                        >
+                          <div className="flex flex-wrap gap-2">
+                            {item.orders.map((order) => (
+                              <Link
+                                key={`${item.id}-${order.id}`}
+                                href={`/dashboard/manager/orders/${order.id}`}
+                                className="rounded-full border bg-background px-3 py-1 text-xs font-medium hover:border-slate-400"
+                              >
+                                {(order.orderNumber
+                                  ? `#${order.orderNumber}`
+                                  : order.id.slice(0, 8)) +
+                                  ` · ${getStatusLabel(order.status, t)}`}
+                              </Link>
+                            ))}
+                          </div>
+
+                          {item.orders.some((order) => Boolean(order.extra)) ? (
+                            <div className="space-y-1">
+                              {item.orders.map((order) =>
+                                order.extra ? (
+                                  <p
+                                    key={`${item.id}-${order.id}-extra`}
+                                    className="text-xs text-muted-foreground"
+                                  >
+                                    {(order.orderNumber
+                                      ? `#${order.orderNumber}`
+                                      : order.id.slice(0, 8)) + `: ${order.extra}`}
+                                  </p>
+                                ) : null,
+                              )}
+                            </div>
+                          ) : null}
+                        </div>
+
+                        {item.total > item.orders.length ? (
+                          <p className="text-xs text-muted-foreground">
+                            {t("managerAnalytics.guidance.showingFirst", {
+                              shown: item.orders.length,
+                              total: item.total,
+                            })}
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
                 ))}
               </CardContent>

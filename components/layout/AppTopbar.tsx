@@ -4,11 +4,13 @@ import * as React from "react";
 import { useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Menu } from "lucide-react";
 import { getUser } from "@/lib/auth";
 import { useI18n } from "@/components/i18n/I18nProvider";
 
 import UserMenu from "@/components/user/UserMenu";
 import { cn } from "@/lib/utils";
+import { useManagerSidebarStore } from "@/store/useManagerSidebarStore";
 
 type TopbarProps = {
   title?: string;
@@ -33,6 +35,7 @@ export default function AppTopbar({
 }: TopbarProps) {
   const pathname = usePathname();
   const { t } = useI18n();
+  const toggleMobileSidebar = useManagerSidebarStore((s) => s.toggleMobile);
   const user = useSyncExternalStore(
     () => () => {},
     () => getUser(),
@@ -40,6 +43,7 @@ export default function AppTopbar({
   );
 
   const computedTitle = title ?? defaultTitleFromPath(pathname, t);
+  const isManagerPath = pathname.includes("/dashboard/manager");
 
   if (!user) {
     return (
@@ -56,18 +60,28 @@ export default function AppTopbar({
 
   return (
     <header className="sticky top-0 z-40 w-full border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="mx-auto flex h-14  items-center justify-between px-4">
+      <div className="mx-auto flex h-14 items-center justify-between px-3 sm:px-4">
         {/* Left side */}
         <div className="flex items-center gap-3 min-w-0">
+          {isManagerPath ? (
+            <button
+              type="button"
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-background xl:hidden"
+              onClick={toggleMobileSidebar}
+              aria-label={t("managerSidebar.expand")}
+            >
+              <Menu className="h-4 w-4" />
+            </button>
+          ) : null}
           {/* Brand */}
           <Link
             href={`/dashboard/${user.role}`}
-            className="font-semibold tracking-tight"
+            className="shrink-0 font-semibold tracking-tight"
           >
             CargoPilot
           </Link>
 
-          <div className="h-5 w-px bg-border" />
+          <div className="hidden h-5 w-px bg-border sm:block" />
 
           {/* Context */}
           <div className="min-w-0">
@@ -93,7 +107,7 @@ export default function AppTopbar({
         </div>
 
         {/* Right side */}
-        <div className={cn("flex items-center gap-2", actions ? "gap-3" : "")}>
+        <div className={cn("flex shrink-0 items-center gap-2", actions ? "gap-3" : "")}>
           {actions ? (
             <div className="hidden sm:flex items-center gap-2">{actions}</div>
           ) : null}

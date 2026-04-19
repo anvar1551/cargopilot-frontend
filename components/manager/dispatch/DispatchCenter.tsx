@@ -28,6 +28,14 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -46,17 +54,8 @@ import {
   X,
   Clipboard,
   ExternalLink,
-  Layers,
   Package,
-  Truck,
-  CheckCircle2,
-  Warehouse,
-  ArrowRight,
-  AlertTriangle,
-  RotateCcw,
-  Ban,
 } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 
 type OrderStatus =
   | "pending"
@@ -120,21 +119,6 @@ const ORDER_STATUSES: OrderStatus[] = [
   "returned",
   "cancelled",
 ];
-
-const LANE_META: Record<OrderStatus, { icon: LucideIcon }> = {
-  pending: { icon: Layers },
-  assigned: { icon: Truck },
-  pickup_in_progress: { icon: Truck },
-  picked_up: { icon: Package },
-  at_warehouse: { icon: Warehouse },
-  in_transit: { icon: ArrowRight },
-  out_for_delivery: { icon: Truck },
-  delivered: { icon: CheckCircle2 },
-  exception: { icon: AlertTriangle },
-  return_in_progress: { icon: RotateCcw },
-  returned: { icon: RotateCcw },
-  cancelled: { icon: Ban },
-};
 
 const MAX_BATCH_SIZE = 100;
 const REASON_REQUIRED_STATUSES = new Set<OrderStatus>([
@@ -269,6 +253,14 @@ export default function DispatchCenter({
     return normalizeWarehouseType(attached?.type);
   }, [attachedWarehouseId, role, warehousesQuery.data]);
 
+  const attachedWarehouseName = useMemo(() => {
+    if (!attachedWarehouseId) return null;
+    const attached = (warehousesQuery.data ?? []).find(
+      (item) => item.id === attachedWarehouseId,
+    );
+    return attached?.name ?? null;
+  }, [attachedWarehouseId, warehousesQuery.data]);
+
   const warehouseStatusOptions = useMemo<OrderStatus[]>(() => {
     if (role === "manager") return ORDER_STATUSES;
     return LOCATION_STATUS_OPTIONS[attachedWarehouseType];
@@ -383,8 +375,17 @@ export default function DispatchCenter({
     return batchIds.map((id) => map.get(id)).filter(Boolean) as OrderItem[];
   }, [batchIds, orders]);
 
-  const visibleStatuses: OrderStatus[] =
-    activeStatusTab === "all" ? ORDER_STATUSES : [activeStatusTab];
+  const filteredOrders = useMemo(() => {
+    if (activeStatusTab !== "all") {
+      return byStatus[activeStatusTab] ?? [];
+    }
+
+    return [...orders].sort((a, b) => {
+      const da = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const db = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return db - da;
+    });
+  }, [activeStatusTab, byStatus, orders]);
 
   const addToBatch = (id: string) => {
     setBatchIds((prev) => {
@@ -821,7 +822,7 @@ export default function DispatchCenter({
             {role === "warehouse" ? (
               <div className="rounded-xl border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
                 {t("dispatch.warehouseFromProfile")}
-                <span className="ml-1 font-mono">{attachedWarehouseId ?? "not set"}</span>
+                <span className="ml-1 font-medium">{attachedWarehouseName ?? "not set"}</span>
                 <span className="ml-2">
                   (
                   {attachedWarehouseType === "pickup_point"
@@ -884,23 +885,27 @@ export default function DispatchCenter({
   );
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
-      <div className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="text-sm text-muted-foreground">
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="min-w-0 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0 flex-1 text-sm text-muted-foreground">
             {t("dispatch.instructions")}
           </div>
 
           {canOperateTasks ? (
-            <Button variant="outline" className="lg:hidden gap-2" onClick={() => setCartOpen(true)}>
+            <Button
+              variant="outline"
+              className="shrink-0 xl:hidden gap-2"
+              onClick={() => setCartOpen(true)}
+            >
               <Package className="h-4 w-4" />
               {t("dispatch.batch")} ({batchIds.length})
             </Button>
           ) : null}
         </div>
 
-        <div className="overflow-x-auto pb-1">
-          <div className="flex w-max items-center gap-2">
+        <div className="w-full min-w-0 pb-1">
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               type="button"
               variant={activeStatusTab === "all" ? "default" : "outline"}
@@ -932,98 +937,83 @@ export default function DispatchCenter({
           </div>
         </div>
 
-        <div className="w-full min-w-0 overflow-x-auto">
-          <div className="flex w-max gap-3 pb-2 pr-2">
-            {visibleStatuses.map((status) => {
-              const laneOrders = byStatus[status] ?? [];
-              const meta = LANE_META[status];
-              const Icon = meta.icon;
-
-              return (
-                <div key={status} className="w-[340px] flex-none">
-                  <div className="mb-2 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Icon className="h-4 w-4" />
-                      <div className="font-medium">{getStatusLabel(status, t)}</div>
-                      <Badge variant="outline">{laneOrders.length}</Badge>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    {laneOrders.length === 0 ? (
-                      <Card className="p-3">
-                        <div className="text-sm text-muted-foreground">{t("dispatch.noOrders")}</div>
-                      </Card>
-                    ) : (
-                      laneOrders.slice(0, 40).map((o) => {
-                        const inBatch = batchSet.has(o.id);
-
-                        return (
-                          <Card
-                            key={o.id}
-                            className="p-3 hover:bg-muted/30 transition cursor-pointer"
-                            onClick={() => goDetails(o.id)}
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0 space-y-1">
-                                <div className="flex items-center gap-2">
-                                  <Badge variant={statusVariant(o.status)} className="capitalize">
-                                    {getStatusLabel(o.status, t)}
-                                  </Badge>
-                                  <span className="text-xs text-muted-foreground font-mono">
-                                    {orderLabel(o)}
-                                  </span>
-                                </div>
-
-                                <div className="text-sm font-medium truncate">
-                                  {o.pickupAddress} <span className="text-muted-foreground">{"->"}</span> {" "}
-                                  {o.dropoffAddress}
-                                </div>
-
-                                <div className="text-xs text-muted-foreground truncate">
-                                  {o.customer?.email
-                                    ? `${t("dispatch.customerPrefix")} ${o.customer.email}`
-                                    : t("dispatch.customerFallback")}
-                                </div>
-                              </div>
-
-                              <div className="flex items-center gap-2 shrink-0">
-                                <Button
-                                  type="button"
-                                  variant={inBatch ? "secondary" : "outline"}
-                                  size="sm"
-                                  className="gap-2"
-                                  disabled={!canOperateTasks || (!inBatch && isBatchFull)}
-                                  title={
-                                    !inBatch && isBatchFull
-                                      ? `Batch limit is ${MAX_BATCH_SIZE}`
-                                      : undefined
-                                  }
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (!canOperateTasks) return;
-                                    if (!inBatch) addToBatch(o.id);
-                                    else removeFromBatch(o.id);
-                                  }}
-                                >
-                                  {inBatch ? "In batch" : "+ Batch"}
-                                </Button>
-                              </div>
-                            </div>
-                          </Card>
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+        <div className="rounded-2xl border border-border/70 bg-background overflow-hidden">
+          <Table className="table-fixed">
+            <TableHeader>
+              <TableRow className="bg-muted/30 hover:bg-muted/30">
+                <TableHead className="w-[110px]">Status</TableHead>
+                <TableHead className="w-[150px]">Order</TableHead>
+                <TableHead>Route</TableHead>
+                <TableHead className="w-[240px]">Customer</TableHead>
+                <TableHead className="w-[110px] text-right">Batch</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredOrders.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="h-24 text-center text-sm text-muted-foreground">
+                    {t("dispatch.noOrders")}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filteredOrders.map((o) => {
+                  const inBatch = batchSet.has(o.id);
+                  return (
+                    <TableRow
+                      key={o.id}
+                      className="cursor-pointer hover:bg-muted/35 transition"
+                      onClick={() => goDetails(o.id)}
+                    >
+                      <TableCell>
+                        <Badge variant={statusVariant(o.status)} className="capitalize">
+                          {getStatusLabel(o.status, t)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-xs text-muted-foreground font-mono">{orderLabel(o)}</span>
+                      </TableCell>
+                      <TableCell>
+                        <div className="truncate text-sm">
+                          {o.pickupAddress} <span className="text-muted-foreground">{"->"}</span>{" "}
+                          {o.dropoffAddress}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="truncate text-sm text-muted-foreground">
+                          {o.customer?.email
+                            ? `${t("dispatch.customerPrefix")} ${o.customer.email}`
+                            : t("dispatch.customerFallback")}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          type="button"
+                          variant={inBatch ? "secondary" : "outline"}
+                          size="sm"
+                          className="gap-2"
+                          disabled={!canOperateTasks || (!inBatch && isBatchFull)}
+                          title={!inBatch && isBatchFull ? `Batch limit is ${MAX_BATCH_SIZE}` : undefined}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!canOperateTasks) return;
+                            if (!inBatch) addToBatch(o.id);
+                            else removeFromBatch(o.id);
+                          }}
+                        >
+                          {inBatch ? "In batch" : "+ Batch"}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
         </div>
       </div>
 
       {canOperateTasks ? (
-        <div className="hidden lg:block">
+        <div className="hidden xl:block">
           <div className="sticky top-6">
             <Card className="p-4">{CartContent}</Card>
           </div>

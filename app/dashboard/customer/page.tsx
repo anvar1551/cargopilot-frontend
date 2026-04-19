@@ -230,7 +230,7 @@ function formatDate(value: string | null | undefined, locale: string) {
 
 function DashboardSkeleton() {
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       <div className="mx-auto max-w-7xl space-y-6">
         <Skeleton className="h-56 w-full rounded-[2rem]" />
         <div className="grid gap-4 md:grid-cols-4">
@@ -286,7 +286,7 @@ export default function CustomerDashboard() {
 
   if (error) {
     return (
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
         <Card className="mx-auto max-w-5xl rounded-3xl border-destructive/30">
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
             Failed to load customer dashboard.
@@ -297,12 +297,12 @@ export default function CustomerDashboard() {
   }
 
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       <div className="mx-auto max-w-7xl space-y-6">
         <section className="relative overflow-hidden rounded-[2rem] border border-border/60 bg-[linear-gradient(135deg,rgba(15,23,42,0.98),rgba(11,92,122,0.92),rgba(255,255,255,0.98))] text-white">
           <div className="absolute -right-20 -top-16 h-72 w-72 rounded-full bg-cyan-400/15 blur-3xl" />
           <div className="absolute -left-20 bottom-0 h-64 w-64 rounded-full bg-sky-300/10 blur-3xl" />
-          <div className="relative grid gap-6 p-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:p-8">
+          <div className="relative grid gap-6 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:p-8">
             <div className="space-y-5">
               <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs uppercase tracking-[0.18em] text-white/90">
                 <ShieldCheck className="h-3.5 w-3.5" />
@@ -346,7 +346,7 @@ export default function CustomerDashboard() {
               </div>
             </div>
 
-            <div className="flex flex-col gap-3 lg:w-[300px]">
+            <div className="flex w-full max-w-sm flex-col gap-3 lg:w-[300px]">
               <CreateOrderDialog triggerLabel={text.newShipment} />
               {customerEntityId ? (
                 <BulkOrderImportDialog

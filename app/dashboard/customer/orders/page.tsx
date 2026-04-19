@@ -356,7 +356,7 @@ export default function CustomerOrdersPage() {
 
   if (error) {
     return (
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
         <Card className="mx-auto max-w-5xl rounded-3xl">
           <CardHeader>
             <CardTitle>{text.loadFailedTitle}</CardTitle>
@@ -370,7 +370,7 @@ export default function CustomerOrdersPage() {
   }
 
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       <div className="mx-auto max-w-7xl space-y-6">
         <Button asChild variant="ghost" className="w-fit rounded-2xl px-0 hover:bg-transparent">
           <Link href="/dashboard/customer">
@@ -380,7 +380,7 @@ export default function CustomerOrdersPage() {
         </Button>
 
         <section className="overflow-hidden rounded-[2rem] border border-border/60 bg-[linear-gradient(135deg,rgba(17,24,39,0.02),rgba(59,130,246,0.08),rgba(255,255,255,0.96))]">
-          <div className="grid gap-6 p-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:p-8">
+          <div className="grid gap-6 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:p-8">
             <div className="space-y-4">
               <div className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-background/80 px-3 py-1 text-xs uppercase tracking-[0.18em] text-muted-foreground">
                 <Truck className="h-3.5 w-3.5" />
@@ -452,7 +452,7 @@ export default function CustomerOrdersPage() {
                   />
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                   <SlidersHorizontal className="hidden h-4 w-4 text-muted-foreground sm:block" />
 
                   <Select value={statusFilter} onValueChange={setStatusFilter}>

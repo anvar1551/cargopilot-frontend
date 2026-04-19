@@ -229,6 +229,8 @@ export const en = {
       stale: "{count} active order(s) have had no movement past the stale threshold.",
       finance: "{count} order(s) still carry unpaid COD or service-charge exposure.",
       driverCash: "Drivers are currently holding {amount} that still needs handoff or settlement.",
+      affectedOrders: "Affected orders",
+      showingFirst: "Showing first {shown} of {total}.",
     },
   },
   settingsPage: {
@@ -405,10 +407,12 @@ export const en = {
       daysValue: "{value} day(s)",
       priorityValue: "Priority {value}",
       mode: {
-        service_default: "Service default",
+        service_default: "Service default fallback",
         zone: "Zone override",
         exact_route: "Exact route",
       },
+      serviceDefaultHint:
+        "Fallback SLA for this service type. Applied when no exact-route or zone rule matches.",
     },
     plans: {
       createTitle: "Create tariff plan",

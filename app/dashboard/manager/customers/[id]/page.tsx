@@ -257,7 +257,7 @@ export default function CustomerDetailPage() {
         </Button>
 
         <section className="overflow-hidden rounded-[2rem] border border-border/60 bg-[linear-gradient(135deg,rgba(17,24,39,0.02),rgba(59,130,246,0.08),rgba(255,255,255,0.96))]">
-          <div className="grid gap-6 p-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:p-8">
+          <div className="grid gap-6 p-4 sm:p-6 xl:grid-cols-[minmax(0,1fr)_auto] xl:p-8">
             <div className="space-y-5">
               <div className="flex flex-wrap items-center gap-3">
                 <Badge variant="secondary" className="rounded-full px-3 py-1 text-xs uppercase tracking-[0.2em]">
@@ -275,7 +275,7 @@ export default function CustomerDetailPage() {
                 </p>
               </div>
 
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
                 <div className="rounded-3xl border border-border/60 bg-background/85 p-4 backdrop-blur">
                   <div className="flex items-start gap-3">
                     <Mail className="mt-0.5 h-4 w-4 text-muted-foreground" />
@@ -325,7 +325,7 @@ export default function CustomerDetailPage() {
               </div>
             </div>
 
-            <div className="flex flex-col gap-3 lg:w-[260px]">
+            <div className="flex w-full max-w-sm flex-col gap-3 xl:w-[260px]">
               <CreateOrderDialog
                 mode="manager"
                 presetCustomerEntityId={customer.id}
@@ -349,7 +349,7 @@ export default function CustomerDetailPage() {
           </div>
         </section>
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {statCards.map((item) => (
             <Card key={item.label} className={`overflow-hidden rounded-3xl border border-border/60 bg-gradient-to-br ${item.accent}`}>
               <CardContent className="p-5">

@@ -54,6 +54,10 @@ export type ManagerAnalyticsSummary = {
     dueTodayOpenOrders: number;
     dueSoonOpenOrders?: number;
     promiseBackedOrders: number;
+    ruleBackedOrders?: number;
+    fallbackBackedOrders?: number;
+    trackedOpenOrders?: number;
+    untrackedOpenOrders?: number;
   };
   slaPolicy?: {
     staleHours: number;
@@ -106,6 +110,40 @@ export type ManagerAnalyticsSummary = {
   breakdowns: {
     status: Array<{ status: string; count: number }>;
     serviceType: Array<{ serviceType: ServiceType; count: number }>;
+  };
+  warnings?: {
+    overdueTotal: number;
+    staleTotal: number;
+    financeExposureTotal: number;
+    overdueOrders: Array<{
+      id: string;
+      orderNumber: string | null;
+      status: string;
+      expectedDeliveryAt: string | null;
+      updatedAt: string;
+    }>;
+    staleOrders: Array<{
+      id: string;
+      orderNumber: string | null;
+      status: string;
+      expectedDeliveryAt: string | null;
+      updatedAt: string;
+    }>;
+    financeExposureOrders: Array<{
+      id: string;
+      orderNumber: string | null;
+      status: string;
+      codDue: number;
+      serviceChargeDue: number;
+      updatedAt: string;
+    }>;
+    driverHeldOrders: Array<{
+      orderId: string;
+      orderNumber: string | null;
+      status: string;
+      amount: number;
+      currency: string | null;
+    }>;
   };
   trend: {
     created: Array<{ date: string; count: number }>;

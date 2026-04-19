@@ -176,8 +176,8 @@ export default function BulkOrderImportDialog({
         )}
       </DialogTrigger>
 
-      <DialogContent className="h-[min(92vh,860px)] w-[96vw] max-w-[96vw] overflow-hidden p-0 sm:max-w-[1180px]">
-        <DialogHeader className="border-b px-6 py-5">
+      <DialogContent className="h-[min(92vh,860px)] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-hidden p-0 sm:w-[96vw] sm:max-w-[1180px]">
+        <DialogHeader className="border-b px-4 py-4 sm:px-6 sm:py-5">
           <DialogTitle className="text-xl">{t("bulkOrderImport.title")}</DialogTitle>
           <DialogDescription>
             {t("bulkOrderImport.description", { customerLabel })}
@@ -185,7 +185,7 @@ export default function BulkOrderImportDialog({
         </DialogHeader>
 
         <div className="grid h-[calc(92vh-92px)] max-h-[calc(860px-92px)] gap-0 xl:grid-cols-[360px_minmax(0,1fr)]">
-          <div className="border-b bg-muted/20 p-6 xl:border-b-0 xl:border-r">
+          <div className="border-b bg-muted/20 p-4 sm:p-6 xl:border-b-0 xl:border-r">
             <div className="space-y-4">
               <div className="rounded-3xl border border-border/60 bg-background p-4">
                 <div className="flex items-start gap-3">
@@ -244,7 +244,7 @@ export default function BulkOrderImportDialog({
                 </p>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <Button
                   type="button"
                   variant="outline"
@@ -284,7 +284,7 @@ export default function BulkOrderImportDialog({
             </div>
           </div>
 
-          <div className="min-w-0 p-6">
+          <div className="min-w-0 p-4 sm:p-6">
             {!preview ? (
               <div className="flex min-h-96 items-center justify-center rounded-3xl border border-dashed border-border/70 bg-muted/15 p-8 text-center">
                 <div className="max-w-md space-y-3">
@@ -299,7 +299,7 @@ export default function BulkOrderImportDialog({
               </div>
             ) : (
               <div className="space-y-5">
-                <div className="grid gap-3 md:grid-cols-3">
+                <div className="grid gap-3 sm:grid-cols-3">
                   <div className="rounded-3xl border border-border/60 bg-background p-4">
                     <p className="text-sm text-muted-foreground">{t("bulkOrderImport.rows")}</p>
                     <p className="mt-2 text-3xl font-semibold">
@@ -337,7 +337,7 @@ export default function BulkOrderImportDialog({
 
                   <Separator />
 
-                  <ScrollArea className="h-[520px]">
+                  <ScrollArea className="h-[420px] sm:h-[520px]">
                     <Table>
                       <TableHeader>
                         <TableRow>

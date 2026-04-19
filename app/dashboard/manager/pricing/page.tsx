@@ -1231,6 +1231,11 @@ export default function ManagerPricingPage() {
                         </SelectItem>
                       </SelectContent>
                     </Select>
+                    {slaForm.matchMode === "service_default" ? (
+                      <p className="text-xs text-muted-foreground">
+                        {t("pricingPage.sla.serviceDefaultHint")}
+                      </p>
+                    ) : null}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="sla-days">

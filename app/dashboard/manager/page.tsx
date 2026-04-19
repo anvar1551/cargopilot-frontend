@@ -448,7 +448,7 @@ export default function ManagerDashboardPage() {
         <Card className="relative overflow-hidden rounded-3xl border border-border/60 bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 text-white">
           <div className="absolute -right-16 -top-16 h-56 w-56 rounded-full bg-cyan-400/15 blur-2xl" />
           <div className="absolute -left-14 -bottom-14 h-52 w-52 rounded-full bg-sky-300/10 blur-2xl" />
-          <CardContent className="relative p-6">
+          <CardContent className="relative p-4 sm:p-6">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
               <div className="space-y-2">
                 <div className="inline-flex items-center gap-2 rounded-full border border-white/25 bg-white/10 px-3 py-1 text-xs">
@@ -485,7 +485,7 @@ export default function ManagerDashboardPage() {
           </CardContent>
         </Card>
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
           {loading ? (
             Array.from({ length: 6 }).map((_, index) => (
               <Card key={index} className="rounded-2xl">
@@ -684,7 +684,7 @@ export default function ManagerDashboardPage() {
               <CardTitle className="text-base">{text.throughput}</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-7 gap-2">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
                 {last7Days.map((day) => (
                   <div
                     key={day.key}

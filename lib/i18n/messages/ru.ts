@@ -231,6 +231,8 @@
       stale: "{count} активных заказов не двигались дольше заданного порога.",
       finance: "{count} заказов всё ещё несут неоплаченный COD или сервисный сбор.",
       driverCash: "У водителей сейчас находится {amount}, что ещё не передано дальше и не закрыто в финансах.",
+      affectedOrders: "Затронутые заказы",
+      showingFirst: "Показаны первые {shown} из {total}.",
     },
   },
   settingsPage: {
@@ -411,10 +413,12 @@
       daysValue: "{value} дн.",
       priorityValue: "Приоритет {value}",
       mode: {
-        service_default: "Общее правило сервиса",
+        service_default: "Дефолт сервиса (fallback)",
         zone: "Переопределение по зоне",
         exact_route: "Точный маршрут",
       },
+      serviceDefaultHint:
+        "Fallback-правило для этого типа сервиса. Сработает, если не найдены точный маршрут и правило зоны.",
     },
     plans: {
       createTitle: "Создать тарифный план",

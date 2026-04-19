@@ -389,7 +389,7 @@ export default function ManagerOrdersPage() {
         <Card className="relative overflow-hidden rounded-3xl border border-border/60 bg-gradient-to-br from-slate-950 via-slate-900 to-cyan-950 text-white">
           <div className="absolute -right-20 -top-14 h-60 w-60 rounded-full bg-cyan-400/15 blur-3xl" />
           <div className="absolute -left-16 -bottom-10 h-52 w-52 rounded-full bg-emerald-300/10 blur-3xl" />
-          <CardContent className="relative space-y-6 p-6">
+          <CardContent className="relative space-y-6 p-4 sm:p-6">
             <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
               <div className="space-y-3">
                 <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs">
@@ -477,7 +477,7 @@ export default function ManagerOrdersPage() {
                   value={presetName}
                   onChange={(e) => setPresetName(e.target.value)}
                   placeholder={t("managerOrdersPage.presetName")}
-                  className="w-[170px]"
+                  className="w-full sm:w-[170px]"
                 />
                 <Button
                   variant="outline"
@@ -496,7 +496,7 @@ export default function ManagerOrdersPage() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr_1fr_1fr]">
+            <div className="grid gap-4 xl:grid-cols-[1.3fr_1fr_1fr_1fr]">
               <div className="space-y-1.5">
                 <Label>{t("managerOrdersPage.customer")}</Label>
                 <Input
@@ -655,7 +655,7 @@ export default function ManagerOrdersPage() {
           </CardContent>
         </Card>
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
           <Card className="rounded-2xl border-border/70">
             <CardContent className="p-4">
               <div className="text-xs uppercase tracking-wide text-muted-foreground">

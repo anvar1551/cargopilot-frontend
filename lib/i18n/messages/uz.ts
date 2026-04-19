@@ -230,6 +230,8 @@ export const uz = {
       stale: "{count} ta faol buyurtma sustlik chegarasidan uzoqroq harakatsiz qolgan.",
       finance: "{count} ta buyurtmada hali ham COD yoki service charge exposure bor.",
       driverCash: "Haydovchilarda hozir {amount} turibdi, bu hali topshirilmagan yoki settle qilinmagan.",
+      affectedOrders: "Ta'sirlangan buyurtmalar",
+      showingFirst: "Birinchi {shown} tasi ko'rsatilmoqda ({total} dan).",
     },
   },
   settingsPage: {
@@ -408,10 +410,12 @@ export const uz = {
       daysValue: "{value} kun",
       priorityValue: "Ustuvorlik {value}",
       mode: {
-        service_default: "Servis default",
+        service_default: "Servis default fallback",
         zone: "Zona override",
         exact_route: "Aniq marshrut",
       },
+      serviceDefaultHint:
+        "Bu servis turi uchun fallback SLA qoida. Aniq marshrut yoki zona qoidasi topilmasa qo'llanadi.",
     },
     plans: {
       createTitle: "Tarif rejasini yaratish",

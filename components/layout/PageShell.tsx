@@ -14,7 +14,7 @@ type Props = {
  */
 export default function PageShell({ children, className }: Props) {
   return (
-    <div className={cn("w-full px-4 sm:px-6 lg:px-8 py-6", className)}>
+    <div className={cn("w-full px-3 py-4 sm:px-6 sm:py-6 lg:px-8", className)}>
       {children}
     </div>
   );
