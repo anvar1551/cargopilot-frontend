@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useCallback, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -193,16 +193,13 @@ export default function DispatchCenter({
   orders,
   onRefresh,
   role = "manager",
-  detailsBasePath,
   externalScanRequest,
   onExternalScanProcessedAction,
 }: Props) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { t } = useI18n();
-  const resolvedDetailsBasePath = (
-    detailsBasePath ??
-    (role === "manager" ? "/dashboard/manager/orders" : "/dashboard/orders")
-  ).replace(/\/$/, "");
 
   const canOperateTasks = role === "manager" || role === "warehouse";
   const authUser = useMemo(() => getUser(), []);
@@ -414,7 +411,10 @@ export default function DispatchCenter({
   };
 
   const goDetails = (id: string) => {
-    router.push(`${resolvedDetailsBasePath}/${id}`);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("order", id);
+    const query = params.toString();
+    router.push(query ? `${pathname}?${query}` : pathname);
   };
 
   const processScanRaw = useCallback(

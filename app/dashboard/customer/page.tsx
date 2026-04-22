@@ -536,7 +536,7 @@ export default function CustomerDashboard() {
                           </div>
 
                           <Button asChild variant="outline" className="rounded-2xl">
-                            <Link href={`/dashboard/customer/orders/${order.id}`}>
+                            <Link href={`/dashboard/customer?order=${order.id}`}>
                               {text.openDetails}
                               <ArrowRight className="h-4 w-4" />
                             </Link>
@@ -575,7 +575,7 @@ export default function CustomerDashboard() {
                           {text.spotlightHint}
                         </p>
                         <Button asChild size="sm" variant="outline" className="rounded-full bg-white/80">
-                          <Link href={`/dashboard/customer/orders/${spotlightOrder.id}`}>
+                          <Link href={`/dashboard/customer?order=${spotlightOrder.id}`}>
                             {text.openDetails}
                           </Link>
                         </Button>

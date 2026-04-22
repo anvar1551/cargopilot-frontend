@@ -1114,7 +1114,7 @@ export default function ManagerAnalyticsPage() {
                             </div>
 
                             <Button asChild size="sm" variant="outline">
-                              <Link href={`/dashboard/manager/orders/${item.orderId}`}>
+                              <Link href={`/dashboard/manager/analytics?order=${item.orderId}`}>
                                 {t("managerAnalytics.finance.openOrder")}
                               </Link>
                             </Button>
@@ -1242,7 +1242,7 @@ export default function ManagerAnalyticsPage() {
                             {item.orders.map((order) => (
                               <Link
                                 key={`${item.id}-${order.id}`}
-                                href={`/dashboard/manager/orders/${order.id}`}
+                                href={`/dashboard/manager/analytics?order=${order.id}`}
                                 className="rounded-full border bg-background px-3 py-1 text-xs font-medium hover:border-slate-400"
                               >
                                 {(order.orderNumber

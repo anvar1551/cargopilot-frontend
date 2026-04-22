@@ -31,6 +31,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
   SelectContent,
@@ -44,20 +45,28 @@ import AssignDriverDialog from "@/components/manager/orders/AssignDriverDialog";
 
 import {
   ArrowLeft,
+  BadgeDollarSign,
+  Banknote,
   CalendarClock,
+  CircleAlert,
   CircleCheck,
   Clipboard,
+  CreditCard,
   ExternalLink,
   FileText,
   Filter,
+  HandCoins,
+  Landmark,
   Loader2,
   MapPin,
   Package,
+  ReceiptText,
   RefreshCw,
   ShieldAlert,
   Truck,
   User,
   UserPlus,
+  WalletCards,
   Warehouse,
 } from "lucide-react";
 
@@ -311,6 +320,27 @@ function displayCashKind(value: string | null | undefined, t: Translate) {
 function displayCashStatus(value: string | null | undefined, t: Translate) {
   if (!value) return "-";
   return t(`orderDetails.cash.status.${value}`);
+}
+
+function paymentStatusClasses(value?: string | null) {
+  const status = toLower(value);
+  if (status === "paid" || status === "settled") {
+    return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700";
+  }
+  if (status === "pending" || status === "expected" || status === "held") {
+    return "border-amber-500/30 bg-amber-500/10 text-amber-700";
+  }
+  if (status === "failed" || status === "cancelled" || status === "unpaid") {
+    return "border-rose-500/30 bg-rose-500/10 text-rose-700";
+  }
+  return "border-border/60 bg-background text-foreground";
+}
+
+function cashHolderIcon(holderType?: string | null) {
+  const holder = toLower(holderType);
+  if (holder === "warehouse") return <Warehouse className="h-3.5 w-3.5" />;
+  if (holder === "finance") return <Landmark className="h-3.5 w-3.5" />;
+  return <User className="h-3.5 w-3.5" />;
 }
 
 function displayCashHolder(
@@ -619,11 +649,13 @@ export default function OrderDetailsView({
   backHref,
   title = "Order Details",
   showManagerActions = false,
+  hideBackButton = false,
 }: {
   orderId: string;
   backHref: string;
   title?: string;
   showManagerActions?: boolean;
+  hideBackButton?: boolean;
 }) {
   const { t } = useI18n();
   const queryClient = useQueryClient();
@@ -836,7 +868,7 @@ export default function OrderDetailsView({
   if (isLoading) {
     return (
       <div className="p-6">
-          <Card className="max-w-3xl">
+        <Card className="max-w-3xl">
           <CardHeader>
             <CardTitle>{t("orderDetails.loadingTitle")}</CardTitle>
           </CardHeader>
@@ -864,8 +896,8 @@ export default function OrderDetailsView({
   }
 
   return (
-    <div className="p-6">
-      <div className="mx-auto max-w-6xl space-y-6">
+    <div className={cn("overflow-x-hidden", hideBackButton ? "p-3 sm:p-4 lg:p-6" : "p-6")}>
+      <div className={cn("mx-auto space-y-6", hideBackButton ? "max-w-[1480px]" : "max-w-6xl")}>
         <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-2">
@@ -916,12 +948,14 @@ export default function OrderDetailsView({
               </>
             ) : null}
 
-            <Button asChild variant="outline">
-              <Link href={backHref}>
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                {t("common.back")}
-              </Link>
-            </Button>
+            {!hideBackButton ? (
+              <Button asChild variant="outline">
+                <Link href={backHref}>
+                  <ArrowLeft className="mr-2 h-4 w-4" />
+                  {t("common.back")}
+                </Link>
+              </Button>
+            ) : null}
           </div>
         </div>
 
@@ -956,7 +990,7 @@ export default function OrderDetailsView({
               </div>
             </div>
 
-            <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               <div className="rounded-xl border border-border/60 bg-background/70 p-3">
                 <p className="text-xs text-muted-foreground">{t("orderDetails.driver")}</p>
                 <p className="font-medium">
@@ -984,749 +1018,893 @@ export default function OrderDetailsView({
           </CardContent>
         </Card>
 
-        <div className="grid gap-4 lg:grid-cols-3">
-          <Card className="lg:col-span-2">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">{t("orderDetails.routeAndContacts")}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4 text-sm">
-              <div className="grid gap-3 md:grid-cols-2">
-                <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                  <p className="text-xs text-muted-foreground">{t("orderDetails.pickup")}</p>
-                  <p className="mt-1 font-medium">{order.pickupAddress || "-"}</p>
-                </div>
-                <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                  <p className="text-xs text-muted-foreground">{t("orderDetails.dropoff")}</p>
-                  <p className="mt-1 font-medium">{order.dropoffAddress || "-"}</p>
-                </div>
-              </div>
-
-              <div className="grid gap-3 md:grid-cols-2">
-                <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                  <p className="text-xs text-muted-foreground">{t("orderDetails.sender")}</p>
-                  <p className="mt-1 font-medium">{order.senderName || "-"}</p>
-                  <div className="space-y-1 pt-1">
-                    {senderPhones.length ? (
-                      senderPhones.map((phone, index) => (
-                        <p key={`${phone}-${index}`} className="text-muted-foreground">
-                          {index === 0 ? phone : t("orderDetails.altPhone", { index, phone })}
-                        </p>
-                      ))
-                    ) : (
-                      <p className="text-muted-foreground">-</p>
-                    )}
-                  </div>
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    {senderStructured || order.senderAddress || "-"}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                  <p className="text-xs text-muted-foreground">{t("orderDetails.receiver")}</p>
-                  <p className="mt-1 font-medium">{order.receiverName || "-"}</p>
-                  <div className="space-y-1 pt-1">
-                    {receiverPhones.length ? (
-                      receiverPhones.map((phone, index) => (
-                        <p key={`${phone}-${index}`} className="text-muted-foreground">
-                          {index === 0 ? phone : t("orderDetails.altPhone", { index, phone })}
-                        </p>
-                      ))
-                    ) : (
-                      <p className="text-muted-foreground">-</p>
-                    )}
-                  </div>
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    {receiverStructured || order.receiverAddress || "-"}
-                  </p>
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                <p className="text-xs text-muted-foreground">{t("orderDetails.destinationCity")}</p>
-                <p className="mt-1 font-medium">{order.destinationCity || "-"}</p>
-              </div>
+        <Tabs defaultValue="overview" className="space-y-4">
+          <Card className="rounded-2xl border-border/70 bg-[linear-gradient(180deg,rgba(14,165,233,0.08),rgba(16,185,129,0.05),rgba(255,255,255,0.95))]">
+            <CardContent className="p-3">
+              <TabsList className="h-auto w-full flex-wrap justify-start gap-2 bg-transparent p-0">
+                <TabsTrigger
+                  value="overview"
+                  className="h-10 flex-none rounded-xl border border-border/70 bg-background/80 px-4 data-[state=active]:border-cyan-300 data-[state=active]:bg-cyan-50 data-[state=active]:text-cyan-900"
+                >
+                  <MapPin className="h-4 w-4" />
+                  {t("orderDetails.routeAndContacts")}
+                </TabsTrigger>
+                <TabsTrigger
+                  value="shipment"
+                  className="h-10 flex-none rounded-xl border border-border/70 bg-background/80 px-4 data-[state=active]:border-emerald-300 data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-900"
+                >
+                  <Package className="h-4 w-4" />
+                  {t("orderDetails.shipmentAndParcels")}
+                </TabsTrigger>
+                <TabsTrigger
+                  value="finance"
+                  className="h-10 flex-none rounded-xl border border-border/70 bg-background/80 px-4 data-[state=active]:border-orange-300 data-[state=active]:bg-orange-50 data-[state=active]:text-orange-900"
+                >
+                  <FileText className="h-4 w-4" />
+                  {t("orderDetails.paymentAndPlanning")}
+                </TabsTrigger>
+                <TabsTrigger
+                  value="timeline"
+                  className="h-10 flex-none rounded-xl border border-border/70 bg-background/80 px-4 data-[state=active]:border-sky-300 data-[state=active]:bg-sky-50 data-[state=active]:text-sky-900"
+                >
+                  <CalendarClock className="h-4 w-4" />
+                  {t("orderDetails.trackingTimeline")}
+                </TabsTrigger>
+              </TabsList>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">{t("orderDetails.customerAndOperations")}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                <p className="text-xs text-muted-foreground">{t("orderDetails.customerUser")}</p>
-                <p className="mt-1 font-medium">
-                  {order.customer?.name || order.customer?.email || "-"}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {order.customer?.email || "-"}
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                <p className="text-xs text-muted-foreground">{t("orderDetails.customerEntity")}</p>
-                <p className="mt-1 font-medium">
-                  {order.customerEntity?.name || order.customerEntity?.companyName || "-"}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {prettyEnum(order.customerEntity?.type) || "-"}
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                <p className="text-xs text-muted-foreground">{t("orderDetails.driver")}</p>
-                <p className="mt-1 font-medium">
-                  {order.assignedDriver?.name || order.assignedDriver?.email || "-"}
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                <p className="text-xs text-muted-foreground">{t("orderDetails.currentWarehouse")}</p>
-                <p className="mt-1 font-medium">
-                  {order.currentWarehouse?.name || order.currentWarehouse?.location || "-"}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {order.currentWarehouse?.region || "-"}
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                <p className="text-xs text-muted-foreground">{t("orderDetails.exceptionSnapshot")}</p>
-                <p className="mt-1 font-medium">
-                  {order.lastExceptionReason
-                    ? displayEnum(order.lastExceptionReason, t)
-                    : t("orderDetails.none")}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {order.lastExceptionAt ? formatDateTime(order.lastExceptionAt) : "-"}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="grid gap-4 lg:grid-cols-3">
-          <Card className="lg:col-span-2">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">{t("orderDetails.shipmentAndParcels")}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <div className="rounded-xl border border-border/60 bg-background/60 p-3 text-sm">
-                  <p className="text-xs text-muted-foreground">{t("orderDetails.serviceType")}</p>
-                  <p className="mt-1 font-medium">{getServiceTypeLabel(order.serviceType, t)}</p>
-                </div>
-                <div className="rounded-xl border border-border/60 bg-background/60 p-3 text-sm">
-                  <p className="text-xs text-muted-foreground">{t("orderDetails.totalWeight")}</p>
-                  <p className="mt-1 font-medium">
-                    {(totalParcelWeight || safeNumber(order.weightKg) || 0).toFixed(2)} kg
-                  </p>
-                </div>
-                <div className="rounded-xl border border-border/60 bg-background/60 p-3 text-sm">
-                  <p className="text-xs text-muted-foreground">{t("orderDetails.itemValue")}</p>
-                  <p className="mt-1 font-medium">
-                    {formatMoney(order.itemValue, order.currency)}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-border/60 bg-background/60 p-3 text-sm">
-                  <p className="text-xs text-muted-foreground">{t("orderDetails.handling")}</p>
-                  <div className="mt-1 flex flex-wrap gap-1.5">
-                    {order.fragile ? <Badge variant="secondary">{t("orderDetails.fragile")}</Badge> : null}
-                    {order.dangerousGoods ? (
-                      <Badge variant="secondary">{t("orderDetails.dangerous")}</Badge>
-                    ) : null}
-                    {order.shipmentInsurance ? (
-                      <Badge variant="secondary">{t("orderDetails.insurance")}</Badge>
-                    ) : null}
-                    {!order.fragile && !order.dangerousGoods && !order.shipmentInsurance ? (
-                      <span className="text-sm text-muted-foreground">{t("orderDetails.standard")}</span>
-                    ) : null}
+          <TabsContent value="overview" className="space-y-4">
+            <div className="grid gap-4 xl:grid-cols-3">
+              <Card className="lg:col-span-2">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">{t("orderDetails.routeAndContacts")}</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4 text-sm">
+                  <div className="grid gap-3 lg:grid-cols-2">
+                    <div className="rounded-xl border border-border/60 bg-background/60 p-4">
+                      <p className="text-xs text-muted-foreground">{t("orderDetails.pickup")}</p>
+                      <p className="mt-1 font-medium">{order.pickupAddress || "-"}</p>
+                    </div>
+                    <div className="rounded-xl border border-border/60 bg-background/60 p-4">
+                      <p className="text-xs text-muted-foreground">{t("orderDetails.dropoff")}</p>
+                      <p className="mt-1 font-medium">{order.dropoffAddress || "-"}</p>
+                    </div>
                   </div>
-                </div>
-              </div>
 
-              <Separator />
-
-              {parcels.length ? (
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {parcels.map((p) => (
-                    <div
-                      key={p.id}
-                      className="rounded-xl border border-border/60 bg-background/60 p-4"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <p className="text-sm font-medium">
-                            {t("orderDetails.piece", { pieceNo: p.pieceNo ?? "-" })}
-                            {p.pieceTotal ? ` / ${p.pieceTotal}` : ""}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {p.parcelCode || "-"}
-                          </p>
-                        </div>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 px-2"
-                          onClick={() => copyParcelCode(p.parcelCode)}
-                          disabled={!p.parcelCode}
-                        >
-                          <Clipboard className="h-4 w-4" />
-                        </Button>
+                  <div className="grid gap-3 lg:grid-cols-2">
+                    <div className="rounded-xl border border-border/60 bg-background/60 p-4">
+                      <p className="text-xs text-muted-foreground">{t("orderDetails.sender")}</p>
+                      <p className="mt-1 font-medium">{order.senderName || "-"}</p>
+                      <div className="space-y-1 pt-1">
+                        {senderPhones.length ? (
+                          senderPhones.map((phone, index) => (
+                            <p key={`${phone}-${index}`} className="text-muted-foreground">
+                              {index === 0 ? phone : t("orderDetails.altPhone", { index, phone })}
+                            </p>
+                          ))
+                        ) : (
+                          <p className="text-muted-foreground">-</p>
+                        )}
                       </div>
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        {senderStructured || order.senderAddress || "-"}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-border/60 bg-background/60 p-4">
+                      <p className="text-xs text-muted-foreground">{t("orderDetails.receiver")}</p>
+                      <p className="mt-1 font-medium">{order.receiverName || "-"}</p>
+                      <div className="space-y-1 pt-1">
+                        {receiverPhones.length ? (
+                          receiverPhones.map((phone, index) => (
+                            <p key={`${phone}-${index}`} className="text-muted-foreground">
+                              {index === 0 ? phone : t("orderDetails.altPhone", { index, phone })}
+                            </p>
+                          ))
+                        ) : (
+                          <p className="text-muted-foreground">-</p>
+                        )}
+                      </div>
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        {receiverStructured || order.receiverAddress || "-"}
+                      </p>
+                    </div>
+                  </div>
 
-                      <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-                        <div>
-                          <p className="text-xs text-muted-foreground">Weight</p>
-                          <p className="text-xs text-muted-foreground">{t("orderDetails.weight")}</p>
-                          <p>{safeNumber(p.weightKg)?.toFixed(2) ?? "-"} kg</p>
+                  <div className="rounded-xl border border-border/60 bg-background/60 p-4">
+                    <p className="text-xs text-muted-foreground">{t("orderDetails.destinationCity")}</p>
+                    <p className="mt-1 font-medium">{order.destinationCity || "-"}</p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">{t("orderDetails.customerAndOperations")}</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm">
+                  <div className="rounded-xl border border-border/60 bg-background/60 p-4">
+                    <p className="text-xs text-muted-foreground">{t("orderDetails.customerUser")}</p>
+                    <p className="mt-1 font-medium">
+                      {order.customer?.name || order.customer?.email || "-"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {order.customer?.email || "-"}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-border/60 bg-background/60 p-4">
+                    <p className="text-xs text-muted-foreground">{t("orderDetails.customerEntity")}</p>
+                    <p className="mt-1 font-medium">
+                      {order.customerEntity?.name || order.customerEntity?.companyName || "-"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {prettyEnum(order.customerEntity?.type) || "-"}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-border/60 bg-background/60 p-4">
+                    <p className="text-xs text-muted-foreground">{t("orderDetails.driver")}</p>
+                    <p className="mt-1 font-medium">
+                      {order.assignedDriver?.name || order.assignedDriver?.email || "-"}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-border/60 bg-background/60 p-4">
+                    <p className="text-xs text-muted-foreground">{t("orderDetails.currentWarehouse")}</p>
+                    <p className="mt-1 font-medium">
+                      {order.currentWarehouse?.name || order.currentWarehouse?.location || "-"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {order.currentWarehouse?.region || "-"}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-border/60 bg-background/60 p-4">
+                    <p className="text-xs text-muted-foreground">{t("orderDetails.exceptionSnapshot")}</p>
+                    <p className="mt-1 font-medium">
+                      {order.lastExceptionReason
+                        ? displayEnum(order.lastExceptionReason, t)
+                        : t("orderDetails.none")}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {order.lastExceptionAt ? formatDateTime(order.lastExceptionAt) : "-"}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="shipment" className="space-y-4">
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">{t("orderDetails.shipmentAndParcels")}</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  <div className="rounded-xl border border-border/60 bg-background/60 p-3 text-sm">
+                    <p className="text-xs text-muted-foreground">{t("orderDetails.serviceType")}</p>
+                    <p className="mt-1 font-medium">{getServiceTypeLabel(order.serviceType, t)}</p>
+                  </div>
+                  <div className="rounded-xl border border-border/60 bg-background/60 p-3 text-sm">
+                    <p className="text-xs text-muted-foreground">{t("orderDetails.totalWeight")}</p>
+                    <p className="mt-1 font-medium">
+                      {(totalParcelWeight || safeNumber(order.weightKg) || 0).toFixed(2)} kg
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-border/60 bg-background/60 p-3 text-sm">
+                    <p className="text-xs text-muted-foreground">{t("orderDetails.itemValue")}</p>
+                    <p className="mt-1 font-medium">
+                      {formatMoney(order.itemValue, order.currency)}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-border/60 bg-background/60 p-3 text-sm">
+                    <p className="text-xs text-muted-foreground">{t("orderDetails.handling")}</p>
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {order.fragile ? <Badge variant="secondary">{t("orderDetails.fragile")}</Badge> : null}
+                      {order.dangerousGoods ? (
+                        <Badge variant="secondary">{t("orderDetails.dangerous")}</Badge>
+                      ) : null}
+                      {order.shipmentInsurance ? (
+                        <Badge variant="secondary">{t("orderDetails.insurance")}</Badge>
+                      ) : null}
+                      {!order.fragile && !order.dangerousGoods && !order.shipmentInsurance ? (
+                        <span className="text-sm text-muted-foreground">{t("orderDetails.standard")}</span>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+
+                <Separator />
+
+                {parcels.length ? (
+                  <div className="grid gap-3 xl:grid-cols-2">
+                    {parcels.map((p) => (
+                      <div
+                        key={p.id}
+                        className="rounded-xl border border-border/60 bg-background/60 p-4"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-medium">
+                              {t("orderDetails.piece", { pieceNo: p.pieceNo ?? "-" })}
+                              {p.pieceTotal ? ` / ${p.pieceTotal}` : ""}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {p.parcelCode || "-"}
+                            </p>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 px-2"
+                            onClick={() => copyParcelCode(p.parcelCode)}
+                            disabled={!p.parcelCode}
+                          >
+                            <Clipboard className="h-4 w-4" />
+                          </Button>
                         </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">{t("orderDetails.dimensions")}</p>
-                          <p>
-                            {safeNumber(p.lengthCm) ?? "-"} x {safeNumber(p.widthCm) ?? "-"} x{" "}
-                            {safeNumber(p.heightCm) ?? "-"} cm
+
+                        <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                          <div>
+                            <p className="text-xs text-muted-foreground">Weight</p>
+                            <p className="text-xs text-muted-foreground">{t("orderDetails.weight")}</p>
+                            <p>{safeNumber(p.weightKg)?.toFixed(2) ?? "-"} kg</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">{t("orderDetails.dimensions")}</p>
+                            <p>
+                              {safeNumber(p.lengthCm) ?? "-"} x {safeNumber(p.widthCm) ?? "-"} x{" "}
+                              {safeNumber(p.heightCm) ?? "-"} cm
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">{t("orderDetails.noParcels")}</p>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="finance" className="space-y-4">
+            <div className="grid gap-4 xl:grid-cols-3">
+              <Card className="lg:col-span-2">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">{t("orderDetails.paymentAndPlanning")}</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4 text-sm">
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                          <ReceiptText className="h-4 w-4" />
+                          {t("orderDetails.invoiceStatus")}
+                        </span>
+                        <Badge
+                          variant="outline"
+                          className={cn("rounded-full border px-2 py-0.5 text-xs", paymentStatusClasses(invoice?.status))}
+                        >
+                          {displayEnum(invoice?.status, t) || t("orderDetails.notCreated")}
+                        </Badge>
+                      </div>
+                      {paymentUrl && invoiceStatus !== "paid" ? (
+                        <a
+                          className="mt-3 inline-flex items-center gap-1 text-xs font-medium underline underline-offset-4"
+                          href={paymentUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {t("orderDetails.payNow")}
+                          <ExternalLink className="h-3.5 w-3.5 opacity-70" />
+                        </a>
+                      ) : null}
+                    </div>
+
+                    <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+                      <p className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                        <CreditCard className="h-4 w-4" />
+                        {t("orderDetails.paymentType")}
+                      </p>
+                      <p className="mt-2 font-semibold">{getPaymentTypeLabel(order.paymentType, t)}</p>
+                    </div>
+
+                    <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+                      <p className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                        <Banknote className="h-4 w-4" />
+                        {t("orderDetails.cod")}
+                      </p>
+                      <p className="mt-2 font-semibold">{formatMoney(order.codAmount, order.currency)}</p>
+                      <Badge
+                        variant="outline"
+                        className={cn("mt-2 rounded-full border px-2 py-0.5 text-xs", paymentStatusClasses(order.codPaidStatus))}
+                      >
+                        {displayPaidStatus(order.codPaidStatus, t)}
+                      </Badge>
+                    </div>
+
+                    <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+                      <p className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                        <WalletCards className="h-4 w-4" />
+                        {t("orderDetails.serviceCharge")}
+                      </p>
+                      <p className="mt-2 font-semibold">{formatMoney(order.serviceCharge, order.currency)}</p>
+                      <Badge
+                        variant="outline"
+                        className={cn("mt-2 rounded-full border px-2 py-0.5 text-xs", paymentStatusClasses(order.serviceChargePaidStatus))}
+                      >
+                        {displayPaidStatus(order.serviceChargePaidStatus, t)}
+                      </Badge>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 xl:grid-cols-2">
+                    <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+                      <p className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                        <Clipboard className="h-4 w-4" />
+                        {t("orderDetails.billing")}
+                      </p>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        <div className="rounded-xl border border-border/60 bg-background/70 p-3">
+                          <p className="text-xs text-muted-foreground">{t("orderDetails.deliveryPaidBy")}</p>
+                          <p className="mt-1 font-medium">{getPaidByLabel(order.deliveryChargePaidBy, t)}</p>
+                        </div>
+                        <div className="rounded-xl border border-border/60 bg-background/70 p-3">
+                          <p className="text-xs text-muted-foreground">{t("orderDetails.recipientUnavailable")}</p>
+                          <p className="mt-1 font-medium">
+                            {getRecipientUnavailableLabel(order.ifRecipientNotAvailable, t)}
                           </p>
                         </div>
                       </div>
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">{t("orderDetails.noParcels")}</p>
-              )}
-            </CardContent>
-          </Card>
 
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">{t("orderDetails.paymentAndPlanning")}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                <p className="text-xs text-muted-foreground">{t("orderDetails.invoiceStatus")}</p>
-                <p className="mt-1 font-medium">
-                  {displayEnum(invoice?.status, t) || t("orderDetails.notCreated")}
-                </p>
-                {paymentUrl && invoiceStatus !== "paid" ? (
-                  <a
-                    className="mt-2 inline-flex items-center gap-1 text-sm underline underline-offset-4"
-                    href={paymentUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    {t("orderDetails.payNow")} <ExternalLink className="h-4 w-4 opacity-70" />
-                  </a>
-                ) : null}
-              </div>
-
-              <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                <p className="text-xs text-muted-foreground">{t("orderDetails.billing")}</p>
-                <p className="mt-1">{t("orderDetails.paymentType")}: {getPaymentTypeLabel(order.paymentType, t)}</p>
-                <p>{t("orderDetails.deliveryPaidBy")}: {getPaidByLabel(order.deliveryChargePaidBy, t)}</p>
-                <p>{t("orderDetails.recipientUnavailable")}: {getRecipientUnavailableLabel(order.ifRecipientNotAvailable, t)}</p>
-              </div>
-
-              <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                <p className="text-xs text-muted-foreground">{t("orderDetails.amounts")}</p>
-                <p className="mt-1">{t("orderDetails.cod")}: {formatMoney(order.codAmount, order.currency)}</p>
-                <p>{t("orderDetails.codStatus")}: {displayPaidStatus(order.codPaidStatus, t)}</p>
-                <p>{t("orderDetails.serviceCharge")}: {formatMoney(order.serviceCharge, order.currency)}</p>
-                <p>{t("orderDetails.serviceStatus")}: {displayPaidStatus(order.serviceChargePaidStatus, t)}</p>
-              </div>
-
-              <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                <p className="text-xs text-muted-foreground">{t("orderDetails.cash.title")}</p>
-                {cashCollections.length ? (
-                  <div className="mt-3 space-y-3">
-                    {cashCollections.map((collection) => {
-                      const latestEvent = collection.events?.[collection.events.length - 1] ?? null;
-                      const isWarehouseUser =
-                        currentUser?.role === "warehouse" &&
-                        Boolean(currentUser.warehouseId) &&
-                        order?.currentWarehouse?.id === currentUser.warehouseId;
-                      const canAcceptToWarehouse =
-                        isWarehouseUser &&
-                        (collection.status === "expected" ||
-                          collection.currentHolderType === "driver");
-                      const canSettleToFinance =
-                        currentUser?.role === "manager" &&
-                        collection.status === "held";
-                      return (
-                        <div
-                          key={collection.id}
-                          className="rounded-xl border border-border/60 bg-background/70 p-3"
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <p className="font-medium">
-                                {displayCashKind(collection.kind, t)}
-                              </p>
-                              <p className="text-xs text-muted-foreground">
-                                {displayCashStatus(collection.status, t)}
-                              </p>
-                            </div>
-                            <Badge variant="outline" className="rounded-full">
-                              {displayCashHolder(collection, t)}
-                            </Badge>
-                          </div>
-
-                          <div className="mt-3 space-y-1 text-sm">
-                            <p>
-                              {t("orderDetails.cash.expected")}:{" "}
-                              {formatMoney(collection.expectedAmount, collection.currency ?? order.currency)}
-                            </p>
-                            <p>
-                              {t("orderDetails.cash.currentAmount")}:{" "}
-                              {formatMoney(
-                                collection.collectedAmount ?? collection.expectedAmount,
-                                collection.currency ?? order.currency,
-                              )}
-                            </p>
-                            <p>
-                              {t("orderDetails.cash.collectedAt")}:{" "}
-                              {formatDateTime(collection.collectedAt)}
-                            </p>
-                            <p>
-                              {t("orderDetails.cash.settledAt")}:{" "}
-                              {formatDateTime(collection.settledAt)}
-                            </p>
-                          </div>
-
-                          {latestEvent ? (
-                            <div className="mt-3 rounded-lg border border-dashed border-border/60 px-3 py-2 text-xs text-muted-foreground">
-                              <span className="font-medium text-foreground">
-                                {t("orderDetails.cash.latestEvent")}:
-                              </span>{" "}
-                              {prettyEnum(latestEvent.eventType)} · {formatDateTime(latestEvent.createdAt)}
-                              {latestEvent.note ? ` · ${latestEvent.note}` : ""}
-                            </div>
-                          ) : null}
-
-                          {canAcceptToWarehouse || canSettleToFinance ? (
-                            <div className="mt-3 flex flex-wrap gap-2">
-                              {canAcceptToWarehouse ? (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="outline"
-                                  disabled={cashActionKey === cashActionId(collection, "accept")}
-                                  onClick={() => {
-                                    const actionKey = cashActionId(collection, "accept");
-                                    if (collection.currentHolderType === "driver") {
-                                      void runCashAction(
-                                        actionKey,
-                                        () =>
-                                          handoffOrderCash({
-                                            orderId,
-                                            kind: (collection.kind as "cod" | "service_charge") ?? "cod",
-                                            toHolderType: "warehouse",
-                                            toWarehouseId: currentUser?.warehouseId ?? null,
-                                          }),
-                                        t("orderDetails.cash.actions.accept"),
-                                        t("orderDetails.cash.errors.accept"),
-                                      );
-                                      return;
-                                    }
-
-                                    void runCashAction(
-                                      actionKey,
-                                      () =>
-                                        collectOrderCash({
-                                          orderId,
-                                          kind: (collection.kind as "cod" | "service_charge") ?? "cod",
-                                        }),
-                                      t("orderDetails.cash.actions.accept"),
-                                      t("orderDetails.cash.errors.accept"),
-                                    );
-                                  }}
-                                >
-                                  {cashActionKey === cashActionId(collection, "accept") ? (
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                  ) : null}
-                                  {collection.currentHolderType === "driver"
-                                    ? t("orderDetails.cash.actions.acceptFromDriver")
-                                    : t("orderDetails.cash.actions.accept")}
-                                </Button>
-                              ) : null}
-
-                              {canSettleToFinance ? (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  disabled={cashActionKey === cashActionId(collection, "settle")}
-                                  onClick={() =>
-                                    void runCashAction(
-                                      cashActionId(collection, "settle"),
-                                      () =>
-                                        settleOrderCash({
-                                          orderId,
-                                          kind: (collection.kind as "cod" | "service_charge") ?? "cod",
-                                        }),
-                                      t("orderDetails.cash.actions.settle"),
-                                      t("orderDetails.cash.errors.settle"),
-                                    )
-                                  }
-                                >
-                                  {cashActionKey === cashActionId(collection, "settle") ? (
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                  ) : null}
-                                  {t("orderDetails.cash.actions.settle")}
-                                </Button>
-                              ) : null}
-                            </div>
-                          ) : null}
+                    <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+                      <p className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                        <CalendarClock className="h-4 w-4" />
+                        {t("orderDetails.schedule")}
+                      </p>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                        <div className="rounded-xl border border-border/60 bg-background/70 p-3">
+                          <p className="text-xs text-muted-foreground">{t("orderDetails.pickup")}</p>
+                          <p className="mt-1 font-medium">{formatDateTime(order.plannedPickupAt)}</p>
                         </div>
-                      );
-                    })}
+                        <div className="rounded-xl border border-border/60 bg-background/70 p-3">
+                          <p className="text-xs text-muted-foreground">{t("orderDetails.delivery")}</p>
+                          <p className="mt-1 font-medium">{formatDateTime(order.plannedDeliveryAt)}</p>
+                        </div>
+                        <div className="rounded-xl border border-border/60 bg-background/70 p-3">
+                          <p className="text-xs text-muted-foreground">{t("orderDetails.promise")}</p>
+                          <p className="mt-1 font-medium">{formatDateTime(order.promiseDate)}</p>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                ) : (
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {t("orderDetails.cash.empty")}
-                  </p>
-                )}
-              </div>
 
-              <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                <p className="text-xs text-muted-foreground">{t("orderDetails.schedule")}</p>
-                <p className="mt-1">{t("orderDetails.pickup")}: {formatDateTime(order.plannedPickupAt)}</p>
-                <p>{t("orderDetails.delivery")}: {formatDateTime(order.plannedDeliveryAt)}</p>
-                <p>{t("orderDetails.promise")}: {formatDateTime(order.promiseDate)}</p>
-              </div>
+                  <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+                    <p className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                      <HandCoins className="h-4 w-4" />
+                      {t("orderDetails.cash.title")}
+                    </p>
+                    {cashCollections.length ? (
+                      <div className="mt-3 space-y-3">
+                        {cashCollections.map((collection) => {
+                          const latestEvent = collection.events?.[collection.events.length - 1] ?? null;
+                          const isWarehouseUser =
+                            currentUser?.role === "warehouse" &&
+                            Boolean(currentUser.warehouseId) &&
+                            order?.currentWarehouse?.id === currentUser.warehouseId;
+                          const canAcceptToWarehouse =
+                            isWarehouseUser &&
+                            (collection.status === "expected" ||
+                              collection.currentHolderType === "driver");
+                          const canSettleToFinance =
+                            currentUser?.role === "manager" &&
+                            collection.status === "held";
+                          return (
+                            <div
+                              key={collection.id}
+                              className="rounded-2xl border border-border/60 bg-background/70 p-4"
+                            >
+                              <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div className="space-y-1">
+                                  <p className="inline-flex items-center gap-2 font-medium">
+                                    <BadgeDollarSign className="h-4 w-4 text-muted-foreground" />
+                                    {displayCashKind(collection.kind, t)}
+                                  </p>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <Badge
+                                      variant="outline"
+                                      className={cn("rounded-full border px-2 py-0.5 text-xs", paymentStatusClasses(collection.status))}
+                                    >
+                                      {displayCashStatus(collection.status, t)}
+                                    </Badge>
+                                    <Badge variant="outline" className="rounded-full border px-2 py-0.5 text-xs">
+                                      <span className="inline-flex items-center gap-1">
+                                        {cashHolderIcon(collection.currentHolderType)}
+                                        {displayCashHolder(collection, t)}
+                                      </span>
+                                    </Badge>
+                                  </div>
+                                </div>
+                              </div>
 
-              <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                <p className="text-xs text-muted-foreground">{t("orderDetails.reference")}</p>
-                <p className="mt-1">{t("orderDetails.referenceId")}: {order.referenceId || "-"}</p>
-                <p>{t("orderDetails.shelfId")}: {order.shelfId || "-"}</p>
-                <p>{t("orderDetails.promo")}: {order.promoCode || "-"}</p>
-                <p>{t("orderDetails.calls")}: {safeNumber(order.numberOfCalls) ?? "-"}</p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+                              <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                                <div className="rounded-xl border border-border/60 bg-background/70 p-3">
+                                  <p className="text-xs text-muted-foreground">{t("orderDetails.cash.expected")}</p>
+                                  <p className="mt-1 font-medium">
+                                    {formatMoney(collection.expectedAmount, collection.currency ?? order.currency)}
+                                  </p>
+                                </div>
+                                <div className="rounded-xl border border-border/60 bg-background/70 p-3">
+                                  <p className="text-xs text-muted-foreground">{t("orderDetails.cash.currentAmount")}</p>
+                                  <p className="mt-1 font-medium">
+                                    {formatMoney(
+                                      collection.collectedAmount ?? collection.expectedAmount,
+                                      collection.currency ?? order.currency,
+                                    )}
+                                  </p>
+                                </div>
+                                <div className="rounded-xl border border-border/60 bg-background/70 p-3">
+                                  <p className="text-xs text-muted-foreground">{t("orderDetails.cash.collectedAt")}</p>
+                                  <p className="mt-1 font-medium">{formatDateTime(collection.collectedAt)}</p>
+                                </div>
+                                <div className="rounded-xl border border-border/60 bg-background/70 p-3">
+                                  <p className="text-xs text-muted-foreground">{t("orderDetails.cash.settledAt")}</p>
+                                  <p className="mt-1 font-medium">{formatDateTime(collection.settledAt)}</p>
+                                </div>
+                              </div>
 
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <CardTitle className="text-base">{t("orderDetails.trackingTimeline")}</CardTitle>
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="w-44">
-                  <Select
-                    value={eventKind}
-                    onValueChange={(v: "all" | "status") => setEventKind(v)}
-                  >
-                    <SelectTrigger className="h-9">
-                      <Filter className="mr-2 h-4 w-4 text-muted-foreground" />
-                      <SelectValue placeholder="Event type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All events</SelectItem>
-                      <SelectItem value="status">Status changes</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                              {latestEvent ? (
+                                <div className="mt-3 rounded-xl border border-dashed border-border/60 bg-background/70 px-3 py-2 text-xs text-muted-foreground">
+                                  <span className="inline-flex items-center gap-1 font-medium text-foreground">
+                                    <CircleAlert className="h-3.5 w-3.5" />
+                                    {t("orderDetails.cash.latestEvent")}:
+                                  </span>{" "}
+                                  {prettyEnum(latestEvent.eventType)} | {formatDateTime(latestEvent.createdAt)}
+                                  {latestEvent.note ? ` | ${latestEvent.note}` : ""}
+                                </div>
+                              ) : null}
 
-                <div className="w-52">
-                  <Select value={parcelFilter} onValueChange={setParcelFilter}>
-                    <SelectTrigger className="h-9">
-                      <Package className="mr-2 h-4 w-4 text-muted-foreground" />
-                      <SelectValue placeholder="Parcel filter" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All parcels</SelectItem>
-                      {parcels.map((p) => (
-                        <SelectItem key={p.id} value={p.id}>
-                          {p.parcelCode || `Piece ${p.pieceNo ?? "?"}`}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                              {canAcceptToWarehouse || canSettleToFinance ? (
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                  {canAcceptToWarehouse ? (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      disabled={cashActionKey === cashActionId(collection, "accept")}
+                                      onClick={() => {
+                                        const actionKey = cashActionId(collection, "accept");
+                                        if (collection.currentHolderType === "driver") {
+                                          void runCashAction(
+                                            actionKey,
+                                            () =>
+                                              handoffOrderCash({
+                                                orderId,
+                                                kind: (collection.kind as "cod" | "service_charge") ?? "cod",
+                                                toHolderType: "warehouse",
+                                                toWarehouseId: currentUser?.warehouseId ?? null,
+                                              }),
+                                            t("orderDetails.cash.actions.accept"),
+                                            t("orderDetails.cash.errors.accept"),
+                                          );
+                                          return;
+                                        }
 
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-9"
-                  onClick={() =>
-                    setSortDirection((prev) => (prev === "desc" ? "asc" : "desc"))
-                  }
-                >
-                  <RefreshCw className="mr-2 h-4 w-4" />
-                  {sortDirection === "desc" ? "Newest first" : "Oldest first"}
-                </Button>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Input
-              value={trackingQuery}
-              onChange={(e) => setTrackingQuery(e.target.value)}
-              placeholder="Search note, reason, actor, region, parcel code..."
-              className="rounded-xl"
-            />
+                                        void runCashAction(
+                                          actionKey,
+                                          () =>
+                                            collectOrderCash({
+                                              orderId,
+                                              kind: (collection.kind as "cod" | "service_charge") ?? "cod",
+                                            }),
+                                          t("orderDetails.cash.actions.accept"),
+                                          t("orderDetails.cash.errors.accept"),
+                                        );
+                                      }}
+                                    >
+                                      {cashActionKey === cashActionId(collection, "accept") ? (
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                      ) : null}
+                                      {collection.currentHolderType === "driver"
+                                        ? t("orderDetails.cash.actions.acceptFromDriver")
+                                        : t("orderDetails.cash.actions.accept")}
+                                    </Button>
+                                  ) : null}
 
-            {filteredTracking.length ? (
-              <ol className="space-y-4">
-                {filteredTracking.map((evt, idx) => {
-                  const tone = trackingEventTone(evt);
-                  const isLast = idx === filteredTracking.length - 1;
-                  const headline = getTrackingHeadline(evt, order, t);
-                  const note = getTrackingNote(evt, order, headline.hideNote);
-                  const actorLabel = getTrackingActorLabel(evt, order);
-
-                  return (
-                    <li key={evt.id} className="grid grid-cols-[92px_1fr] gap-3 sm:grid-cols-[120px_1fr] sm:gap-4">
-                      <div className="pt-2 text-[11px] leading-tight text-muted-foreground sm:text-xs">
-                        {formatTimelineStamp(evt.timestamp)}
+                                  {canSettleToFinance ? (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      disabled={cashActionKey === cashActionId(collection, "settle")}
+                                      onClick={() =>
+                                        void runCashAction(
+                                          cashActionId(collection, "settle"),
+                                          () =>
+                                            settleOrderCash({
+                                              orderId,
+                                              kind: (collection.kind as "cod" | "service_charge") ?? "cod",
+                                            }),
+                                          t("orderDetails.cash.actions.settle"),
+                                          t("orderDetails.cash.errors.settle"),
+                                        )
+                                      }
+                                    >
+                                      {cashActionKey === cashActionId(collection, "settle") ? (
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                      ) : null}
+                                      {t("orderDetails.cash.actions.settle")}
+                                    </Button>
+                                  ) : null}
+                                </div>
+                              ) : null}
+                            </div>
+                          );
+                        })}
                       </div>
+                    ) : (
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {t("orderDetails.cash.empty")}
+                      </p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
 
-                      <div className="relative">
-                        {!isLast ? (
-                          <span
-                            className={cn(
-                              "absolute left-[6px] top-7 bottom-[-18px] w-px",
-                              tone.line,
-                            )}
-                          />
-                        ) : null}
-                        <span
-                          className={cn(
-                            "absolute left-0 top-2 h-3.5 w-3.5 rounded-full ring-4",
-                            tone.dot,
-                            tone.ring,
+              <div className="space-y-4">
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">Documents and Attachments</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="h-12 justify-between rounded-xl px-4"
+                        onClick={openLabel}
+                        disabled={!canOpenLabel || docLoading !== null}
+                      >
+                        <span className="flex items-center gap-2">
+                          {docLoading === "label" ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Package className="h-4 w-4" />
                           )}
-                        />
+                          {hasMultipleParcelLabels ? "Open First Label" : "Shipping Label"}
+                        </span>
+                        <ExternalLink className="h-4 w-4 opacity-70" />
+                      </Button>
 
-                        <div className={cn("ml-6 rounded-2xl border p-4 shadow-[0_8px_24px_-18px_rgba(0,0,0,0.35)]", tone.card)}>
-                          <div className="flex flex-wrap items-center gap-2">
-                            {evt.status ? (
-                              <Badge variant={statusBadgeVariant(evt.status)}>
-                                {displayEnum(evt.status, t)}
-                              </Badge>
-                            ) : null}
-                            {evt.reasonCode ? (
-                              <Badge variant="destructive">
-                                {displayEnum(evt.reasonCode, t)}
-                              </Badge>
-                            ) : null}
+                      <Button
+                        type="button"
+                        variant="default"
+                        className="h-12 justify-between rounded-xl px-4"
+                        onClick={openInvoice}
+                        disabled={!canOpenInvoice || docLoading !== null}
+                      >
+                        <span className="flex items-center gap-2">
+                          {docLoading === "invoice" ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <FileText className="h-4 w-4" />
+                          )}
+                          Invoice
+                        </span>
+                        <ExternalLink className="h-4 w-4 opacity-70" />
+                      </Button>
+                    </div>
+
+                    {!canOpenInvoice && invoice?.id && invoiceStatus !== "paid" ? (
+                      <p className="text-xs text-muted-foreground">
+                        Invoice PDF becomes available after payment confirmation.
+                      </p>
+                    ) : null}
+
+                    {hasAnyParcelLabel ? (
+                      <>
+                        <Separator />
+
+                        <div className="space-y-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-sm font-medium">Parcel Labels</p>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8 rounded-lg"
+                              onClick={() => void refetchLabelUrls()}
+                              disabled={isFetchingLabelUrls}
+                            >
+                              {isFetchingLabelUrls ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <RefreshCw className="h-4 w-4" />
+                              )}
+                              Refresh links
+                            </Button>
                           </div>
 
-                          <p className="mt-2 text-sm font-semibold leading-snug">
-                            {headline.title}
-                            {evt.warehouse?.name ? (
-                              <>
-                                {" "}
-                                in{" "}
-                                <span className="text-primary/90">
-                                  {evt.warehouse.name}
-                                </span>
-                              </>
-                            ) : null}
-                            {evt.parcel?.parcelCode ? (
-                              <>
-                                {" "}
-                                for{" "}
-                                <span className="font-mono text-[13px]">
-                                  {evt.parcel.parcelCode}
-                                </span>
-                              </>
-                            ) : null}
-                          </p>
+                          <div className="grid gap-2">
+                            {parcels.map((parcel) => {
+                              const urlEntry =
+                                parcelLabelUrls.find((u) => u.parcelId === parcel.id) ??
+                                parcelLabelUrls.find(
+                                  (u) =>
+                                    Boolean(u.parcelCode) &&
+                                    Boolean(parcel.parcelCode) &&
+                                    u.parcelCode === parcel.parcelCode,
+                                );
 
-                          {note ? (
-                            <p className="mt-1 text-sm text-muted-foreground">{note}</p>
-                          ) : null}
+                              const canOpenParcelLabel = Boolean(urlEntry?.url);
+                              const displayCode =
+                                parcel.parcelCode || urlEntry?.parcelCode || `Piece ${parcel.pieceNo ?? "-"}`;
 
-                          <div className="mt-2 text-xs text-muted-foreground">
-                            {actorLabel ? `By ${actorLabel}` : "By system"}
-                            {evt.actorRole ? ` (${displayEnum(evt.actorRole, t)})` : ""}
-                            {evt.region ? ` • ${evt.region}` : ""}
-                            {evt.warehouse?.name ? ` • ${evt.warehouse.name}` : ""}
+                              return (
+                                <div
+                                  key={parcel.id}
+                                  className="flex items-center justify-between gap-2 rounded-xl border border-border/60 bg-background/60 px-3 py-2"
+                                >
+                                  <div>
+                                    <p className="text-sm font-medium">{displayCode}</p>
+                                    <p className="text-xs text-muted-foreground">
+                                      Piece {parcel.pieceNo ?? "-"}
+                                      {parcel.pieceTotal ? ` of ${parcel.pieceTotal}` : ""}
+                                    </p>
+                                  </div>
+
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-8 rounded-lg"
+                                    onClick={() => void openParcelLabel(parcel)}
+                                    disabled={
+                                      !parcel.labelKey ||
+                                      !canOpenParcelLabel ||
+                                      openingParcelId === parcel.id
+                                    }
+                                  >
+                                    {openingParcelId === parcel.id ? (
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <ExternalLink className="h-4 w-4" />
+                                    )}
+                                    Open
+                                  </Button>
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
+                      </>
+                    ) : null}
+
+                    {order.attachments?.length ? (
+                      <>
+                        <Separator />
+                        <div className="space-y-2">
+                          <p className="text-sm font-medium">Attachments</p>
+                          {order.attachments.map((a) => (
+                            <div
+                              key={a.id}
+                              className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/60 bg-background/60 px-3 py-2 text-sm"
+                            >
+                              <div>
+                                <p className="font-medium">{a.fileName || a.key || "Attachment"}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {a.mimeType || "unknown"} | {formatSize(a.size)} |{" "}
+                                  {formatDateTime(a.createdAt)}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    ) : null}
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-xl border border-border/60 bg-background/60 p-4 text-sm">
+                        <p className="text-xs text-muted-foreground">Created At</p>
+                        <p className="mt-1 flex items-center gap-2 font-medium">
+                          <CalendarClock className="h-4 w-4 text-muted-foreground" />
+                          {formatDateTime(order.createdAt)}
+                        </p>
                       </div>
-                    </li>
-                  );
-                })}
-              </ol>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                No tracking events for the current filters.
-              </p>
-            )}
-          </CardContent>
-        </Card>
+                      <div className="rounded-xl border border-border/60 bg-background/60 p-4 text-sm">
+                        <p className="text-xs text-muted-foreground">Actors</p>
+                        <p className="mt-1 flex items-center gap-2 font-medium">
+                          <User className="h-4 w-4 text-muted-foreground" />
+                          Customer: {order.customer?.name || order.customer?.email || "-"}
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
 
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Documents and Attachments</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Button
-                type="button"
-                variant="secondary"
-                className="h-12 justify-between rounded-xl px-4"
-                onClick={openLabel}
-                disabled={!canOpenLabel || docLoading !== null}
-              >
-                <span className="flex items-center gap-2">
-                  {docLoading === "label" ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Package className="h-4 w-4" />
-                  )}
-                  {hasMultipleParcelLabels ? "Open First Label" : "Shipping Label"}
-                </span>
-                <ExternalLink className="h-4 w-4 opacity-70" />
-              </Button>
-
-              <Button
-                type="button"
-                variant="default"
-                className="h-12 justify-between rounded-xl px-4"
-                onClick={openInvoice}
-                disabled={!canOpenInvoice || docLoading !== null}
-              >
-                <span className="flex items-center gap-2">
-                  {docLoading === "invoice" ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <FileText className="h-4 w-4" />
-                  )}
-                  Invoice
-                </span>
-                <ExternalLink className="h-4 w-4 opacity-70" />
-              </Button>
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">{t("orderDetails.schedule")}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3 text-sm">
+                    <div className="rounded-xl border border-border/60 bg-background/60 p-4">
+                      <p className="text-xs text-muted-foreground">{t("orderDetails.schedule")}</p>
+                      <p className="mt-1">{t("orderDetails.pickup")}: {formatDateTime(order.plannedPickupAt)}</p>
+                      <p>{t("orderDetails.delivery")}: {formatDateTime(order.plannedDeliveryAt)}</p>
+                      <p>{t("orderDetails.promise")}: {formatDateTime(order.promiseDate)}</p>
+                    </div>
+                    <div className="rounded-xl border border-border/60 bg-background/60 p-4">
+                      <p className="text-xs text-muted-foreground">{t("orderDetails.reference")}</p>
+                      <p className="mt-1">{t("orderDetails.referenceId")}: {order.referenceId || "-"}</p>
+                      <p>{t("orderDetails.shelfId")}: {order.shelfId || "-"}</p>
+                      <p>{t("orderDetails.promo")}: {order.promoCode || "-"}</p>
+                      <p>{t("orderDetails.calls")}: {safeNumber(order.numberOfCalls) ?? "-"}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
             </div>
+          </TabsContent>
 
-            {!canOpenInvoice && invoice?.id && invoiceStatus !== "paid" ? (
-              <p className="text-xs text-muted-foreground">
-                Invoice PDF becomes available after payment confirmation.
-              </p>
-            ) : null}
+          <TabsContent value="timeline" className="space-y-4">
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <CardTitle className="text-base">{t("orderDetails.trackingTimeline")}</CardTitle>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="w-full sm:w-44">
+                      <Select
+                        value={eventKind}
+                        onValueChange={(v: "all" | "status") => setEventKind(v)}
+                      >
+                        <SelectTrigger className="h-9">
+                          <Filter className="mr-2 h-4 w-4 text-muted-foreground" />
+                          <SelectValue placeholder="Event type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All events</SelectItem>
+                          <SelectItem value="status">Status changes</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
 
-            {hasAnyParcelLabel ? (
-              <>
-                <Separator />
+                    <div className="w-full sm:w-52">
+                      <Select value={parcelFilter} onValueChange={setParcelFilter}>
+                        <SelectTrigger className="h-9">
+                          <Package className="mr-2 h-4 w-4 text-muted-foreground" />
+                          <SelectValue placeholder="Parcel filter" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All parcels</SelectItem>
+                          {parcels.map((p) => (
+                            <SelectItem key={p.id} value={p.id}>
+                              {p.parcelCode || `Piece ${p.pieceNo ?? "?"}`}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
 
-                <div className="space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-sm font-medium">Parcel Labels</p>
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="h-8 rounded-lg"
-                      onClick={() => void refetchLabelUrls()}
-                      disabled={isFetchingLabelUrls}
+                      className="h-9"
+                      onClick={() =>
+                        setSortDirection((prev) => (prev === "desc" ? "asc" : "desc"))
+                      }
                     >
-                      {isFetchingLabelUrls ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <RefreshCw className="h-4 w-4" />
-                      )}
-                      Refresh links
+                      <RefreshCw className="mr-2 h-4 w-4" />
+                      {sortDirection === "desc" ? "Newest first" : "Oldest first"}
                     </Button>
                   </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Input
+                  value={trackingQuery}
+                  onChange={(e) => setTrackingQuery(e.target.value)}
+                  placeholder="Search note, reason, actor, region, parcel code..."
+                  className="rounded-xl"
+                />
 
-                  <div className="grid gap-2">
-                    {parcels.map((parcel) => {
-                      const urlEntry =
-                        parcelLabelUrls.find((u) => u.parcelId === parcel.id) ??
-                        parcelLabelUrls.find(
-                          (u) =>
-                            Boolean(u.parcelCode) &&
-                            Boolean(parcel.parcelCode) &&
-                            u.parcelCode === parcel.parcelCode,
-                        );
-
-                      const canOpenParcelLabel = Boolean(urlEntry?.url);
-                      const displayCode =
-                        parcel.parcelCode || urlEntry?.parcelCode || `Piece ${parcel.pieceNo ?? "-"}`;
+                {filteredTracking.length ? (
+                  <ol className="space-y-4">
+                    {filteredTracking.map((evt, idx) => {
+                      const tone = trackingEventTone(evt);
+                      const isLast = idx === filteredTracking.length - 1;
+                      const headline = getTrackingHeadline(evt, order, t);
+                      const note = getTrackingNote(evt, order, headline.hideNote);
+                      const actorLabel = getTrackingActorLabel(evt, order);
 
                       return (
-                        <div
-                          key={parcel.id}
-                          className="flex items-center justify-between gap-2 rounded-xl border border-border/60 bg-background/60 px-3 py-2"
-                        >
-                          <div>
-                            <p className="text-sm font-medium">{displayCode}</p>
-                            <p className="text-xs text-muted-foreground">
-                              Piece {parcel.pieceNo ?? "-"}
-                              {parcel.pieceTotal ? ` of ${parcel.pieceTotal}` : ""}
-                            </p>
+                        <li key={evt.id} className="grid grid-cols-[92px_1fr] gap-3 sm:grid-cols-[120px_1fr] sm:gap-4">
+                          <div className="pt-2 text-[11px] leading-tight text-muted-foreground sm:text-xs">
+                            {formatTimelineStamp(evt.timestamp)}
                           </div>
 
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="h-8 rounded-lg"
-                            onClick={() => void openParcelLabel(parcel)}
-                            disabled={
-                              !parcel.labelKey ||
-                              !canOpenParcelLabel ||
-                              openingParcelId === parcel.id
-                            }
-                          >
-                            {openingParcelId === parcel.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <ExternalLink className="h-4 w-4" />
-                            )}
-                            Open
-                          </Button>
-                        </div>
+                          <div className="relative">
+                            {!isLast ? (
+                              <span
+                                className={cn(
+                                  "absolute left-[6px] top-7 bottom-[-18px] w-px",
+                                  tone.line,
+                                )}
+                              />
+                            ) : null}
+                            <span
+                              className={cn(
+                                "absolute left-0 top-2 h-3.5 w-3.5 rounded-full ring-4",
+                                tone.dot,
+                                tone.ring,
+                              )}
+                            />
+
+                            <div className={cn("ml-6 rounded-2xl border p-4 shadow-[0_8px_24px_-18px_rgba(0,0,0,0.35)]", tone.card)}>
+                              <div className="flex flex-wrap items-center gap-2">
+                                {evt.status ? (
+                                  <Badge variant={statusBadgeVariant(evt.status)}>
+                                    {displayEnum(evt.status, t)}
+                                  </Badge>
+                                ) : null}
+                                {evt.reasonCode ? (
+                                  <Badge variant="destructive">
+                                    {displayEnum(evt.reasonCode, t)}
+                                  </Badge>
+                                ) : null}
+                              </div>
+
+                              <p className="mt-2 text-sm font-semibold leading-snug">
+                                {headline.title}
+                                {evt.warehouse?.name ? (
+                                  <>
+                                    {" "}
+                                    in{" "}
+                                    <span className="text-primary/90">
+                                      {evt.warehouse.name}
+                                    </span>
+                                  </>
+                                ) : null}
+                                {evt.parcel?.parcelCode ? (
+                                  <>
+                                    {" "}
+                                    for{" "}
+                                    <span className="font-mono text-[13px]">
+                                      {evt.parcel.parcelCode}
+                                    </span>
+                                  </>
+                                ) : null}
+                              </p>
+
+                              {note ? (
+                                <p className="mt-1 text-sm text-muted-foreground">{note}</p>
+                              ) : null}
+
+                              <div className="mt-2 text-xs text-muted-foreground">
+                                {actorLabel ? `By ${actorLabel}` : "By system"}
+                                {evt.actorRole ? ` (${displayEnum(evt.actorRole, t)})` : ""}
+                                {evt.region ? ` | ${evt.region}` : ""}
+                                {evt.warehouse?.name ? ` | ${evt.warehouse.name}` : ""}
+                              </div>
+                            </div>
+                          </div>
+                        </li>
                       );
                     })}
-                  </div>
-                </div>
-              </>
-            ) : null}
-
-            {order.attachments?.length ? (
-              <>
-                <Separator />
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">Attachments</p>
-                  {order.attachments.map((a) => (
-                    <div
-                      key={a.id}
-                      className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/60 bg-background/60 px-3 py-2 text-sm"
-                    >
-                      <div>
-                        <p className="font-medium">{a.fileName || a.key || "Attachment"}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {a.mimeType || "unknown"} | {formatSize(a.size)} |{" "}
-                          {formatDateTime(a.createdAt)}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </>
-            ) : null}
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-xl border border-border/60 bg-background/60 p-4 text-sm">
-                <p className="text-xs text-muted-foreground">Created At</p>
-                <p className="mt-1 flex items-center gap-2 font-medium">
-                  <CalendarClock className="h-4 w-4 text-muted-foreground" />
-                  {formatDateTime(order.createdAt)}
-                </p>
-              </div>
-              <div className="rounded-xl border border-border/60 bg-background/60 p-4 text-sm">
-                <p className="text-xs text-muted-foreground">Actors</p>
-                <p className="mt-1 flex items-center gap-2 font-medium">
-                  <User className="h-4 w-4 text-muted-foreground" />
-                  Customer: {order.customer?.name || order.customer?.email || "-"}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+                  </ol>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    No tracking events for the current filters.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );

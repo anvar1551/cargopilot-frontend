@@ -740,6 +740,7 @@ export const uz = {
     lastSync: "Oxirgi sinxronlash {time}",
     lastSyncLabel: "Oxirgi sinxronlash",
     filterExportTitle: "Filtr va eksport",
+    filtersButton: "Filtrlar",
     filterExportSubtitle:
       "Filtrlar server tomonda ham jonli ro'yxatga, ham CSV eksportga qo'llanadi, shuning uchun moliya siz ko'rayotgan datasetni oladi.",
     presetName: "Preset nomi",

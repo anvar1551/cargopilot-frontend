@@ -735,6 +735,7 @@ export const en = {
     lastSync: "Last sync {time}",
     lastSyncLabel: "Last sync",
     filterExportTitle: "Filter and Export",
+    filtersButton: "Filters",
     filterExportSubtitle:
       "Filters apply server-side to the live query and the CSV export, so finance gets the same dataset you are looking at.",
     presetName: "Preset name",

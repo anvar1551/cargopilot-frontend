@@ -182,7 +182,7 @@ export function getColumns(t: Translate): ColumnDef<ManagerOrderRow>[] {
             onClick={(event) => event.stopPropagation()}
             className="h-8 w-8"
           >
-            <Link href={`/dashboard/manager/orders/${id}`}>
+            <Link href={`/dashboard/manager/orders?order=${id}`}>
               <ExternalLink className="h-4 w-4" />
             </Link>
           </Button>

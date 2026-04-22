@@ -520,7 +520,7 @@ export default function CustomerOrdersPage() {
                   {filtered.map((order) => (
                     <Link
                       key={order.id}
-                      href={`/dashboard/customer/orders/${order.id}`}
+                      href={`/dashboard/customer/orders?order=${order.id}`}
                       className="group block p-4 transition hover:bg-muted/30"
                     >
                       <div className="flex items-start justify-between gap-4">

@@ -2081,7 +2081,7 @@ export default function WarehouseDashboardPage() {
                       return (
                         <Link
                           key={order.id}
-                          href={`/dashboard/warehouse/orders/${order.id}`}
+                          href={`/dashboard/warehouse?order=${order.id}`}
                           className="block rounded-3xl border border-amber-300/40 bg-amber-50 p-4 text-amber-950 transition hover:bg-amber-100/80"
                         >
                           <div className="flex items-center justify-between gap-3">

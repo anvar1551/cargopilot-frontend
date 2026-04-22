@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import {
   type ColumnFiltersState,
@@ -79,6 +79,8 @@ export default function OrdersTable({
   hideQuickFilters?: boolean;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { t } = useI18n();
 
   const [sorting, setSorting] = useState<SortingState>([{ id: "createdAt", desc: true }]);
@@ -181,7 +183,10 @@ export default function OrdersTable({
   };
 
   const onRowClick = (order: ManagerOrderRow) => {
-    router.push(`/dashboard/manager/orders/${order.id}`);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("order", order.id);
+    const query = params.toString();
+    router.push(query ? `${pathname}?${query}` : pathname);
   };
 
   React.useEffect(() => {

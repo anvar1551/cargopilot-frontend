@@ -565,7 +565,7 @@ export default function ManagerDashboardPage() {
                     {recentOrders.map((order) => (
                       <Link
                         key={order.id}
-                        href={`/dashboard/manager/orders/${order.id}`}
+                        href={`/dashboard/manager?order=${order.id}`}
                         className="block p-4 transition hover:bg-muted/40"
                       >
                         <div className="flex items-start justify-between gap-3">
