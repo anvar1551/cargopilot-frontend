@@ -8,7 +8,13 @@ import { usePathname, useRouter, useSearchParams, useSelectedLayoutSegment } fro
 import AppTopbar from "@/components/layout/AppTopbar";
 import OrderDetailsView from "@/components/orders/OrderDetailsView";
 import ManagerSidebar from "@/components/manager/sidebar/ManagerSidebar";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { clearAuth, hasActiveSession } from "@/lib/auth";
 import { useManagerSidebarStore } from "@/store/useManagerSidebarStore"; // Zustand
 
@@ -112,6 +118,12 @@ export default function DashboardShell({ children }: { children: ReactNode }) {
 
       <Dialog open={showOrderModal} onOpenChange={(open) => (!open ? closeOrderModal() : null)}>
         <DialogContent className="h-[96dvh] w-[calc(100vw-0.75rem)] !max-w-none overflow-hidden rounded-2xl p-0 sm:w-[calc(100vw-1.5rem)] sm:!max-w-[96rem] xl:sm:!max-w-[106rem]">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Order details</DialogTitle>
+            <DialogDescription>
+              Full order details modal with route, shipment, payment, and timeline tabs.
+            </DialogDescription>
+          </DialogHeader>
           {orderModalId ? (
             <div className="h-full overflow-x-hidden overflow-y-auto">
               <OrderDetailsView

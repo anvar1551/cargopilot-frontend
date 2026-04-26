@@ -31,6 +31,8 @@ export type Warehouse = {
   type?: WarehouseType | null;
   location: string;
   region?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   createdAt?: string;
 };
 
@@ -74,6 +76,8 @@ export async function createWarehouse(payload: {
   type?: WarehouseType;
   location: string;
   region?: string;
+  latitude?: number | null;
+  longitude?: number | null;
 }): Promise<Warehouse> {
   const res = await api.post("/api/warehouses", payload, {
     headers: authHeaders(),
@@ -90,6 +94,8 @@ export async function updateWarehouse(
     type?: WarehouseType;
     location: string;
     region?: string | null;
+    latitude?: number | null;
+    longitude?: number | null;
   },
 ): Promise<Warehouse> {
   const res = await api.put(`/api/warehouses/${id}`, payload, {

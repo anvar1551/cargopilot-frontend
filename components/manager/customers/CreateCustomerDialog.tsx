@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -127,6 +128,9 @@ export default function CreateCustomerDialog() {
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>{text.title}</DialogTitle>
+          <DialogDescription>
+            Create a customer profile with contact details and optional company information.
+          </DialogDescription>
         </DialogHeader>
 
         <form

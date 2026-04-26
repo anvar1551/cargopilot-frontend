@@ -106,6 +106,10 @@ export type Order = {
   status?: string | null;
   pickupAddress?: string | null;
   dropoffAddress?: string | null;
+  pickupLat?: number | null;
+  pickupLng?: number | null;
+  dropoffLat?: number | null;
+  dropoffLng?: number | null;
   createdAt?: string | null;
   updatedAt?: string | null;
   plannedDeliveryAt?: string | null;
@@ -198,6 +202,34 @@ export type Order = {
     }> | null;
   }> | null;
   [key: string]: unknown;
+};
+
+export type OrderProofStage = "pickup" | "delivery";
+
+export type OrderProofAssetLink = {
+  id: string;
+  key: string;
+  fileName: string | null;
+  mimeType: string | null;
+  size: number | null;
+  createdAt: string | null;
+  url: string;
+};
+
+export type OrderProofBundle = {
+  proofId: string;
+  stage: OrderProofStage;
+  savedAt: string;
+  signedBy: string | null;
+  photo: OrderProofAssetLink | null;
+  signature: OrderProofAssetLink | null;
+};
+
+export type OrderProofLinksResponse = {
+  success: boolean;
+  orderId: string;
+  proofs: OrderProofBundle[];
+  byStage: Record<OrderProofStage, OrderProofBundle[]>;
 };
 
 export type OrdersResponse = {
@@ -313,6 +345,19 @@ export async function fetchOrdersPaged(params?: {
 export async function fetchOrderById(id: string) {
   const res = await api.get(`/api/orders/${id}`);
   return res.data;
+}
+
+export async function fetchOrderProofLinks(
+  orderId: string,
+  params?: { stage?: OrderProofStage; limit?: number },
+) {
+  const res = await api.get(`/api/orders/${orderId}/proofs`, {
+    params: {
+      stage: params?.stage,
+      limit: params?.limit,
+    },
+  });
+  return res.data as OrderProofLinksResponse;
 }
 
 export async function collectOrderCash(payload: {

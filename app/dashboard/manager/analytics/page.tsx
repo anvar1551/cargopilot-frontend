@@ -36,6 +36,7 @@ import {
 import { handoffOrderCashBulk, settleOrderCashBulk } from "@/lib/orders";
 import { fetchWarehouses } from "@/lib/warehouses";
 import { getServiceTypeLabel, getStatusLabel } from "@/lib/i18n/labels";
+import { usePageVisibility } from "@/lib/usePageVisibility";
 
 function formatMoney(value: number, locale: string) {
   return new Intl.NumberFormat(locale, {
@@ -93,6 +94,7 @@ function StatCard({
 export default function ManagerAnalyticsPage() {
   const { t, locale } = useI18n();
   const queryClient = useQueryClient();
+  const isPageVisible = usePageVisibility();
   const [rangeDays, setRangeDays] = useState("30");
   const [queueStatus, setQueueStatus] = useState<"all" | "expected" | "held">("all");
   const [queueKind, setQueueKind] = useState<"all" | "cod" | "service_charge">("all");
@@ -131,7 +133,7 @@ export default function ManagerAnalyticsPage() {
         queueKinds: queueKind === "all" ? [] : [queueKind],
         queueHolderTypes: queueHolderType === "all" ? [] : [queueHolderType],
       }),
-    refetchInterval: 60000,
+    refetchInterval: isPageVisible ? 180_000 : false,
     placeholderData: (previousData) => previousData,
   });
 

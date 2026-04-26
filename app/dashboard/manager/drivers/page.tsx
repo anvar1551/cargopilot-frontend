@@ -8,9 +8,11 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchDrivers, type DriverLite } from "@/lib/manager";
 import { fetchDriverWorkloads, type DriverWorkload } from "@/lib/orders";
 import { fetchWarehouses, type Warehouse } from "@/lib/warehouses";
+import { usePageVisibility } from "@/lib/usePageVisibility";
 
 import CreateUserDialog from "@/components/manager/users/CreateUserDialog";
 import DriverManifestButton from "@/components/manager/drivers/DriverManifestButton";
+import EditDriverProfileDialog from "@/components/manager/drivers/EditDriverProfileDialog";
 import { useI18n } from "@/components/i18n/I18nProvider";
 import PageShell from "@/components/layout/PageShell";
 
@@ -41,6 +43,7 @@ type DriverRow = DriverLite & {
   workload: number;
   totalAssigned: number;
   warehouseName: string | null;
+  warehouseNames: string[];
 };
 
 const copy = {
@@ -187,6 +190,7 @@ function StatTile({
 
 export default function ManagerDriversPage() {
   const { locale } = useI18n();
+  const isPageVisible = usePageVisibility();
   const text = copy[locale];
   const [q, setQ] = useState("");
   const [warehouseFilter, setWarehouseFilter] = useState<
@@ -197,13 +201,13 @@ export default function ManagerDriversPage() {
   const driversQuery = useQuery<DriverLite[]>({
     queryKey: ["manager-drivers-page"],
     queryFn: fetchDrivers,
-    refetchInterval: 30000,
+    refetchInterval: isPageVisible ? 90_000 : false,
   });
 
   const workloadsQuery = useQuery<DriverWorkload[]>({
     queryKey: ["manager-drivers-workloads"],
     queryFn: fetchDriverWorkloads,
-    refetchInterval: 30000,
+    refetchInterval: isPageVisible ? 90_000 : false,
   });
 
   const warehousesQuery = useQuery<Warehouse[]>({
@@ -238,13 +242,22 @@ export default function ManagerDriversPage() {
       warehouseName: driver.warehouseId
         ? warehouseNameById.get(driver.warehouseId) ?? null
         : null,
+      warehouseNames: Array.from(
+        new Set(
+          (driver.warehouseIds ?? [])
+            .map((warehouseId) => warehouseNameById.get(warehouseId))
+            .filter((name): name is string => Boolean(name)),
+        ),
+      ),
     }));
 
     const qLower = q.trim().toLowerCase();
 
     const filtered = normalized.filter((driver) => {
-      if (warehouseFilter === "with" && !driver.warehouseId) return false;
-      if (warehouseFilter === "without" && driver.warehouseId) return false;
+      const hasWarehouse =
+        Boolean(driver.warehouseId) || (driver.warehouseIds?.length ?? 0) > 0;
+      if (warehouseFilter === "with" && !hasWarehouse) return false;
+      if (warehouseFilter === "without" && hasWarehouse) return false;
       if (!qLower) return true;
 
       const haystack = `${driver.name} ${driver.email} ${driver.warehouseName ?? ""}`
@@ -262,7 +275,9 @@ export default function ManagerDriversPage() {
   }, [drivers, workloadByDriverId, warehouseNameById, q, warehouseFilter, sortBy]);
 
   const totalDrivers = drivers.length;
-  const withWarehouse = drivers.filter((driver) => Boolean(driver.warehouseId)).length;
+  const withWarehouse = drivers.filter(
+    (driver) => Boolean(driver.warehouseId) || (driver.warehouseIds?.length ?? 0) > 0,
+  ).length;
   const withoutWarehouse = totalDrivers - withWarehouse;
   const activeDrivers = rows.filter((driver) => driver.workload > 0).length;
   const totalAssignedAcrossDrivers = rows.reduce(
@@ -433,6 +448,9 @@ export default function ManagerDriversPage() {
                           <Badge variant="outline">
                             {text.total}: {driver.totalAssigned}
                           </Badge>
+                          {driver.driverType === "linehaul" ? (
+                            <Badge variant="secondary">Linehaul</Badge>
+                          ) : null}
                           <Badge
                             variant={driver.warehouseId ? "outline" : "destructive"}
                             className="max-w-[220px] truncate"
@@ -443,12 +461,21 @@ export default function ManagerDriversPage() {
                                 : text.warehouseAssigned
                               : text.noWarehouseBadge}
                           </Badge>
+                          {driver.warehouseNames.length > 1 ? (
+                            <Badge variant="outline" className="max-w-[220px] truncate">
+                              +{driver.warehouseNames.length - 1} additional hubs
+                            </Badge>
+                          ) : null}
                           <DriverManifestButton
                             driverId={driver.id}
                             driverName={driver.name}
                             driverEmail={driver.email}
                             warehouseName={driver.warehouseName}
                             activeAssigned={driver.workload}
+                          />
+                          <EditDriverProfileDialog
+                            driver={driver}
+                            warehouses={warehousesQuery.data ?? []}
                           />
                         </div>
                       </div>

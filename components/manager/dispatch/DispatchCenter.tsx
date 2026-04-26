@@ -38,6 +38,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -1025,6 +1026,9 @@ export default function DispatchCenter({
           <DialogContent className="sm:max-w-lg">
             <DialogHeader>
               <DialogTitle>Batch Cart</DialogTitle>
+              <DialogDescription>
+                Review selected orders and apply batch assignment or status update actions.
+              </DialogDescription>
             </DialogHeader>
             {CartContent}
           </DialogContent>

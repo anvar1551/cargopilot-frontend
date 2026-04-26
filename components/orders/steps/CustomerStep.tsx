@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Building2, MapPin, Navigation, Phone, User } from "lucide-react";
 
 import { formatAddress, type Address } from "@/lib/addresses";
+import { forwardGeocodeMapbox } from "@/lib/mapbox";
 import { fetchPricingRegions } from "@/lib/pricing";
 import type { CreateOrderFormApi } from "@/components/orders/create-order-form.types";
 
@@ -18,6 +19,10 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 
 import { StructuredAddressFields } from "../fields/StructuredAddressFields";
+import {
+  MapAddressPickerDialog,
+  type MapAddressSelection,
+} from "../fields/MapAddressPickerDialog";
 import { FieldError, IconField } from "../IconField";
 
 function toAddressSnapshot(addr: Address) {
@@ -26,6 +31,8 @@ function toAddressSnapshot(addr: Address) {
     city: addr.city ?? null,
     neighborhood: addr.neighborhood ?? null,
     street: addr.street ?? null,
+    latitude: addr.latitude ?? null,
+    longitude: addr.longitude ?? null,
     addressLine1: addr.addressLine1 ?? null,
     addressLine2: addr.addressLine2 ?? null,
     building: addr.building ?? null,
@@ -71,6 +78,7 @@ export function CustomerStep({
   });
   const destinationRegionOptions = destinationCityOptionsQuery.data ?? [];
   const destinationOptionsId = "order-destination-city-options";
+  const skipNextForwardGeocodeRef = useRef({ pickup: false, dropoff: false });
 
   useEffect(() => {
     if (!canSaveAddresses) {
@@ -156,7 +164,176 @@ export function CustomerStep({
     }
   };
 
+  const onMapSelectAddress = (
+    target: "pickup" | "dropoff",
+    selection: MapAddressSelection,
+  ) => {
+    skipNextForwardGeocodeRef.current[target] = true;
+
+    if (target === "pickup") {
+      const existing = form.getValues("addresses.senderAddress");
+      form.setValue("addresses.pickupAddress", selection.formattedAddress, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+      form.setValue("addresses.senderAddressId", null, {
+        shouldDirty: true,
+      });
+      form.setValue(
+        "addresses.senderAddress",
+        {
+          ...(existing ?? {}),
+          country: selection.country ?? existing?.country ?? null,
+          city: selection.city ?? existing?.city ?? null,
+          neighborhood: selection.neighborhood ?? existing?.neighborhood ?? null,
+          street: selection.street ?? existing?.street ?? null,
+          latitude: selection.lat,
+          longitude: selection.lng,
+          addressLine1: selection.formattedAddress,
+          postalCode: selection.postalCode ?? existing?.postalCode ?? null,
+        },
+        { shouldDirty: true },
+      );
+      return;
+    }
+
+    const existing = form.getValues("addresses.receiverAddress");
+    form.setValue("addresses.dropoffAddress", selection.formattedAddress, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+    form.setValue("addresses.receiverAddressId", null, {
+      shouldDirty: true,
+    });
+    form.setValue(
+      "addresses.receiverAddress",
+      {
+        ...(existing ?? {}),
+        country: selection.country ?? existing?.country ?? null,
+        city: selection.city ?? existing?.city ?? null,
+        neighborhood: selection.neighborhood ?? existing?.neighborhood ?? null,
+        street: selection.street ?? existing?.street ?? null,
+        latitude: selection.lat,
+        longitude: selection.lng,
+        addressLine1: selection.formattedAddress,
+        postalCode: selection.postalCode ?? existing?.postalCode ?? null,
+      },
+      { shouldDirty: true },
+    );
+
+    if (selection.city) {
+      form.setValue("addresses.destinationCity", selection.city, {
+        shouldDirty: true,
+      });
+    }
+  };
+
   const addressBookCustomerEntityId = isManager ? customerEntityId : undefined;
+
+  useEffect(() => {
+    if (pickupId) return;
+
+    const query = pickupText.trim();
+    if (query.length < 5) return;
+
+    if (skipNextForwardGeocodeRef.current.pickup) {
+      skipNextForwardGeocodeRef.current.pickup = false;
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      const countryHint = form.getValues("addresses.senderAddress.country");
+      void forwardGeocodeMapbox({
+        query,
+        countryCode: countryHint,
+        signal: controller.signal,
+      })
+        .then((result) => {
+          if (controller.signal.aborted || !result) return;
+
+          const existing = form.getValues("addresses.senderAddress");
+          form.setValue(
+            "addresses.senderAddress",
+            {
+              ...(existing ?? {}),
+              country: result.country ?? existing?.country ?? null,
+              city: result.city ?? existing?.city ?? null,
+              neighborhood: result.neighborhood ?? existing?.neighborhood ?? null,
+              street: result.street ?? existing?.street ?? null,
+              postalCode: result.postalCode ?? existing?.postalCode ?? null,
+              latitude: result.lat,
+              longitude: result.lng,
+            },
+            { shouldDirty: true },
+          );
+        })
+        .catch(() => {
+          // Keep last known coordinates (for example map-clicked pin) when new text cannot be geocoded.
+        });
+    }, 550);
+
+    return () => {
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [form, pickupId, pickupText]);
+
+  useEffect(() => {
+    if (dropoffId) return;
+
+    const query = dropoffText.trim();
+    if (query.length < 5) return;
+
+    if (skipNextForwardGeocodeRef.current.dropoff) {
+      skipNextForwardGeocodeRef.current.dropoff = false;
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      const countryHint = form.getValues("addresses.receiverAddress.country");
+      void forwardGeocodeMapbox({
+        query,
+        countryCode: countryHint,
+        signal: controller.signal,
+      })
+        .then((result) => {
+          if (controller.signal.aborted || !result) return;
+
+          const existing = form.getValues("addresses.receiverAddress");
+          form.setValue(
+            "addresses.receiverAddress",
+            {
+              ...(existing ?? {}),
+              country: result.country ?? existing?.country ?? null,
+              city: result.city ?? existing?.city ?? null,
+              neighborhood: result.neighborhood ?? existing?.neighborhood ?? null,
+              street: result.street ?? existing?.street ?? null,
+              postalCode: result.postalCode ?? existing?.postalCode ?? null,
+              latitude: result.lat,
+              longitude: result.lng,
+            },
+            { shouldDirty: true },
+          );
+
+          const destinationCityValue = form.getValues("addresses.destinationCity");
+          if ((!destinationCityValue || !destinationCityValue.trim()) && result.city) {
+            form.setValue("addresses.destinationCity", result.city, {
+              shouldDirty: true,
+            });
+          }
+        })
+        .catch(() => {
+          // Keep last known coordinates (for example map-clicked pin) when new text cannot be geocoded.
+        });
+    }, 550);
+
+    return () => {
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [dropoffId, dropoffText, form]);
 
   return (
     <div className="space-y-4">
@@ -319,7 +496,14 @@ export function CustomerStep({
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div className="space-y-2">
-            <Label>{t("createOrder.customer.pickupAddress")}</Label>
+            <div className="flex items-center justify-between gap-2">
+              <Label>{t("createOrder.customer.pickupAddress")}</Label>
+              <MapAddressPickerDialog
+                mode="pickup"
+                initialCountry={form.watch("addresses.senderAddress.country")}
+                onApply={(selection) => onMapSelectAddress("pickup", selection)}
+              />
+            </div>
             <IconField icon={<MapPin className="h-4 w-4" />} error={!!pickupErr}>
               <Input
                 className="rounded-2xl border-0 bg-transparent pl-3 focus-visible:ring-0 focus-visible:ring-offset-0"
@@ -373,7 +557,14 @@ export function CustomerStep({
           </div>
 
           <div className="space-y-2">
-            <Label>{t("createOrder.customer.dropoffAddress")}</Label>
+            <div className="flex items-center justify-between gap-2">
+              <Label>{t("createOrder.customer.dropoffAddress")}</Label>
+              <MapAddressPickerDialog
+                mode="dropoff"
+                initialCountry={form.watch("addresses.receiverAddress.country")}
+                onApply={(selection) => onMapSelectAddress("dropoff", selection)}
+              />
+            </div>
             <IconField icon={<Navigation className="h-4 w-4" />} error={!!dropoffErr}>
               <Input
                 className="rounded-2xl border-0 bg-transparent pl-3 focus-visible:ring-0 focus-visible:ring-offset-0"

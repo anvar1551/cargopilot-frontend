@@ -11,11 +11,13 @@ import {
   type Warehouse,
   type WarehouseType,
 } from "@/lib/warehouses";
+import { MapAddressPickerDialog } from "@/components/orders/fields/MapAddressPickerDialog";
 
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -58,6 +60,8 @@ export default function CreateWarehouseDialog({
   const [type, setType] = React.useState<WarehouseType>(DEFAULT_WAREHOUSE_TYPE);
   const [location, setLocation] = React.useState("");
   const [region, setRegion] = React.useState("");
+  const [latitude, setLatitude] = React.useState<number | null>(null);
+  const [longitude, setLongitude] = React.useState<number | null>(null);
   const isEdit = Boolean(warehouse?.id);
 
   React.useEffect(() => {
@@ -66,6 +70,8 @@ export default function CreateWarehouseDialog({
       setType(DEFAULT_WAREHOUSE_TYPE);
       setLocation("");
       setRegion("");
+      setLatitude(null);
+      setLongitude(null);
       return;
     }
 
@@ -76,6 +82,16 @@ export default function CreateWarehouseDialog({
       );
       setLocation(warehouse.location ?? "");
       setRegion(warehouse.region ?? "");
+      setLatitude(
+        typeof warehouse.latitude === "number" && Number.isFinite(warehouse.latitude)
+          ? warehouse.latitude
+          : null,
+      );
+      setLongitude(
+        typeof warehouse.longitude === "number" && Number.isFinite(warehouse.longitude)
+          ? warehouse.longitude
+          : null,
+      );
     }
   }, [open, warehouse]);
 
@@ -89,6 +105,8 @@ export default function CreateWarehouseDialog({
         type,
         location: location.trim(),
         region: region.trim() ? region.trim() : undefined,
+        latitude,
+        longitude,
       };
 
       if (warehouse?.id) {
@@ -112,6 +130,9 @@ export default function CreateWarehouseDialog({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit location" : "Create warehouse"}</DialogTitle>
+          <DialogDescription>
+            Configure warehouse node type, location, and region used in routing and dispatch.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">
@@ -147,6 +168,39 @@ export default function CreateWarehouseDialog({
               onChange={(e) => setLocation(e.target.value)}
               placeholder="Hamburg, Germany"
             />
+            <div className="flex flex-wrap items-center gap-2">
+              <MapAddressPickerDialog
+                mode="pickup"
+                onApply={(selection) => {
+                  setLatitude(selection.lat);
+                  setLongitude(selection.lng);
+                  if (!location.trim() || location.trim() === "-") {
+                    setLocation(selection.formattedAddress || `${selection.lat.toFixed(6)}, ${selection.lng.toFixed(6)}`);
+                  }
+                  if (!region.trim() && selection.neighborhood) {
+                    setRegion(selection.neighborhood);
+                  }
+                }}
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 px-2 text-xs"
+                onClick={() => {
+                  setLatitude(null);
+                  setLongitude(null);
+                }}
+                disabled={latitude == null || longitude == null}
+              >
+                Clear point
+              </Button>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {latitude != null && longitude != null
+                ? `Map point: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`
+                : "No map point selected yet."}
+            </div>
           </div>
 
           <div className="space-y-2">

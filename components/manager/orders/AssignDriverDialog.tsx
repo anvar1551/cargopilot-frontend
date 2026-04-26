@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -157,6 +158,9 @@ export default function AssignDriverDialog({
               </span>
             ) : null}
           </DialogTitle>
+          <DialogDescription>
+            Choose assignment cycle and driver for selected orders.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">

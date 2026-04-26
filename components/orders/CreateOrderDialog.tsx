@@ -22,6 +22,7 @@ import { useI18n } from "@/components/i18n/I18nProvider";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -352,7 +353,9 @@ export default function CreateOrderDialog({
       >
         <DialogHeader className="shrink-0 px-6 pb-2 pt-6">
           <DialogTitle className="text-xl">{t("createOrder.dialogTitle")}</DialogTitle>
-          <p className="text-sm text-muted-foreground">{t("createOrder.dialogSubtitle")}</p>
+          <DialogDescription className="text-sm">
+            {t("createOrder.dialogSubtitle")}
+          </DialogDescription>
         </DialogHeader>
 
         <Separator className="shrink-0" />

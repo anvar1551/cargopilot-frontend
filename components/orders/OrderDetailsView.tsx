@@ -7,11 +7,15 @@ import { toast } from "sonner";
 
 import { useI18n } from "@/components/i18n/I18nProvider";
 import { getUser } from "@/lib/auth";
+import { getMapboxToken } from "@/lib/mapbox";
 import {
   collectOrderCash,
+  fetchOrderProofLinks,
   fetchOrderById,
   handoffOrderCash,
   settleOrderCash,
+  type OrderProofBundle,
+  type OrderProofLinksResponse,
 } from "@/lib/orders";
 import { getInvoiceUrl, getOrderLabelUrls } from "@/lib/documents";
 import {
@@ -56,9 +60,12 @@ import {
   FileText,
   Filter,
   HandCoins,
+  Image as ImageIcon,
   Landmark,
   Loader2,
   MapPin,
+  Navigation,
+  PenLine,
   Package,
   ReceiptText,
   RefreshCw,
@@ -89,6 +96,8 @@ type AddressSnapshot = {
   city?: string | null;
   neighborhood?: string | null;
   street?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   addressLine1?: string | null;
   addressLine2?: string | null;
   building?: string | null;
@@ -165,6 +174,10 @@ type OrderDetails = {
   pickupAddress?: string | null;
   dropoffAddress?: string | null;
   destinationCity?: string | null;
+  pickupLat?: number | null;
+  pickupLng?: number | null;
+  dropoffLat?: number | null;
+  dropoffLng?: number | null;
 
   senderName?: string | null;
   senderPhone?: string | null;
@@ -409,6 +422,84 @@ function formatAddressSnapshot(snapshot?: AddressSnapshot | null) {
     snapshot.landmark ? `Landmark: ${snapshot.landmark}` : null,
   ].filter(Boolean);
   return parts.length ? parts.join(", ") : null;
+}
+
+type LatLng = {
+  lat: number;
+  lng: number;
+};
+
+function toLatitude(value: unknown): number | null {
+  const n = safeNumber(value);
+  if (n == null) return null;
+  if (n < -90 || n > 90) return null;
+  return n;
+}
+
+function toLongitude(value: unknown): number | null {
+  const n = safeNumber(value);
+  if (n == null) return null;
+  if (n < -180 || n > 180) return null;
+  return n;
+}
+
+function formatLatLng(coords?: LatLng | null) {
+  if (!coords) return "-";
+  return `${coords.lat.toFixed(6)}, ${coords.lng.toFixed(6)}`;
+}
+
+function coordsEqual(a?: LatLng | null, b?: LatLng | null) {
+  if (!a || !b) return false;
+  return Math.abs(a.lat - b.lat) < 0.000001 && Math.abs(a.lng - b.lng) < 0.000001;
+}
+
+function buildGooglePointUrl(coords: LatLng) {
+  return `https://www.google.com/maps/search/?api=1&query=${coords.lat},${coords.lng}`;
+}
+
+function buildGoogleRouteUrl(pickup: LatLng, dropoff: LatLng) {
+  return `https://www.google.com/maps/dir/?api=1&origin=${pickup.lat},${pickup.lng}&destination=${dropoff.lat},${dropoff.lng}&travelmode=driving`;
+}
+
+function buildYandexRouteUrl(pickup: LatLng, dropoff: LatLng) {
+  return `https://yandex.com/maps/?rtext=${pickup.lat},${pickup.lng}~${dropoff.lat},${dropoff.lng}&rtt=auto`;
+}
+
+type MapboxLike = {
+  accessToken: string;
+  Map: new (options: {
+    container: HTMLElement;
+    style: string;
+    center: [number, number];
+    zoom: number;
+    attributionControl: boolean;
+  }) => {
+    on: (event: "load" | "error", handler: (event?: { error?: Error }) => void) => void;
+    addSource: (id: string, source: unknown) => void;
+    addLayer: (layer: unknown) => void;
+    fitBounds: (
+      bounds: [[number, number], [number, number]],
+      options?: { padding?: number; duration?: number },
+    ) => void;
+    remove: () => void;
+  };
+  Marker: new (options?: { color?: string }) => {
+    setLngLat: (lngLat: [number, number]) => {
+      addTo: (map: unknown) => unknown;
+    };
+  };
+};
+
+let mapboxRouteModulePromise: Promise<MapboxLike> | null = null;
+async function loadMapboxForRoute(token: string) {
+  if (!mapboxRouteModulePromise) {
+    mapboxRouteModulePromise = import("mapbox-gl").then((imported) => {
+      return (imported.default ?? imported) as unknown as MapboxLike;
+    });
+  }
+  const mapbox = await mapboxRouteModulePromise;
+  mapbox.accessToken = token;
+  return mapbox;
 }
 
 function collectPhones(...phones: Array<string | null | undefined>) {
@@ -669,6 +760,12 @@ export default function OrderDetailsView({
     queryKey: ["order", orderId],
     queryFn: () => fetchOrderById(orderId),
     enabled: !!orderId,
+    staleTime: 60_000,
+    gcTime: 15 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    placeholderData: () =>
+      queryClient.getQueryData<OrderDetails>(["order", orderId]),
   });
 
   const [docLoading, setDocLoading] = React.useState<
@@ -686,6 +783,24 @@ export default function OrderDetailsView({
     "desc",
   );
   const [trackingQuery, setTrackingQuery] = React.useState("");
+  const [isMapPreviewVisible, setIsMapPreviewVisible] = React.useState(false);
+  const [isProofsVisible, setIsProofsVisible] = React.useState(false);
+  const [mapPreviewStatus, setMapPreviewStatus] = React.useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
+  const [mapPreviewError, setMapPreviewError] = React.useState<string | null>(null);
+  const [mapPreviewErrorDetail, setMapPreviewErrorDetail] = React.useState<string | null>(null);
+  const [mapContainerEl, setMapContainerEl] = React.useState<HTMLDivElement | null>(null);
+  const mapRef = React.useRef<{
+    remove: () => void;
+    on: (event: "load" | "error", handler: (event?: { error?: Error }) => void) => void;
+    addSource: (id: string, source: unknown) => void;
+    addLayer: (layer: unknown) => void;
+    fitBounds: (
+      bounds: [[number, number], [number, number]],
+      options?: { padding?: number; duration?: number },
+    ) => void;
+  } | null>(null);
 
   const invoice = order?.invoice ?? order?.Invoice ?? null;
   const invoiceStatus = toLower(invoice?.status);
@@ -718,6 +833,17 @@ export default function OrderDetailsView({
     queryFn: () => getOrderLabelUrls(orderId),
     enabled: Boolean(order?.id) && canOpenLabel,
     staleTime: 240_000,
+  });
+
+  const {
+    data: orderProofLinks,
+    isFetching: isFetchingProofLinks,
+    refetch: refetchOrderProofLinks,
+  } = useQuery<OrderProofLinksResponse>({
+    queryKey: ["order-proof-links", orderId],
+    queryFn: () => fetchOrderProofLinks(orderId, { limit: 12 }),
+    enabled: false,
+    staleTime: 60_000,
   });
 
   const parcelLabelUrls = labelBundle?.urls ?? [];
@@ -854,6 +980,228 @@ export default function OrderDetailsView({
 
   const senderStructured = formatAddressSnapshot(order?.senderAddressObj);
   const receiverStructured = formatAddressSnapshot(order?.receiverAddressObj);
+  const mapboxToken = React.useMemo(() => getMapboxToken(), []);
+  const pickupCoordsFromOrder: LatLng | null = React.useMemo(() => {
+    const lat = toLatitude(order?.pickupLat);
+    const lng = toLongitude(order?.pickupLng);
+    if (lat == null || lng == null) return null;
+    return { lat, lng };
+  }, [order?.pickupLat, order?.pickupLng]);
+  const pickupCoordsFromSnapshot: LatLng | null = React.useMemo(() => {
+    const lat = toLatitude(order?.senderAddressObj?.latitude);
+    const lng = toLongitude(order?.senderAddressObj?.longitude);
+    if (lat == null || lng == null) return null;
+    return { lat, lng };
+  }, [order?.senderAddressObj?.latitude, order?.senderAddressObj?.longitude]);
+  const dropoffCoordsFromOrder: LatLng | null = React.useMemo(() => {
+    const lat = toLatitude(order?.dropoffLat);
+    const lng = toLongitude(order?.dropoffLng);
+    if (lat == null || lng == null) return null;
+    return { lat, lng };
+  }, [order?.dropoffLat, order?.dropoffLng]);
+  const dropoffCoordsFromSnapshot: LatLng | null = React.useMemo(() => {
+    const lat = toLatitude(order?.receiverAddressObj?.latitude);
+    const lng = toLongitude(order?.receiverAddressObj?.longitude);
+    if (lat == null || lng == null) return null;
+    return { lat, lng };
+  }, [order?.receiverAddressObj?.latitude, order?.receiverAddressObj?.longitude]);
+  const pickupCoords: LatLng | null = React.useMemo(
+    () => pickupCoordsFromOrder ?? pickupCoordsFromSnapshot,
+    [pickupCoordsFromOrder, pickupCoordsFromSnapshot],
+  );
+  const dropoffCoords: LatLng | null = React.useMemo(() => {
+    const primary = dropoffCoordsFromOrder ?? dropoffCoordsFromSnapshot;
+    if (!primary) return null;
+
+    if (
+      pickupCoords &&
+      coordsEqual(primary, pickupCoords) &&
+      dropoffCoordsFromSnapshot &&
+      !coordsEqual(dropoffCoordsFromSnapshot, pickupCoords)
+    ) {
+      return dropoffCoordsFromSnapshot;
+    }
+
+    return primary;
+  }, [dropoffCoordsFromOrder, dropoffCoordsFromSnapshot, pickupCoords]);
+  const routeMapUrl = React.useMemo(() => {
+    if (!pickupCoords || !dropoffCoords) return null;
+    return buildGoogleRouteUrl(pickupCoords, dropoffCoords);
+  }, [dropoffCoords, pickupCoords]);
+  const yandexRouteUrl = React.useMemo(() => {
+    if (!pickupCoords || !dropoffCoords) return null;
+    return buildYandexRouteUrl(pickupCoords, dropoffCoords);
+  }, [dropoffCoords, pickupCoords]);
+  const pickupMapUrl = React.useMemo(
+    () => (pickupCoords ? buildGooglePointUrl(pickupCoords) : null),
+    [pickupCoords],
+  );
+  const dropoffMapUrl = React.useMemo(
+    () => (dropoffCoords ? buildGooglePointUrl(dropoffCoords) : null),
+    [dropoffCoords],
+  );
+  const mapCenterCoords = pickupCoords ?? dropoffCoords ?? null;
+  const mapContainerRef = React.useCallback((node: HTMLDivElement | null) => {
+    setMapContainerEl(node);
+  }, []);
+  React.useEffect(() => {
+    if (mapRef.current) {
+      mapRef.current.remove();
+      mapRef.current = null;
+    }
+    setIsMapPreviewVisible(false);
+    setIsProofsVisible(false);
+    setMapPreviewStatus("idle");
+    setMapPreviewError(null);
+    setMapPreviewErrorDetail(null);
+  }, [order?.id]);
+  React.useEffect(() => {
+    if (!isMapPreviewVisible || !mapContainerEl) {
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
+      setMapPreviewStatus("idle");
+      return;
+    }
+    if (!mapboxToken) {
+      setMapPreviewError("token_missing");
+      setMapPreviewErrorDetail("NEXT_PUBLIC_MAPBOX_TOKEN is empty");
+      setMapPreviewStatus("error");
+      return;
+    }
+    if (!mapCenterCoords) {
+      setMapPreviewError("coords_missing");
+      setMapPreviewErrorDetail(null);
+      setMapPreviewStatus("error");
+      return;
+    }
+
+    setMapPreviewStatus("loading");
+    setMapPreviewError(null);
+    setMapPreviewErrorDetail(null);
+    let disposed = false;
+    let didLoad = false;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+    const initMap = async () => {
+      try {
+        const mapbox = await loadMapboxForRoute(mapboxToken);
+        if (disposed || !mapContainerEl) return;
+
+        const map = new mapbox.Map({
+          container: mapContainerEl,
+          style: "mapbox://styles/mapbox/streets-v12",
+          center: [mapCenterCoords.lng, mapCenterCoords.lat],
+          zoom: 12,
+          attributionControl: true,
+        });
+        mapRef.current = map;
+
+        map.on("load", () => {
+          if (disposed) return;
+          didLoad = true;
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+            timeoutId = null;
+          }
+
+          if (pickupCoords) {
+            new mapbox.Marker({ color: "#0ea5e9" })
+              .setLngLat([pickupCoords.lng, pickupCoords.lat])
+              .addTo(map);
+          }
+          if (dropoffCoords) {
+            new mapbox.Marker({ color: "#14b8a6" })
+              .setLngLat([dropoffCoords.lng, dropoffCoords.lat])
+              .addTo(map);
+          }
+
+          if (pickupCoords && dropoffCoords && !coordsEqual(pickupCoords, dropoffCoords)) {
+            map.addSource("route-line", {
+              type: "geojson",
+              data: {
+                type: "Feature",
+                geometry: {
+                  type: "LineString",
+                  coordinates: [
+                    [pickupCoords.lng, pickupCoords.lat],
+                    [dropoffCoords.lng, dropoffCoords.lat],
+                  ],
+                },
+                properties: {},
+              },
+            });
+            map.addLayer({
+              id: "route-line-layer",
+              type: "line",
+              source: "route-line",
+              paint: {
+                "line-color": "#111827",
+                "line-width": 3,
+                "line-opacity": 0.85,
+              },
+            });
+            map.fitBounds(
+              [
+                [Math.min(pickupCoords.lng, dropoffCoords.lng), Math.min(pickupCoords.lat, dropoffCoords.lat)],
+                [Math.max(pickupCoords.lng, dropoffCoords.lng), Math.max(pickupCoords.lat, dropoffCoords.lat)],
+              ],
+              { padding: 60, duration: 0 },
+            );
+          }
+
+          setMapPreviewStatus("ready");
+        });
+
+        map.on("error", (event) => {
+          if (disposed) return;
+          const message = event?.error?.message ?? "Mapbox map error";
+          if (didLoad) {
+            console.warn("[order-map] non-fatal map error:", message);
+            return;
+          }
+          const lower = message.toLowerCase();
+          if (
+            lower.includes("unauthorized") ||
+            lower.includes("forbidden") ||
+            lower.includes("access token") ||
+            lower.includes("not authorized")
+          ) {
+            setMapPreviewError("map_init_failed");
+            setMapPreviewErrorDetail(message);
+            setMapPreviewStatus("error");
+          } else {
+            console.warn("[order-map] map error before load (waiting):", message);
+          }
+        });
+
+        timeoutId = setTimeout(() => {
+          if (disposed || didLoad) return;
+          setMapPreviewError("map_init_failed");
+          setMapPreviewErrorDetail("Map load timed out");
+          setMapPreviewStatus("error");
+        }, 8000);
+      } catch {
+        if (disposed) return;
+        setMapPreviewError("map_init_failed");
+        setMapPreviewErrorDetail("Mapbox module initialization failed");
+        setMapPreviewStatus("error");
+      }
+    };
+    void initMap();
+
+    return () => {
+      disposed = true;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
+    };
+  }, [isMapPreviewVisible, mapContainerEl, mapboxToken, mapCenterCoords, pickupCoords, dropoffCoords]);
   const senderPhones = collectPhones(
     order?.senderPhone,
     order?.senderPhone2,
@@ -864,6 +1212,18 @@ export default function OrderDetailsView({
     order?.receiverPhone2,
     order?.receiverPhone3,
   );
+  const proofBundles = orderProofLinks?.proofs ?? [];
+  const pickupProofs = proofBundles.filter((bundle) => bundle.stage === "pickup");
+  const deliveryProofs = proofBundles.filter((bundle) => bundle.stage === "delivery");
+
+  const loadOrderProofs = React.useCallback(async () => {
+    setIsProofsVisible(true);
+    try {
+      await refetchOrderProofLinks();
+    } catch (err: unknown) {
+      toast.error(extractErrorMessage(err, "Could not load confirmation files"));
+    }
+  }, [refetchOrderProofLinks]);
 
   if (isLoading) {
     return (
@@ -1030,6 +1390,13 @@ export default function OrderDetailsView({
                   {t("orderDetails.routeAndContacts")}
                 </TabsTrigger>
                 <TabsTrigger
+                  value="map"
+                  className="h-10 flex-none rounded-xl border border-border/70 bg-background/80 px-4 data-[state=active]:border-indigo-300 data-[state=active]:bg-indigo-50 data-[state=active]:text-indigo-900"
+                >
+                  <Navigation className="h-4 w-4" />
+                  {t("orderDetails.mapAndNavigation")}
+                </TabsTrigger>
+                <TabsTrigger
                   value="shipment"
                   className="h-10 flex-none rounded-xl border border-border/70 bg-background/80 px-4 data-[state=active]:border-emerald-300 data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-900"
                 >
@@ -1049,6 +1416,13 @@ export default function OrderDetailsView({
                 >
                   <CalendarClock className="h-4 w-4" />
                   {t("orderDetails.trackingTimeline")}
+                </TabsTrigger>
+                <TabsTrigger
+                  value="confirmations"
+                  className="h-10 flex-none rounded-xl border border-border/70 bg-background/80 px-4 data-[state=active]:border-violet-300 data-[state=active]:bg-violet-50 data-[state=active]:text-violet-900"
+                >
+                  <PenLine className="h-4 w-4" />
+                  {t("orderDetails.confirmations")}
                 </TabsTrigger>
               </TabsList>
             </CardContent>
@@ -1174,6 +1548,127 @@ export default function OrderDetailsView({
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+
+          <TabsContent value="map" className="space-y-4">
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">{t("orderDetails.mapAndNavigation")}</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs text-muted-foreground">{t("orderDetails.mapPreview")}</p>
+                    <p className="mt-1 font-medium">{t("orderDetails.mapPreviewHint")}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {routeMapUrl ? (
+                      <Button asChild type="button" variant="default" size="sm" className="h-8 rounded-lg">
+                        <a href={routeMapUrl} target="_blank" rel="noreferrer">
+                          <ExternalLink className="mr-1 h-3.5 w-3.5" />
+                          {t("orderDetails.openRoute")}
+                        </a>
+                      </Button>
+                    ) : null}
+                    {yandexRouteUrl ? (
+                      <Button asChild type="button" variant="outline" size="sm" className="h-8 rounded-lg">
+                        <a href={yandexRouteUrl} target="_blank" rel="noreferrer">
+                          <ExternalLink className="mr-1 h-3.5 w-3.5" />
+                          {t("orderDetails.openRouteYandex")}
+                        </a>
+                      </Button>
+                    ) : null}
+                    {pickupMapUrl ? (
+                      <Button asChild type="button" variant="outline" size="sm" className="h-8 rounded-lg">
+                        <a href={pickupMapUrl} target="_blank" rel="noreferrer">
+                          <MapPin className="mr-1 h-3.5 w-3.5" />
+                          {t("orderDetails.openPickupMap")}
+                        </a>
+                      </Button>
+                    ) : null}
+                    {dropoffMapUrl ? (
+                      <Button asChild type="button" variant="outline" size="sm" className="h-8 rounded-lg">
+                        <a href={dropoffMapUrl} target="_blank" rel="noreferrer">
+                          <MapPin className="mr-1 h-3.5 w-3.5" />
+                          {t("orderDetails.openDropoffMap")}
+                        </a>
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="relative overflow-hidden rounded-xl border border-border/60 bg-muted/25">
+                  <div className="h-72 w-full">
+                    {!isMapPreviewVisible ? (
+                      <div className="flex h-full items-center justify-center p-4">
+                        <Button
+                          type="button"
+                          className="rounded-xl"
+                          onClick={() => setIsMapPreviewVisible(true)}
+                          disabled={!pickupCoords && !dropoffCoords}
+                        >
+                          <Navigation className="mr-2 h-4 w-4" />
+                          {t("orderDetails.showMap")}
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="relative h-full w-full">
+                        <div ref={mapContainerRef} className="h-full w-full bg-slate-100" />
+
+                        {mapPreviewStatus === "loading" ? (
+                          <div className="absolute inset-0 flex items-center justify-center px-4">
+                            <div className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-background px-3 py-1.5 text-xs text-muted-foreground">
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              {t("orderDetails.loadingMap")}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {mapPreviewStatus === "error" ? (
+                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background/88 px-4 text-sm text-muted-foreground backdrop-blur-[1px]">
+                            <span>
+                              {mapPreviewError === "token_missing"
+                                ? t("orderDetails.mapTokenMissing")
+                                : mapPreviewError === "coords_missing"
+                                  ? t("orderDetails.mapUnavailable")
+                                  : t("orderDetails.mapLoadFailed")}
+                            </span>
+                            {mapPreviewErrorDetail ? (
+                              <span className="max-w-[90%] rounded-md border border-border/50 bg-muted/50 px-2 py-1 text-xs text-muted-foreground">
+                                {mapPreviewErrorDetail}
+                              </span>
+                            ) : null}
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8 rounded-lg"
+                              onClick={() => {
+                                setMapPreviewStatus("idle");
+                                setIsMapPreviewVisible(false);
+                              }}
+                            >
+                              {t("orderDetails.hideMap")}
+                            </Button>
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-xl border border-border/60 bg-background/70 p-3">
+                    <p className="text-xs text-muted-foreground">{t("orderDetails.pickupCoords")}</p>
+                    <p className="mt-1 font-mono text-xs">{formatLatLng(pickupCoords)}</p>
+                  </div>
+                  <div className="rounded-xl border border-border/60 bg-background/70 p-3">
+                    <p className="text-xs text-muted-foreground">{t("orderDetails.dropoffCoords")}</p>
+                    <p className="mt-1 font-mono text-xs">{formatLatLng(dropoffCoords)}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="shipment" className="space-y-4">
@@ -1748,6 +2243,160 @@ export default function OrderDetailsView({
                 </Card>
               </div>
             </div>
+          </TabsContent>
+
+          <TabsContent value="confirmations" className="space-y-4">
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">{t("orderDetails.confirmations")}</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs text-muted-foreground">{t("orderDetails.confirmations")}</p>
+                    <p className="mt-1 text-sm font-medium">{t("orderDetails.confirmationsHint")}</p>
+                  </div>
+
+                  {!isProofsVisible ? (
+                    <Button
+                      type="button"
+                      variant="default"
+                      size="sm"
+                      className="h-8 rounded-lg"
+                      onClick={() => {
+                        void loadOrderProofs();
+                      }}
+                    >
+                      <ImageIcon className="mr-1.5 h-3.5 w-3.5" />
+                      {t("orderDetails.loadConfirmations")}
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 rounded-lg"
+                      onClick={() => {
+                        void refetchOrderProofLinks();
+                      }}
+                      disabled={isFetchingProofLinks}
+                    >
+                      {isFetchingProofLinks ? (
+                        <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                      )}
+                      {t("orderDetails.refreshConfirmations")}
+                    </Button>
+                  )}
+                </div>
+
+                {!isProofsVisible ? (
+                  <div className="rounded-xl border border-dashed border-border/70 bg-muted/20 p-5 text-sm text-muted-foreground">
+                    {t("orderDetails.confirmationsLazyHint")}
+                  </div>
+                ) : null}
+
+                {isProofsVisible && isFetchingProofLinks ? (
+                  <div className="rounded-xl border border-border/60 bg-background/60 p-5 text-sm text-muted-foreground">
+                    <div className="inline-flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      {t("orderDetails.loadingConfirmations")}
+                    </div>
+                  </div>
+                ) : null}
+
+                {isProofsVisible &&
+                !isFetchingProofLinks &&
+                pickupProofs.length === 0 &&
+                deliveryProofs.length === 0 ? (
+                  <div className="rounded-xl border border-border/60 bg-background/60 p-5 text-sm text-muted-foreground">
+                    {t("orderDetails.noConfirmations")}
+                  </div>
+                ) : null}
+
+                {isProofsVisible && !isFetchingProofLinks ? (
+                  <div className="space-y-4">
+                    {([
+                      { key: "pickup", label: t("orderDetails.pickupConfirmation"), rows: pickupProofs },
+                      { key: "delivery", label: t("orderDetails.deliveryConfirmation"), rows: deliveryProofs },
+                    ] as const).map((section) => (
+                      <div
+                        key={section.key}
+                        className="rounded-2xl border border-border/70 bg-background/70 p-4"
+                      >
+                        <div className="mb-3 flex items-center justify-between gap-3">
+                          <p className="text-sm font-semibold">{section.label}</p>
+                          <Badge variant="outline" className="rounded-full">
+                            {section.rows.length}
+                          </Badge>
+                        </div>
+
+                        {section.rows.length === 0 ? (
+                          <p className="text-sm text-muted-foreground">{t("orderDetails.noConfirmationsForStage")}</p>
+                        ) : (
+                          <div className="grid gap-3 lg:grid-cols-2">
+                            {section.rows.map((proof: OrderProofBundle) => (
+                              <div
+                                key={`${section.key}-${proof.proofId}`}
+                                className="rounded-xl border border-border/60 bg-background/60 p-3"
+                              >
+                                <div className="mb-2 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                                  <span>{formatDateTime(proof.savedAt)}</span>
+                                  <span>{proof.signedBy || "-"}</span>
+                                </div>
+
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                  <div className="space-y-2">
+                                    <div className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                                      <ImageIcon className="h-3.5 w-3.5" />
+                                      {t("orderDetails.photoProof")}
+                                    </div>
+                                    {proof.photo?.url ? (
+                                      <a href={proof.photo.url} target="_blank" rel="noreferrer">
+                                        <img
+                                          src={proof.photo.url}
+                                          alt={`${section.label} ${t("orderDetails.photoProof")}`}
+                                          className="h-36 w-full rounded-lg border border-border/60 object-cover"
+                                        />
+                                      </a>
+                                    ) : (
+                                      <div className="flex h-36 items-center justify-center rounded-lg border border-dashed border-border/60 text-xs text-muted-foreground">
+                                        {t("orderDetails.noPhoto")}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <div className="space-y-2">
+                                    <div className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                                      <PenLine className="h-3.5 w-3.5" />
+                                      {t("orderDetails.signatureProof")}
+                                    </div>
+                                    {proof.signature?.url ? (
+                                      <a href={proof.signature.url} target="_blank" rel="noreferrer">
+                                        <img
+                                          src={proof.signature.url}
+                                          alt={`${section.label} ${t("orderDetails.signatureProof")}`}
+                                          className="h-36 w-full rounded-lg border border-border/60 bg-white object-contain"
+                                        />
+                                      </a>
+                                    ) : (
+                                      <div className="flex h-36 items-center justify-center rounded-lg border border-dashed border-border/60 text-xs text-muted-foreground">
+                                        {t("orderDetails.noSignature")}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="timeline" className="space-y-4">

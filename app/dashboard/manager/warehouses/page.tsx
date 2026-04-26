@@ -103,6 +103,9 @@ export default function ManagerWarehousesPage() {
                       <div className="text-sm text-muted-foreground">
                         {warehouse.location}
                         {warehouse.region ? ` • ${warehouse.region}` : ""}
+                        {typeof warehouse.latitude === "number" && typeof warehouse.longitude === "number"
+                          ? ` • ${warehouse.latitude.toFixed(5)}, ${warehouse.longitude.toFixed(5)}`
+                          : ""}
                       </div>
 
                       <div className="flex flex-wrap gap-1.5 pt-1">
@@ -153,3 +156,4 @@ export default function ManagerWarehousesPage() {
     </div>
   );
 }
+

@@ -6,6 +6,8 @@ export const addressSchema = z.object({
   city: z.string().optional().nullable(),
   neighborhood: z.string().optional().nullable(),
   street: z.string().optional().nullable(),
+  latitude: z.number().optional().nullable(),
+  longitude: z.number().optional().nullable(),
   addressLine1: z.string().optional().nullable(),
   addressLine2: z.string().optional().nullable(),
   building: z.string().optional().nullable(),

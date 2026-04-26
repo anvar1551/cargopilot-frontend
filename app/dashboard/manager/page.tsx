@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useCallback, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { fetchOrders } from "@/lib/orders";
+import { fetchOrderById, fetchOrders } from "@/lib/orders";
 import { fetchManagerOverview } from "@/lib/manager";
 import { getStatusLabel } from "@/lib/i18n/labels";
+import { usePageVisibility } from "@/lib/usePageVisibility";
 
 import { useI18n } from "@/components/i18n/I18nProvider";
 import { Badge } from "@/components/ui/badge";
@@ -295,12 +296,14 @@ function StatTile({
 export default function ManagerDashboardPage() {
   const { locale, t } = useI18n();
   const text = copy[locale];
+  const queryClient = useQueryClient();
+  const isPageVisible = usePageVisibility();
 
   const overviewQuery = useQuery<ManagerOverview>({
     queryKey: ["manager-overview"],
     queryFn: fetchManagerOverview,
     staleTime: 30_000,
-    refetchInterval: 60_000,
+    refetchInterval: isPageVisible ? 120_000 : false,
     refetchOnWindowFocus: false,
   });
 
@@ -313,7 +316,7 @@ export default function ManagerDashboardPage() {
         limit: 80,
       }),
     staleTime: 20_000,
-    refetchInterval: 45_000,
+    refetchInterval: isPageVisible ? 90_000 : false,
     refetchOnWindowFocus: false,
   });
 
@@ -441,6 +444,17 @@ export default function ManagerDashboardPage() {
   }, [atWarehouse, exceptions, outForDelivery, pending, text]);
 
   const loading = overviewQuery.isLoading || ordersQuery.isLoading;
+  const prefetchOrderDetails = useCallback(
+    (id: string) => {
+      if (!id) return;
+      void queryClient.prefetchQuery({
+        queryKey: ["order", id],
+        queryFn: () => fetchOrderById(id),
+        staleTime: 60_000,
+      });
+    },
+    [queryClient],
+  );
 
   return (
     <PageShell>
@@ -566,6 +580,9 @@ export default function ManagerDashboardPage() {
                       <Link
                         key={order.id}
                         href={`/dashboard/manager?order=${order.id}`}
+                        onMouseEnter={() => prefetchOrderDetails(order.id)}
+                        onFocus={() => prefetchOrderDetails(order.id)}
+                        onTouchStart={() => prefetchOrderDetails(order.id)}
                         className="block p-4 transition hover:bg-muted/40"
                       >
                         <div className="flex items-start justify-between gap-3">

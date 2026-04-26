@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { Toaster } from "sonner";
 
 import "./globals.css";
+import "mapbox-gl/dist/mapbox-gl.css";
 import Providers from "./providers";
 
 export const metadata: Metadata = {
@@ -26,6 +27,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <link rel="preconnect" href="https://api.mapbox.com" crossOrigin="" />
+        <link rel="preconnect" href="https://events.mapbox.com" crossOrigin="" />
+      </head>
       <body suppressHydrationWarning>
         <Suspense fallback={null}>
           <Providers>{children}</Providers>

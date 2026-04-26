@@ -30,7 +30,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { getUser } from "@/lib/auth";
+import { getUser, type AuthUser } from "@/lib/auth";
 import {
   driverManifestCopy,
   EMPTY_DRIVER_MANIFEST_ERROR,
@@ -702,7 +702,8 @@ function StatTile({
 export default function WarehouseDashboardPage() {
   const { locale, t } = useI18n();
   const text = copy[locale];
-  const user = useMemo(() => getUser(), []);
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [userResolved, setUserResolved] = useState(false);
   const userSettings = useMemo(() => loadUserSettings(), []);
   const [q, setQ] = useState("");
   const [activeQuickFilter, setActiveQuickFilter] = useState<QuickFilterKey>("all");
@@ -732,6 +733,11 @@ export default function WarehouseDashboardPage() {
     null,
   ]);
   const [searchCursorIndex, setSearchCursorIndex] = useState(0);
+
+  React.useEffect(() => {
+    setUser(getUser());
+    setUserResolved(true);
+  }, []);
 
   React.useEffect(() => {
     setSearchCursorStack([null]);
@@ -768,7 +774,6 @@ export default function WarehouseDashboardPage() {
         limit: 120,
         mode: "cursor",
         cursor: baseCursorStack[baseCursorIndex] ?? undefined,
-        warehouseId: user?.warehouseId ?? undefined,
       }),
     enabled: !isSearchMode && Boolean(user?.warehouseId),
     placeholderData: (prev) => prev,
@@ -788,7 +793,6 @@ export default function WarehouseDashboardPage() {
         limit: 50,
         mode: "cursor",
         cursor: searchCursorStack[searchCursorIndex] ?? undefined,
-        warehouseId: user?.warehouseId ?? undefined,
       }),
     enabled: isSearchMode && Boolean(user?.warehouseId),
     placeholderData: (prev) => prev,
@@ -2157,14 +2161,14 @@ export default function WarehouseDashboardPage() {
             </div>
           </CardHeader>
           <CardContent>
-            {isLoading ? (
+            {!userResolved || isLoading ? (
               <div className="space-y-3">
                 <Skeleton className="h-10 w-80" />
                 <Skeleton className="h-[540px] w-full" />
               </div>
-            ) : filteredOrders.length === 0 ? (
+            ) : !user?.warehouseId ? (
               <div className="rounded-3xl border border-dashed border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">
-                {text.noOrders}
+                {text.unlinkedWarehouse}
               </div>
             ) : (
               <DispatchCenter

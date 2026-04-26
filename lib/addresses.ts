@@ -9,6 +9,8 @@ export type Address = {
 
   city?: string | null;
   street?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   addressLine1?: string | null;
   addressLine2?: string | null;
   neighborhood?: string | null;
