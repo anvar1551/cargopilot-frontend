@@ -1,6 +1,5 @@
 import { api } from "@/lib/api";
 import { clearAuth, getToken } from "@/lib/auth";
-import type { ServiceType } from "@/lib/orders/service-types";
 import { fetchOrders, type Order } from "./orders";
 
 export type DriverLite = {
@@ -17,7 +16,7 @@ export async function fetchManagerOverview() {
   return res.data;
 }
 
-export type ManagerAnalyticsSummary = {
+export type ManagerAnalyticsV2Summary = {
   period: {
     rangeDays: number;
     staleHours: number;
@@ -38,36 +37,11 @@ export type ManagerAnalyticsSummary = {
     inTransitOrders: number;
     outForDeliveryOrders: number;
     staleOpenOrders: number;
-    locationThroughput: {
-      warehouse: {
-        activeOrders: number;
-        atWarehouseOrders: number;
-        outForDeliveryOrders: number;
-        deliveredInRange: number;
-      };
-      pickupPoint: {
-        activeOrders: number;
-        atWarehouseOrders: number;
-        outForDeliveryOrders: number;
-        deliveredInRange: number;
-      };
-    };
   };
   sla: {
     overdueOpenOrders: number;
+    dueSoonOpenOrders: number;
     dueTodayOpenOrders: number;
-    dueSoonOpenOrders?: number;
-    promiseBackedOrders: number;
-    ruleBackedOrders?: number;
-    fallbackBackedOrders?: number;
-    trackedOpenOrders?: number;
-    untrackedOpenOrders?: number;
-  };
-  slaPolicy?: {
-    staleHours: number;
-    dueSoonHours: number;
-    overdueGraceHours: number;
-    staleHoursApplied: number;
   };
   finance: {
     invoicedPaidAmount: number;
@@ -76,89 +50,100 @@ export type ManagerAnalyticsSummary = {
     codExpected: number;
     unpaidServiceCount: number;
     unpaidCodCount: number;
-    uncollectedExpectedAmount: number;
-    driverHeldAmount: number;
-    warehouseHeldAmount: number;
-    pickupPointHeldAmount: number;
-    settledAmount: number;
-    holders: Array<{
-      holderType: string;
-      holderId: string | null;
-      holderLabel: string;
-      collectionCount: number;
-      totalAmount: number;
-    }>;
-    queue: Array<{
-      id: string;
-      orderId: string;
-      orderNumber: string | null;
-      orderStatus: string;
-      kind: string;
-      status: string;
-      holderType: string;
-      holderLabel: string | null;
-      amount: number;
-      currency: string | null;
-      ageHours: number;
-      updatedAt: string;
-    }>;
-    queueMeta: {
-      page: number;
-      pageSize: number;
-      total: number;
-      pageCount: number;
-      hasPrev: boolean;
-      hasNext: boolean;
-    };
   };
-  breakdowns: {
-    status: Array<{ status: string; count: number }>;
-    serviceType: Array<{ serviceType: ServiceType; count: number }>;
-  };
-  warnings?: {
-    overdueTotal: number;
-    staleTotal: number;
-    financeExposureTotal: number;
-    overdueOrders: Array<{
-      id: string;
-      orderNumber: string | null;
-      status: string;
-      expectedDeliveryAt: string | null;
-      updatedAt: string;
-    }>;
-    staleOrders: Array<{
-      id: string;
-      orderNumber: string | null;
-      status: string;
-      expectedDeliveryAt: string | null;
-      updatedAt: string;
-    }>;
-    financeExposureOrders: Array<{
-      id: string;
-      orderNumber: string | null;
-      status: string;
-      codDue: number;
-      serviceChargeDue: number;
-      updatedAt: string;
-    }>;
-    driverHeldOrders: Array<{
-      orderId: string;
-      orderNumber: string | null;
-      status: string;
-      amount: number;
-      currency: string | null;
-    }>;
+  generatedAt: string;
+};
+
+export type ManagerAnalyticsV2Trend = {
+  period: {
+    rangeDays: number;
+    from: string;
+    to: string;
   };
   trend: {
     created: Array<{ date: string; count: number }>;
     delivered: Array<{ date: string; count: number }>;
   };
+  generatedAt: string;
 };
 
-export async function fetchManagerAnalyticsSummary(params?: {
+export type ManagerAnalyticsV2Warnings = {
+  overdueTotal: number;
+  staleTotal: number;
+  financeExposureTotal: number;
+  overdueOrders: Array<{
+    id: string;
+    orderNumber: string | null;
+    status: string;
+    expectedDeliveryAt: string | null;
+    updatedAt: string;
+  }>;
+  staleOrders: Array<{
+    id: string;
+    orderNumber: string | null;
+    status: string;
+    expectedDeliveryAt: string | null;
+    updatedAt: string;
+  }>;
+  financeExposureOrders: Array<{
+    id: string;
+    orderNumber: string | null;
+    status: string;
+    codDue: number;
+    serviceChargeDue: number;
+    updatedAt: string;
+  }>;
+};
+
+export type ManagerAnalyticsV2FinanceQueue = {
+  queue: Array<{
+    id: string;
+    orderId: string;
+    orderNumber: string | null;
+    orderStatus: string;
+    kind: string;
+    status: string;
+    holderType: string;
+    holderLabel: string | null;
+    amount: number;
+    currency: string | null;
+    ageHours: number;
+    updatedAt: string;
+  }>;
+  queueMeta: {
+    page: number;
+    pageSize: number;
+    total: number;
+    pageCount: number;
+    hasPrev: boolean;
+    hasNext: boolean;
+  };
+};
+
+export async function fetchManagerAnalyticsSummaryV2(params?: {
   rangeDays?: number;
   staleHours?: number;
-  queueLimit?: number;
+}): Promise<ManagerAnalyticsV2Summary> {
+  const res = await api.get("/api/manager/analytics/summary", { params });
+  return res.data;
+}
+
+export async function fetchManagerAnalyticsTrendV2(params?: {
+  rangeDays?: number;
+}): Promise<ManagerAnalyticsV2Trend> {
+  const res = await api.get("/api/manager/analytics/trend", { params });
+  return res.data;
+}
+
+export async function fetchManagerAnalyticsWarningsV2(params?: {
+  rangeDays?: number;
+  staleHours?: number;
+}): Promise<ManagerAnalyticsV2Warnings> {
+  const res = await api.get("/api/manager/analytics/warnings", { params });
+  return res.data;
+}
+
+export async function fetchManagerAnalyticsFinanceQueueV2(params?: {
   queuePage?: number;
   queuePageSize?: number;
   queueFrom?: string;
@@ -166,8 +151,8 @@ export async function fetchManagerAnalyticsSummary(params?: {
   queueStatuses?: string[];
   queueKinds?: string[];
   queueHolderTypes?: string[];
-}): Promise<ManagerAnalyticsSummary> {
-  const res = await api.get("/api/manager/analytics/summary", {
+}): Promise<ManagerAnalyticsV2FinanceQueue> {
+  const res = await api.get("/api/manager/analytics/finance-queue", {
     params: {
       ...params,
       queueStatuses: params?.queueStatuses?.length
@@ -182,6 +167,11 @@ export async function fetchManagerAnalyticsSummary(params?: {
     },
   });
   return res.data;
+}
+
+export async function invalidateManagerAnalyticsV2() {
+  const res = await api.post("/api/manager/analytics/refresh");
+  return res.data as { ok: boolean };
 }
 
 export async function fetchDrivers(): Promise<DriverLite[]> {
@@ -310,6 +300,123 @@ function parseSseFrame(frameRaw: string) {
   return {
     event,
     data: dataLines.length > 0 ? dataLines.join("\n") : "",
+  };
+}
+
+export function subscribeManagerAnalyticsStream(args: {
+  onReady?: (payload: { connectedAt?: string }) => void;
+  onRefresh: (payload: { at?: string; reason?: string }) => void;
+  onError?: (error: Error) => void;
+}) {
+  if (typeof window === "undefined") return () => undefined;
+
+  const token = getToken();
+  if (!token) {
+    args.onError?.(new Error("Missing auth token for analytics stream"));
+    return () => undefined;
+  }
+
+  const endpoint = buildApiUrl("/api/manager/analytics/stream");
+  const abortController = new AbortController();
+  const decoder = new TextDecoder();
+  let closed = false;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let attempt = 0;
+
+  const connect = async () => {
+    if (closed) return;
+    try {
+      const response = await fetch(endpoint, {
+        method: "GET",
+        headers: {
+          Accept: "text/event-stream",
+          Authorization: `Bearer ${token}`,
+          "Cache-Control": "no-cache",
+        },
+        cache: "no-store",
+        signal: abortController.signal,
+      });
+
+      if (response.status === 401) {
+        clearAuth();
+        throw new Error("Unauthorized analytics stream");
+      }
+      if (!response.ok) {
+        const canRetry = shouldReconnectForStatus(response.status);
+        throw new Error(
+          canRetry
+            ? `Analytics stream unavailable (${response.status})`
+            : "ANALYTICS_STREAM_NO_RETRY",
+        );
+      }
+      if (!response.body) throw new Error("Analytics stream body is empty");
+
+      attempt = 0;
+      const reader = response.body.getReader();
+      let buffer = "";
+
+      while (!closed) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let delimiterIndex = buffer.search(/\r?\n\r?\n/);
+
+        while (delimiterIndex >= 0) {
+          const frame = buffer.slice(0, delimiterIndex);
+          const consumedLength =
+            buffer[delimiterIndex] === "\r" && buffer[delimiterIndex + 1] === "\n" ? 4 : 2;
+          buffer = buffer.slice(delimiterIndex + consumedLength);
+
+          const parsed = parseSseFrame(frame);
+          if (parsed.event === "ready") {
+            try {
+              args.onReady?.(
+                parsed.data ? (JSON.parse(parsed.data) as { connectedAt?: string }) : {},
+              );
+            } catch {
+              args.onReady?.({});
+            }
+          } else if (parsed.event === "analytics-refresh") {
+            try {
+              args.onRefresh(
+                parsed.data ? (JSON.parse(parsed.data) as { at?: string; reason?: string }) : {},
+              );
+            } catch {
+              args.onRefresh({});
+            }
+          }
+
+          delimiterIndex = buffer.search(/\r?\n\r?\n/);
+        }
+      }
+
+      if (!closed) {
+        attempt += 1;
+        const delay = Math.min(10_000, 800 + attempt * 500);
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null;
+          void connect();
+        }, delay);
+      }
+    } catch (error) {
+      if (closed) return;
+      const err = error instanceof Error ? error : new Error("Analytics stream failed");
+      if (err.message === "ANALYTICS_STREAM_NO_RETRY") return;
+      args.onError?.(err);
+      attempt += 1;
+      const delay = Math.min(12_000, 900 + attempt * 700);
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        void connect();
+      }, delay);
+    }
+  };
+
+  void connect();
+  return () => {
+    closed = true;
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    abortController.abort();
   };
 }
 
