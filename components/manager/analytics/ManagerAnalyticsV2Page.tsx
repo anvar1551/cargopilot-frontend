@@ -77,7 +77,11 @@ export function ManagerAnalyticsV2Page() {
     queryFn: () => fetchManagerAnalyticsSummaryV2({ rangeDays: Number(rangeDays) }),
     placeholderData: (prev) => prev,
     staleTime: 30_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
+
+  const summaryStaleHours = summaryQuery.data?.period?.staleHours ?? 48;
 
   const trendQuery = useQuery<ManagerAnalyticsV2Trend, any>({
     queryKey: ["manager-analytics-v2-trend", rangeDays],
@@ -85,18 +89,22 @@ export function ManagerAnalyticsV2Page() {
     enabled: Boolean(summaryQuery.data),
     staleTime: 45_000,
     placeholderData: (prev) => prev,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const warningsQuery = useQuery<ManagerAnalyticsV2Warnings, any>({
-    queryKey: ["manager-analytics-v2-warnings", rangeDays, summaryQuery.data?.period.staleHours ?? 48],
+    queryKey: ["manager-analytics-v2-warnings", rangeDays, summaryStaleHours],
     queryFn: () =>
       fetchManagerAnalyticsWarningsV2({
         rangeDays: Number(rangeDays),
-        staleHours: summaryQuery.data?.period.staleHours,
+        staleHours: summaryStaleHours,
       }),
     enabled: Boolean(summaryQuery.data),
     staleTime: 45_000,
     placeholderData: (prev) => prev,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const financeQueueQuery = useQuery<ManagerAnalyticsV2FinanceQueue, any>({
@@ -111,6 +119,8 @@ export function ManagerAnalyticsV2Page() {
     enabled: Boolean(summaryQuery.data),
     staleTime: 20_000,
     placeholderData: (prev) => prev,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   useEffect(() => {
@@ -142,6 +152,9 @@ export function ManagerAnalyticsV2Page() {
       ...trend.created.flatMap((row, i) => [row.count, trend.delivered[i]?.count ?? 0]),
     );
   }, [trend]);
+
+  const trendCreated = useMemo(() => trend?.created?.slice(-14) ?? [], [trend?.created]);
+  const trendDelivered = useMemo(() => trend?.delivered?.slice(-14) ?? [], [trend?.delivered]);
 
   const refreshAll = async () => {
     await invalidateManagerAnalyticsV2();
@@ -220,8 +233,8 @@ export function ManagerAnalyticsV2Page() {
                 ) : (
                   <div className="overflow-x-auto rounded-2xl border bg-background/80 p-4">
                     <div className="grid h-28 min-w-[560px] grid-cols-14 items-end gap-2">
-                      {trend.created.slice(-14).map((item, idx) => {
-                        const delivered = trend.delivered[idx]?.count ?? 0;
+                      {trendCreated.map((item, idx) => {
+                        const delivered = trendDelivered[idx]?.count ?? 0;
                         return (
                           <div key={item.date} className="space-y-1">
                             <div className="flex h-20 items-end gap-1">
@@ -294,11 +307,11 @@ export function ManagerAnalyticsV2Page() {
               <CardContent>
                 {!queue ? (
                   <Skeleton className="h-40 rounded-2xl" />
-                ) : queue.queue.length === 0 ? (
+                ) : (queue.queue ?? []).length === 0 ? (
                   <div className="rounded-2xl border border-dashed p-6 text-sm text-muted-foreground">No queue items.</div>
                 ) : (
                   <div className="space-y-3">
-                    {queue.queue.map((item) => (
+                    {(queue.queue ?? []).map((item) => (
                       <div key={item.id} className="rounded-2xl border bg-background/80 p-4">
                         <div className="flex flex-wrap items-center gap-2">
                           <Badge variant="outline" className="rounded-full">
@@ -327,14 +340,14 @@ export function ManagerAnalyticsV2Page() {
 
                     <div className="flex items-center justify-between pt-1 text-sm">
                       <span>
-                        Page {queue.queueMeta.page} / {queue.queueMeta.pageCount}
+                        Page {queue.queueMeta?.page ?? 1} / {queue.queueMeta?.pageCount ?? 1}
                       </span>
                       <div className="flex gap-2">
                         <Button
                           variant="outline"
                           size="sm"
                           onClick={() => setQueuePage((p) => Math.max(1, p - 1))}
-                          disabled={!queue.queueMeta.hasPrev}
+                          disabled={!queue.queueMeta?.hasPrev}
                         >
                           Prev
                         </Button>
@@ -342,7 +355,7 @@ export function ManagerAnalyticsV2Page() {
                           variant="outline"
                           size="sm"
                           onClick={() => setQueuePage((p) => p + 1)}
-                          disabled={!queue.queueMeta.hasNext}
+                          disabled={!queue.queueMeta?.hasNext}
                         >
                           Next
                         </Button>
@@ -358,4 +371,3 @@ export function ManagerAnalyticsV2Page() {
     </PageShell>
   );
 }
-

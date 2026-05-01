@@ -124,23 +124,88 @@ export async function fetchManagerAnalyticsSummaryV2(params?: {
   rangeDays?: number;
   staleHours?: number;
 }): Promise<ManagerAnalyticsV2Summary> {
-  const res = await api.get("/api/manager/analytics/summary", { params });
-  return res.data;
+  const safeParams: Record<string, number> = {};
+  if (Number.isFinite(params?.rangeDays)) safeParams.rangeDays = Number(params?.rangeDays);
+  if (Number.isFinite(params?.staleHours)) safeParams.staleHours = Number(params?.staleHours);
+  const res = await api.get("/api/manager/analytics/summary", { params: safeParams });
+  const raw = (res.data ?? {}) as Partial<ManagerAnalyticsV2Summary>;
+  return {
+    period: {
+      rangeDays: Number(raw.period?.rangeDays ?? params?.rangeDays ?? 30),
+      staleHours: Number(raw.period?.staleHours ?? params?.staleHours ?? 48),
+      from: String(raw.period?.from ?? ""),
+      to: String(raw.period?.to ?? ""),
+    },
+    overview: {
+      totalOrders: Number(raw.overview?.totalOrders ?? 0),
+      createdInRange: Number(raw.overview?.createdInRange ?? 0),
+      openOrders: Number(raw.overview?.openOrders ?? 0),
+      deliveredInRange: Number(raw.overview?.deliveredInRange ?? 0),
+      returnedInRange: Number(raw.overview?.returnedInRange ?? 0),
+      exceptionOpenOrders: Number(raw.overview?.exceptionOpenOrders ?? 0),
+    },
+    operations: {
+      pendingOrders: Number(raw.operations?.pendingOrders ?? 0),
+      atWarehouseOrders: Number(raw.operations?.atWarehouseOrders ?? 0),
+      inTransitOrders: Number(raw.operations?.inTransitOrders ?? 0),
+      outForDeliveryOrders: Number(raw.operations?.outForDeliveryOrders ?? 0),
+      staleOpenOrders: Number(raw.operations?.staleOpenOrders ?? 0),
+    },
+    sla: {
+      overdueOpenOrders: Number(raw.sla?.overdueOpenOrders ?? 0),
+      dueSoonOpenOrders: Number(raw.sla?.dueSoonOpenOrders ?? 0),
+      dueTodayOpenOrders: Number(raw.sla?.dueTodayOpenOrders ?? 0),
+    },
+    finance: {
+      invoicedPaidAmount: Number(raw.finance?.invoicedPaidAmount ?? 0),
+      pendingInvoicesCount: Number(raw.finance?.pendingInvoicesCount ?? 0),
+      serviceChargeExpected: Number(raw.finance?.serviceChargeExpected ?? 0),
+      codExpected: Number(raw.finance?.codExpected ?? 0),
+      unpaidServiceCount: Number(raw.finance?.unpaidServiceCount ?? 0),
+      unpaidCodCount: Number(raw.finance?.unpaidCodCount ?? 0),
+    },
+    generatedAt: String(raw.generatedAt ?? new Date().toISOString()),
+  };
 }
 
 export async function fetchManagerAnalyticsTrendV2(params?: {
   rangeDays?: number;
 }): Promise<ManagerAnalyticsV2Trend> {
-  const res = await api.get("/api/manager/analytics/trend", { params });
-  return res.data;
+  const safeParams: Record<string, number> = {};
+  if (Number.isFinite(params?.rangeDays)) safeParams.rangeDays = Number(params?.rangeDays);
+  const res = await api.get("/api/manager/analytics/trend", { params: safeParams });
+  const raw = (res.data ?? {}) as Partial<ManagerAnalyticsV2Trend>;
+  return {
+    period: {
+      rangeDays: Number(raw.period?.rangeDays ?? params?.rangeDays ?? 30),
+      from: String(raw.period?.from ?? ""),
+      to: String(raw.period?.to ?? ""),
+    },
+    trend: {
+      created: Array.isArray(raw.trend?.created) ? raw.trend!.created : [],
+      delivered: Array.isArray(raw.trend?.delivered) ? raw.trend!.delivered : [],
+    },
+    generatedAt: String(raw.generatedAt ?? new Date().toISOString()),
+  };
 }
 
 export async function fetchManagerAnalyticsWarningsV2(params?: {
   rangeDays?: number;
   staleHours?: number;
 }): Promise<ManagerAnalyticsV2Warnings> {
-  const res = await api.get("/api/manager/analytics/warnings", { params });
-  return res.data;
+  const safeParams: Record<string, number> = {};
+  if (Number.isFinite(params?.rangeDays)) safeParams.rangeDays = Number(params?.rangeDays);
+  if (Number.isFinite(params?.staleHours)) safeParams.staleHours = Number(params?.staleHours);
+  const res = await api.get("/api/manager/analytics/warnings", { params: safeParams });
+  const raw = (res.data ?? {}) as Partial<ManagerAnalyticsV2Warnings>;
+  return {
+    overdueTotal: Number(raw.overdueTotal ?? 0),
+    staleTotal: Number(raw.staleTotal ?? 0),
+    financeExposureTotal: Number(raw.financeExposureTotal ?? 0),
+    overdueOrders: Array.isArray(raw.overdueOrders) ? raw.overdueOrders : [],
+    staleOrders: Array.isArray(raw.staleOrders) ? raw.staleOrders : [],
+    financeExposureOrders: Array.isArray(raw.financeExposureOrders) ? raw.financeExposureOrders : [],
+  };
 }
 
 export async function fetchManagerAnalyticsFinanceQueueV2(params?: {
@@ -166,7 +231,23 @@ export async function fetchManagerAnalyticsFinanceQueueV2(params?: {
         : undefined,
     },
   });
-  return res.data;
+  const raw = (res.data ?? {}) as Partial<ManagerAnalyticsV2FinanceQueue>;
+  const page = Number(raw.queueMeta?.page ?? params?.queuePage ?? 1);
+  const pageSize = Number(raw.queueMeta?.pageSize ?? params?.queuePageSize ?? 20);
+  const total = Number(raw.queueMeta?.total ?? 0);
+  const pageCount = Number(raw.queueMeta?.pageCount ?? Math.max(1, Math.ceil(total / Math.max(1, pageSize))));
+
+  return {
+    queue: Array.isArray(raw.queue) ? raw.queue : [],
+    queueMeta: {
+      page,
+      pageSize,
+      total,
+      pageCount,
+      hasPrev: Boolean(raw.queueMeta?.hasPrev ?? page > 1),
+      hasNext: Boolean(raw.queueMeta?.hasNext ?? page < pageCount),
+    },
+  };
 }
 
 export async function invalidateManagerAnalyticsV2() {
