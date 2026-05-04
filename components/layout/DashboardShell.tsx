@@ -2,7 +2,7 @@
 "use client";
 
 import type { CSSProperties, ReactNode } from "react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams, useSelectedLayoutSegment } from "next/navigation";
 
 import AppTopbar from "@/components/layout/AppTopbar";
@@ -15,6 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { tryRefreshSession } from "@/lib/api";
 import { clearAuth, hasActiveSession } from "@/lib/auth";
 import { useManagerSidebarStore } from "@/store/useManagerSidebarStore"; // Zustand
 
@@ -25,21 +26,34 @@ export default function DashboardShell({ children }: { children: ReactNode }) {
   const segment = useSelectedLayoutSegment();
   const isManager = segment === "manager";
   const orderModalId = searchParams.get("order");
+  const [activeOrderModalId, setActiveOrderModalId] = useState<string | null>(orderModalId);
   const isDirectOrderDetailsPage = /^\/dashboard\/(manager|warehouse|customer)\/orders\/[^/]+$/i.test(
     pathname || "",
   );
-  const showOrderModal = Boolean(orderModalId) && !isDirectOrderDetailsPage;
+  const showOrderModal = Boolean(activeOrderModalId) && !isDirectOrderDetailsPage;
 
   const isCollapsed = useManagerSidebarStore((s) => s.isCollapsed);
   const isMobileOpen = useManagerSidebarStore((s) => s.isMobileOpen);
   const setMobileOpen = useManagerSidebarStore((s) => s.setMobileOpen);
 
   const closeOrderModal = () => {
+    setActiveOrderModalId(null);
     if (!pathname) return;
     const next = new URLSearchParams(searchParams.toString());
     next.delete("order");
     const query = next.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    const target = query ? `${pathname}?${query}` : pathname;
+
+    // Avoid App Router navigation/refetch for modal-only query cleanup.
+    if (typeof window !== "undefined") {
+      const current = `${window.location.pathname}${window.location.search}`;
+      if (current !== target) {
+        window.history.replaceState(window.history.state, "", target);
+      }
+      return;
+    }
+
+    router.replace(target, { scroll: false });
   };
 
   const orderDetailsModalConfig =
@@ -62,14 +76,26 @@ export default function DashboardShell({ children }: { children: ReactNode }) {
           };
 
   useEffect(() => {
-    if (!hasActiveSession()) {
+    let cancelled = false;
+    const ensureSession = async () => {
+      if (hasActiveSession()) return;
+      const refreshed = await tryRefreshSession();
+      if (cancelled || refreshed) return;
       clearAuth();
       if (pathname !== "/login") {
         const next = encodeURIComponent(pathname || "/dashboard");
         router.replace(`/login?next=${next}`);
       }
-    }
+    };
+    void ensureSession();
+    return () => {
+      cancelled = true;
+    };
   }, [pathname, router]);
+
+  useEffect(() => {
+    setActiveOrderModalId(orderModalId);
+  }, [orderModalId]);
 
   useEffect(() => {
     setMobileOpen(false);
@@ -124,10 +150,10 @@ export default function DashboardShell({ children }: { children: ReactNode }) {
               Full order details modal with route, shipment, payment, and timeline tabs.
             </DialogDescription>
           </DialogHeader>
-          {orderModalId ? (
+          {activeOrderModalId ? (
             <div className="h-full overflow-x-hidden overflow-y-auto">
               <OrderDetailsView
-                orderId={orderModalId}
+                orderId={activeOrderModalId}
                 backHref={orderDetailsModalConfig.backHref}
                 title={orderDetailsModalConfig.title}
                 showManagerActions={orderDetailsModalConfig.showManagerActions}

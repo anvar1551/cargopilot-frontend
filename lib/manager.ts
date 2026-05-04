@@ -1,5 +1,5 @@
-import { api } from "@/lib/api";
-import { clearAuth, getToken } from "@/lib/auth";
+import { api, tryRefreshSession } from "@/lib/api";
+import { getToken } from "@/lib/auth";
 import { fetchOrders, type Order } from "./orders";
 
 export type DriverLite = {
@@ -117,6 +117,88 @@ export type ManagerAnalyticsV2FinanceQueue = {
     pageCount: number;
     hasPrev: boolean;
     hasNext: boolean;
+  };
+};
+
+export type ManagerOpsMetrics = {
+  generatedAt: string;
+  analytics: {
+    summary: {
+      total: number;
+      hits: number;
+      misses: number;
+      errors: number;
+      hitRatio: number;
+      p50Ms: number;
+      p95Ms: number;
+    };
+    trend: {
+      total: number;
+      hits: number;
+      misses: number;
+      errors: number;
+      hitRatio: number;
+      p50Ms: number;
+      p95Ms: number;
+    };
+    warnings: {
+      total: number;
+      hits: number;
+      misses: number;
+      errors: number;
+      hitRatio: number;
+      p50Ms: number;
+      p95Ms: number;
+    };
+    financeQueue: {
+      total: number;
+      hits: number;
+      misses: number;
+      errors: number;
+      hitRatio: number;
+      p50Ms: number;
+      p95Ms: number;
+    };
+    totals: {
+      total: number;
+      hits: number;
+      misses: number;
+      errors: number;
+      cacheHitRatio: number;
+    };
+  };
+  sse: {
+    analytics: {
+      active: number;
+      totalConnects: number;
+      totalDisconnects: number;
+      reconnectSpikes: number;
+    };
+    liveMap: {
+      active: number;
+      totalConnects: number;
+      totalDisconnects: number;
+      reconnectSpikes: number;
+    };
+  };
+  worker: {
+    eventsConsumed: number;
+    rebuildCount: number;
+    errorCount: number;
+    lastEventAt: string | null;
+    lastLagMs: number;
+    lastHeartbeatAt: string | null;
+    lagAlert: boolean;
+  };
+  alerts: {
+    cacheHitBelowThreshold: boolean;
+    summaryP95Slow: boolean;
+    trendP95Slow: boolean;
+    warningsP95Slow: boolean;
+    financeQueueP95Slow: boolean;
+    workerLagHigh: boolean;
+    analyticsReconnectSpike: boolean;
+    liveMapReconnectSpike: boolean;
   };
 };
 
@@ -255,6 +337,11 @@ export async function invalidateManagerAnalyticsV2() {
   return res.data as { ok: boolean };
 }
 
+export async function fetchManagerOpsMetrics(): Promise<ManagerOpsMetrics> {
+  const res = await api.get("/api/manager/ops/metrics");
+  return (res.data ?? {}) as ManagerOpsMetrics;
+}
+
 export async function fetchDrivers(): Promise<DriverLite[]> {
   const res = await api.get("/api/manager/drivers");
   return Array.isArray(res.data) ? res.data : res.data?.drivers ?? [];
@@ -313,6 +400,13 @@ export type ManagerLiveMapSnapshot = {
   isMock: boolean;
 };
 
+export type LiveMapViewport = {
+  minLat: number;
+  minLng: number;
+  maxLat: number;
+  maxLng: number;
+};
+
 export type LiveMapEvent =
   | {
       type: "driver_location_upsert";
@@ -330,6 +424,7 @@ export type LiveMapEvent =
         status?: LiveMapDriverStatus;
         liveEnabled?: boolean;
         heartbeatAt?: string | null;
+        seq?: number;
       };
     }
   | {
@@ -386,16 +481,16 @@ function parseSseFrame(frameRaw: string) {
 
 export function subscribeManagerAnalyticsStream(args: {
   onReady?: (payload: { connectedAt?: string }) => void;
-  onRefresh: (payload: { at?: string; reason?: string }) => void;
+  onRefresh: (payload: {
+    at?: string;
+    reason?: string;
+    scope?: string;
+    keys?: Array<"summary" | "trend" | "warnings" | "finance-queue">;
+    source?: string;
+  }) => void;
   onError?: (error: Error) => void;
 }) {
   if (typeof window === "undefined") return () => undefined;
-
-  const token = getToken();
-  if (!token) {
-    args.onError?.(new Error("Missing auth token for analytics stream"));
-    return () => undefined;
-  }
 
   const endpoint = buildApiUrl("/api/manager/analytics/stream");
   const abortController = new AbortController();
@@ -407,6 +502,15 @@ export function subscribeManagerAnalyticsStream(args: {
   const connect = async () => {
     if (closed) return;
     try {
+      let token = getToken();
+      if (!token) {
+        const refreshed = await tryRefreshSession();
+        if (!refreshed) {
+          throw new Error("Missing auth token for analytics stream");
+        }
+        token = getToken();
+      }
+
       const response = await fetch(endpoint, {
         method: "GET",
         headers: {
@@ -419,8 +523,11 @@ export function subscribeManagerAnalyticsStream(args: {
       });
 
       if (response.status === 401) {
-        clearAuth();
-        throw new Error("Unauthorized analytics stream");
+        const refreshed = await tryRefreshSession();
+        if (refreshed) {
+          throw new Error("ANALYTICS_STREAM_RETRY_AUTH");
+        }
+        throw new Error("ANALYTICS_STREAM_AUTH_EXPIRED");
       }
       if (!response.ok) {
         const canRetry = shouldReconnectForStatus(response.status);
@@ -460,7 +567,15 @@ export function subscribeManagerAnalyticsStream(args: {
           } else if (parsed.event === "analytics-refresh") {
             try {
               args.onRefresh(
-                parsed.data ? (JSON.parse(parsed.data) as { at?: string; reason?: string }) : {},
+                parsed.data
+                  ? (JSON.parse(parsed.data) as {
+                      at?: string;
+                      reason?: string;
+                      scope?: string;
+                      keys?: Array<"summary" | "trend" | "warnings" | "finance-queue">;
+                      source?: string;
+                    })
+                  : {},
               );
             } catch {
               args.onRefresh({});
@@ -483,6 +598,20 @@ export function subscribeManagerAnalyticsStream(args: {
       if (closed) return;
       const err = error instanceof Error ? error : new Error("Analytics stream failed");
       if (err.message === "ANALYTICS_STREAM_NO_RETRY") return;
+      if (err.message === "ANALYTICS_STREAM_RETRY_AUTH") {
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null;
+          void connect();
+        }, 300);
+        return;
+      }
+      if (err.message === "ANALYTICS_STREAM_AUTH_EXPIRED") {
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null;
+          void connect();
+        }, 30_000);
+        return;
+      }
       args.onError?.(err);
       attempt += 1;
       const delay = Math.min(12_000, 900 + attempt * 700);
@@ -525,18 +654,23 @@ export function subscribeManagerLiveMapStream(args: {
   onReady?: (payload: { connectedAt?: string }) => void;
   onEvent: (event: LiveMapEvent) => void;
   onError?: (error: Error) => void;
+  viewport?: LiveMapViewport | null;
 }) {
   if (typeof window === "undefined") {
     return () => undefined;
   }
 
-  const token = getToken();
-  if (!token) {
-    args.onError?.(new Error("Missing auth token for live-map stream"));
-    return () => undefined;
-  }
-
-  const endpoint = buildApiUrl("/api/manager/live-map/stream");
+  const endpointBase = buildApiUrl("/api/manager/live-map/stream");
+  const endpoint = (() => {
+    if (!args.viewport) return endpointBase;
+    const params = new URLSearchParams({
+      minLat: String(args.viewport.minLat),
+      minLng: String(args.viewport.minLng),
+      maxLat: String(args.viewport.maxLat),
+      maxLng: String(args.viewport.maxLng),
+    });
+    return `${endpointBase}?${params.toString()}`;
+  })();
   const abortController = new AbortController();
   const decoder = new TextDecoder();
 
@@ -554,6 +688,15 @@ export function subscribeManagerLiveMapStream(args: {
     if (closed) return;
 
     try {
+      let token = getToken();
+      if (!token) {
+        const refreshed = await tryRefreshSession();
+        if (!refreshed) {
+          throw new Error("Missing auth token for live-map stream");
+        }
+        token = getToken();
+      }
+
       const response = await fetch(endpoint, {
         method: "GET",
         headers: {
@@ -566,8 +709,11 @@ export function subscribeManagerLiveMapStream(args: {
       });
 
       if (response.status === 401) {
-        clearAuth();
-        throw new Error("Unauthorized live-map stream");
+        const refreshed = await tryRefreshSession();
+        if (refreshed) {
+          throw new Error("LIVE_STREAM_RETRY_AUTH");
+        }
+        throw new Error("LIVE_STREAM_AUTH_EXPIRED");
       }
 
       if (!response.ok) {
@@ -634,6 +780,20 @@ export function subscribeManagerLiveMapStream(args: {
 
       const err = error instanceof Error ? error : new Error("Live-map stream connection failed");
       if (err.message === "LIVE_STREAM_NO_RETRY") {
+        return;
+      }
+      if (err.message === "LIVE_STREAM_RETRY_AUTH") {
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null;
+          void connect();
+        }, 300);
+        return;
+      }
+      if (err.message === "LIVE_STREAM_AUTH_EXPIRED") {
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null;
+          void connect();
+        }, 30_000);
         return;
       }
 
@@ -804,6 +964,8 @@ export async function updateDriverProfile(
 }
 
 export async function fetchManagerLiveMapSnapshot(): Promise<ManagerLiveMapSnapshot> {
+  const allowMockFallback = process.env.NEXT_PUBLIC_LIVE_MAP_ALLOW_MOCK === "true";
+
   try {
     const res = await api.get("/api/manager/live-map/snapshot");
     const payload = res.data as Partial<ManagerLiveMapSnapshot> | null | undefined;
@@ -827,8 +989,12 @@ export async function fetchManagerLiveMapSnapshot(): Promise<ManagerLiveMapSnaps
         isMock: Boolean(payload.isMock),
       };
     }
-  } catch {
-    // Backend live-map endpoint not available yet. Continue with local mock snapshot fallback.
+  } catch (error) {
+    // In production we do not fallback to legacy multi-query mock mode because it creates
+    // extra DB load and slower page startup. Keep fallback only for local/dev usage.
+    if (!allowMockFallback) {
+      throw error;
+    }
   }
 
   const now = Date.now();

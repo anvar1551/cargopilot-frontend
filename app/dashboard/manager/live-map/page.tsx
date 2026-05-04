@@ -24,6 +24,7 @@ import {
   deriveLiveMapDriverStatus,
   fetchManagerLiveMapSnapshot,
   subscribeManagerLiveMapStream,
+  type LiveMapViewport,
   type LiveMapDriverStatus,
   type LiveMapEvent,
   type ManagerLiveMapDriver,
@@ -47,7 +48,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 
 type MapboxMapLike = {
-  on: (event: "load" | "error", handler: (event?: { error?: Error }) => void) => void;
+  on: (event: string, handler: (event?: { error?: Error }) => void) => void;
   addSource: (id: string, source: unknown) => void;
   addLayer: (layer: unknown) => void;
   getSource: (id: string) => { setData: (data: unknown) => void } | undefined;
@@ -57,6 +58,12 @@ type MapboxMapLike = {
     options?: { padding?: number; duration?: number },
   ) => void;
   flyTo: (options: { center: [number, number]; zoom?: number; duration?: number }) => void;
+  getBounds: () => {
+    getWest: () => number;
+    getSouth: () => number;
+    getEast: () => number;
+    getNorth: () => number;
+  };
   remove: () => void;
 };
 
@@ -235,6 +242,55 @@ function isFiniteCoord(value: unknown) {
   return typeof value === "number" && Number.isFinite(value);
 }
 
+function normalizeViewport(next: LiveMapViewport | null): LiveMapViewport | null {
+  if (!next) return null;
+  const minLat = Number(next.minLat.toFixed(4));
+  const minLng = Number(next.minLng.toFixed(4));
+  const maxLat = Number(next.maxLat.toFixed(4));
+  const maxLng = Number(next.maxLng.toFixed(4));
+  if (
+    !Number.isFinite(minLat) ||
+    !Number.isFinite(minLng) ||
+    !Number.isFinite(maxLat) ||
+    !Number.isFinite(maxLng)
+  ) {
+    return null;
+  }
+  if (minLat >= maxLat || minLng >= maxLng) return null;
+  return { minLat, minLng, maxLat, maxLng };
+}
+
+function hasMeaningfulViewportChange(
+  current: LiveMapViewport | null,
+  next: LiveMapViewport | null,
+) {
+  if (!current && !next) return false;
+  if (!current || !next) return true;
+
+  const currCenterLat = (current.minLat + current.maxLat) / 2;
+  const currCenterLng = (current.minLng + current.maxLng) / 2;
+  const nextCenterLat = (next.minLat + next.maxLat) / 2;
+  const nextCenterLng = (next.minLng + next.maxLng) / 2;
+
+  const currSpanLat = Math.max(0.0001, current.maxLat - current.minLat);
+  const currSpanLng = Math.max(0.0001, current.maxLng - current.minLng);
+  const nextSpanLat = Math.max(0.0001, next.maxLat - next.minLat);
+  const nextSpanLng = Math.max(0.0001, next.maxLng - next.minLng);
+
+  const centerDeltaLat = Math.abs(currCenterLat - nextCenterLat);
+  const centerDeltaLng = Math.abs(currCenterLng - nextCenterLng);
+  const spanDeltaLat = Math.abs(currSpanLat - nextSpanLat) / currSpanLat;
+  const spanDeltaLng = Math.abs(currSpanLng - nextSpanLng) / currSpanLng;
+
+  // Reduce stream reconnect churn by ignoring tiny viewport drifts.
+  const minCenterDeltaLat = Math.max(0.004, currSpanLat * 0.08);
+  const minCenterDeltaLng = Math.max(0.004, currSpanLng * 0.08);
+  const centerChanged = centerDeltaLat >= minCenterDeltaLat || centerDeltaLng >= minCenterDeltaLng;
+  const spanChanged = spanDeltaLat >= 0.18 || spanDeltaLng >= 0.18;
+
+  return centerChanged || spanChanged;
+}
+
 export default function ManagerLiveMapPage() {
   const { t } = useI18n();
   const token = React.useMemo(() => getMapboxToken(), []);
@@ -252,6 +308,8 @@ export default function ManagerLiveMapPage() {
   const [driverQuery, setDriverQuery] = React.useState("");
   const [selectedDriverId, setSelectedDriverId] = React.useState<string | null>(null);
   const [tick, setTick] = React.useState(0);
+  const [streamViewport, setStreamViewport] = React.useState<LiveMapViewport | null>(null);
+  const [streamHealthy, setStreamHealthy] = React.useState(false);
 
   const [mapError, setMapError] = React.useState<string | null>(null);
   const [mapContainerEl, setMapContainerEl] = React.useState<HTMLDivElement | null>(null);
@@ -260,18 +318,48 @@ export default function ManagerLiveMapPage() {
   const isMapReadyRef = React.useRef(false);
   const fittedInitiallyRef = React.useRef(false);
   const lastAutoFocusedDriverIdRef = React.useRef<string | null>(null);
+  const viewportDebounceTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const queueViewportUpdate = React.useCallback(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const bounds = map.getBounds();
+    const normalized = normalizeViewport({
+      minLat: bounds.getSouth(),
+      minLng: bounds.getWest(),
+      maxLat: bounds.getNorth(),
+      maxLng: bounds.getEast(),
+    });
+
+    if (viewportDebounceTimerRef.current) {
+      clearTimeout(viewportDebounceTimerRef.current);
+    }
+    viewportDebounceTimerRef.current = setTimeout(() => {
+      viewportDebounceTimerRef.current = null;
+      setStreamViewport((current) => {
+        return hasMeaningfulViewportChange(current, normalized) ? normalized : current;
+      });
+    }, 700);
+  }, []);
 
   const snapshotQuery = useQuery({
     queryKey: ["manager-live-map-snapshot"],
     queryFn: fetchManagerLiveMapSnapshot,
-    refetchInterval: isPageVisible ? 90_000 : false,
-    staleTime: 10_000,
+    refetchInterval: isPageVisible && !streamHealthy ? 180_000 : false,
+    staleTime: 45_000,
+    placeholderData: (prev) => prev,
     refetchOnWindowFocus: false,
   });
 
   React.useEffect(() => {
+    if (!isPageVisible || mapReadyTick === 0 || streamViewport == null) return;
     const unsubscribe = subscribeManagerLiveMapStream({
+      viewport: streamViewport,
+      onReady: () => {
+        setStreamHealthy(true);
+      },
       onEvent: (event: LiveMapEvent) => {
+        setStreamHealthy(true);
         queryClient.setQueryData<ManagerLiveMapSnapshot>(["manager-live-map-snapshot"], (current) => {
           if (!current) return current;
 
@@ -357,16 +445,31 @@ export default function ManagerLiveMapPage() {
           return current;
         });
       },
+      onError: () => {
+        setStreamHealthy(false);
+      },
     });
 
-    return unsubscribe;
-  }, [queryClient]);
+    return () => {
+      unsubscribe();
+      setStreamHealthy(false);
+    };
+  }, [isPageVisible, mapReadyTick, queryClient, streamViewport]);
 
   React.useEffect(() => {
-    if (!isPageVisible) return;
+    if (!isPageVisible || !snapshotQuery.data?.isMock) return;
     const id = setInterval(() => setTick((value) => value + 1), 1800);
     return () => clearInterval(id);
-  }, [isPageVisible]);
+  }, [isPageVisible, snapshotQuery.data?.isMock]);
+
+  React.useEffect(() => {
+    return () => {
+      if (viewportDebounceTimerRef.current) {
+        clearTimeout(viewportDebounceTimerRef.current);
+        viewportDebounceTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const warehouses = React.useMemo(() => snapshotQuery.data?.warehouses ?? [], [snapshotQuery.data?.warehouses]);
   const regions = React.useMemo(() => {
@@ -395,6 +498,7 @@ export default function ManagerLiveMapPage() {
   }, [regionFilter, snapshotQuery.data?.orders, statusFilter, warehouseFilter]);
 
   const filteredDrivers = React.useMemo(() => {
+    const isMock = Boolean(snapshotQuery.data?.isMock);
     const source = snapshotQuery.data?.drivers ?? [];
     return source
       .filter((driver) => {
@@ -410,9 +514,9 @@ export default function ManagerLiveMapPage() {
         if (regionFilter !== "all" && driver.region !== regionFilter) return false;
         return true;
       })
-      .map((driver) => driverDisplay(driver, tick))
+      .map((driver) => (isMock ? driverDisplay(driver, tick) : driver))
       .sort((a, b) => statusRank(b.status) - statusRank(a.status));
-  }, [regionFilter, snapshotQuery.data?.drivers, tick, warehouseFilter]);
+  }, [regionFilter, snapshotQuery.data?.drivers, snapshotQuery.data?.isMock, tick, warehouseFilter]);
 
   const visibleDrivers = React.useMemo(() => {
     const q = driverQuery.trim().toLowerCase();
@@ -684,6 +788,7 @@ export default function ManagerLiveMapPage() {
           if (disposed) return;
           isMapReadyRef.current = true;
           setMapReadyTick((value) => value + 1);
+          queueViewportUpdate();
 
           map.addSource("cp-live-heat", { type: "geojson", data: EMPTY_POINTS });
           map.addSource("cp-live-routes", { type: "geojson", data: EMPTY_LINES });
@@ -862,6 +967,11 @@ export default function ManagerLiveMapPage() {
           });
         });
 
+        map.on("moveend", () => {
+          if (disposed) return;
+          queueViewportUpdate();
+        });
+
         map.on("error", (event) => {
           if (disposed) return;
           const message = event?.error?.message ?? t("managerLiveMap.mapLoadFailed");
@@ -885,7 +995,7 @@ export default function ManagerLiveMapPage() {
         mapRef.current = null;
       }
     };
-  }, [mapContainerEl, t, token]);
+  }, [mapContainerEl, queueViewportUpdate, t, token]);
 
   React.useEffect(() => {
     if (!mapContainerEl || !isMapReadyRef.current || !mapRef.current) return;

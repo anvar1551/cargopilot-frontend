@@ -785,6 +785,10 @@ export default function OrderDetailsView({
   const [trackingQuery, setTrackingQuery] = React.useState("");
   const [isMapPreviewVisible, setIsMapPreviewVisible] = React.useState(false);
   const [isProofsVisible, setIsProofsVisible] = React.useState(false);
+  const [failedProofAssetKeys, setFailedProofAssetKeys] = React.useState<
+    Record<string, true>
+  >({});
+  const [proofAutoRefreshDone, setProofAutoRefreshDone] = React.useState(false);
   const [mapPreviewStatus, setMapPreviewStatus] = React.useState<
     "idle" | "loading" | "ready" | "error"
   >("idle");
@@ -845,6 +849,44 @@ export default function OrderDetailsView({
     enabled: false,
     staleTime: 60_000,
   });
+
+  const markProofAssetFailed = React.useCallback((assetKey: string | null) => {
+    if (!assetKey) return;
+    setFailedProofAssetKeys((prev) => {
+      if (prev[assetKey]) return prev;
+      return { ...prev, [assetKey]: true };
+    });
+  }, []);
+
+  React.useEffect(() => {
+    if (orderProofLinks) {
+      setFailedProofAssetKeys({});
+    }
+  }, [orderProofLinks]);
+
+  const refreshOrderProofLinksSafely = React.useCallback(async () => {
+    try {
+      await refetchOrderProofLinks();
+    } catch (err: unknown) {
+      toast.error(extractErrorMessage(err, "Could not load confirmation files"));
+    }
+  }, [refetchOrderProofLinks]);
+
+  const handleProofAssetError = React.useCallback(
+    (assetKey: string | null) => {
+      markProofAssetFailed(assetKey);
+      if (!isProofsVisible || isFetchingProofLinks || proofAutoRefreshDone) return;
+      setProofAutoRefreshDone(true);
+      void refreshOrderProofLinksSafely();
+    },
+    [
+      isFetchingProofLinks,
+      isProofsVisible,
+      markProofAssetFailed,
+      proofAutoRefreshDone,
+      refreshOrderProofLinksSafely,
+    ],
+  );
 
   const parcelLabelUrls = labelBundle?.urls ?? [];
   const hasMultipleParcelLabels = parcelLabelUrls.length > 1;
@@ -1051,6 +1093,8 @@ export default function OrderDetailsView({
     }
     setIsMapPreviewVisible(false);
     setIsProofsVisible(false);
+    setProofAutoRefreshDone(false);
+    setFailedProofAssetKeys({});
     setMapPreviewStatus("idle");
     setMapPreviewError(null);
     setMapPreviewErrorDetail(null);
@@ -1218,12 +1262,9 @@ export default function OrderDetailsView({
 
   const loadOrderProofs = React.useCallback(async () => {
     setIsProofsVisible(true);
-    try {
-      await refetchOrderProofLinks();
-    } catch (err: unknown) {
-      toast.error(extractErrorMessage(err, "Could not load confirmation files"));
-    }
-  }, [refetchOrderProofLinks]);
+    setProofAutoRefreshDone(false);
+    await refreshOrderProofLinksSafely();
+  }, [refreshOrderProofLinksSafely]);
 
   if (isLoading) {
     return (
@@ -2277,7 +2318,8 @@ export default function OrderDetailsView({
                       size="sm"
                       className="h-8 rounded-lg"
                       onClick={() => {
-                        void refetchOrderProofLinks();
+                        setProofAutoRefreshDone(false);
+                        void refreshOrderProofLinksSafely();
                       }}
                       disabled={isFetchingProofLinks}
                     >
@@ -2352,19 +2394,41 @@ export default function OrderDetailsView({
                                       <ImageIcon className="h-3.5 w-3.5" />
                                       {t("orderDetails.photoProof")}
                                     </div>
-                                    {proof.photo?.url ? (
-                                      <a href={proof.photo.url} target="_blank" rel="noreferrer">
-                                        <img
-                                          src={proof.photo.url}
-                                          alt={`${section.label} ${t("orderDetails.photoProof")}`}
-                                          className="h-36 w-full rounded-lg border border-border/60 object-cover"
-                                        />
-                                      </a>
-                                    ) : (
-                                      <div className="flex h-36 items-center justify-center rounded-lg border border-dashed border-border/60 text-xs text-muted-foreground">
-                                        {t("orderDetails.noPhoto")}
-                                      </div>
-                                    )}
+                                    {(() => {
+                                      const photoAssetKey = proof.photo?.id
+                                        ? `${section.key}:${proof.proofId}:photo:${proof.photo.id}`
+                                        : null;
+                                      const isPhotoMissing =
+                                        !proof.photo?.url ||
+                                        (photoAssetKey
+                                          ? Boolean(failedProofAssetKeys[photoAssetKey])
+                                          : false);
+
+                                      if (isPhotoMissing) {
+                                        return (
+                                          <div className="flex h-36 items-center justify-center rounded-lg border border-dashed border-border/60 text-xs text-muted-foreground">
+                                            {t("orderDetails.noPhoto")}
+                                          </div>
+                                        );
+                                      }
+
+                                      return (
+                                        <a
+                                          href={proof.photo!.url}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="block"
+                                        >
+                                          <img
+                                            src={proof.photo!.url}
+                                            alt={`${section.label} ${t("orderDetails.photoProof")}`}
+                                            className="h-36 w-full rounded-lg border border-border/60 object-cover"
+                                            loading="lazy"
+                                            onError={() => handleProofAssetError(photoAssetKey)}
+                                          />
+                                        </a>
+                                      );
+                                    })()}
                                   </div>
 
                                   <div className="space-y-2">
@@ -2372,19 +2436,41 @@ export default function OrderDetailsView({
                                       <PenLine className="h-3.5 w-3.5" />
                                       {t("orderDetails.signatureProof")}
                                     </div>
-                                    {proof.signature?.url ? (
-                                      <a href={proof.signature.url} target="_blank" rel="noreferrer">
-                                        <img
-                                          src={proof.signature.url}
-                                          alt={`${section.label} ${t("orderDetails.signatureProof")}`}
-                                          className="h-36 w-full rounded-lg border border-border/60 bg-white object-contain"
-                                        />
-                                      </a>
-                                    ) : (
-                                      <div className="flex h-36 items-center justify-center rounded-lg border border-dashed border-border/60 text-xs text-muted-foreground">
-                                        {t("orderDetails.noSignature")}
-                                      </div>
-                                    )}
+                                    {(() => {
+                                      const signatureAssetKey = proof.signature?.id
+                                        ? `${section.key}:${proof.proofId}:signature:${proof.signature.id}`
+                                        : null;
+                                      const isSignatureMissing =
+                                        !proof.signature?.url ||
+                                        (signatureAssetKey
+                                          ? Boolean(failedProofAssetKeys[signatureAssetKey])
+                                          : false);
+
+                                      if (isSignatureMissing) {
+                                        return (
+                                          <div className="flex h-36 items-center justify-center rounded-lg border border-dashed border-border/60 text-xs text-muted-foreground">
+                                            {t("orderDetails.noSignature")}
+                                          </div>
+                                        );
+                                      }
+
+                                      return (
+                                        <a
+                                          href={proof.signature!.url}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="block"
+                                        >
+                                          <img
+                                            src={proof.signature!.url}
+                                            alt={`${section.label} ${t("orderDetails.signatureProof")}`}
+                                            className="h-36 w-full rounded-lg border border-border/60 bg-white object-contain"
+                                            loading="lazy"
+                                            onError={() => handleProofAssetError(signatureAssetKey)}
+                                          />
+                                        </a>
+                                      );
+                                    })()}
                                   </div>
                                 </div>
                               </div>

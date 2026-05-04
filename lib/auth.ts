@@ -11,6 +11,7 @@ export type AuthUser = {
 
 const TOKEN_KEY = "token";
 const USER_KEY = "user";
+const REFRESH_TOKEN_KEY = "refreshToken";
 
 let cachedUserRaw: string | null | undefined = undefined;
 let cachedUser: AuthUser | null = null;
@@ -19,11 +20,17 @@ function isBrowser() {
   return typeof window !== "undefined";
 }
 
-export function saveAuth(token: string, user: AuthUser) {
+export function saveAuth(
+  token: string,
+  user: AuthUser,
+  options?: { refreshToken?: string | null },
+) {
   if (!isBrowser()) return;
-  console.log(user);
   window.localStorage.setItem(TOKEN_KEY, token);
   window.localStorage.setItem(USER_KEY, JSON.stringify(user));
+  if (typeof options?.refreshToken === "string" && options.refreshToken.trim()) {
+    window.localStorage.setItem(REFRESH_TOKEN_KEY, options.refreshToken.trim());
+  }
   cachedUserRaw = JSON.stringify(user);
   cachedUser = user;
 }
@@ -31,6 +38,21 @@ export function saveAuth(token: string, user: AuthUser) {
 export function getToken(): string | null {
   if (!isBrowser()) return null;
   return window.localStorage.getItem(TOKEN_KEY);
+}
+
+export function setToken(token: string) {
+  if (!isBrowser()) return;
+  window.localStorage.setItem(TOKEN_KEY, token);
+}
+
+export function getRefreshToken(): string | null {
+  if (!isBrowser()) return null;
+  return window.localStorage.getItem(REFRESH_TOKEN_KEY);
+}
+
+export function setRefreshToken(refreshToken: string) {
+  if (!isBrowser()) return;
+  window.localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
 }
 
 function decodeJwtPayload(token: string): Record<string, unknown> | null {
@@ -85,6 +107,7 @@ export function clearAuth() {
   if (!isBrowser()) return;
   window.localStorage.removeItem(TOKEN_KEY);
   window.localStorage.removeItem(USER_KEY);
+  window.localStorage.removeItem(REFRESH_TOKEN_KEY);
   cachedUserRaw = null;
   cachedUser = null;
 }

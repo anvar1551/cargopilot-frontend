@@ -1,6 +1,7 @@
 export const en = {
   common: {
     back: "Back",
+    close: "Close",
     save: "Save",
     reset: "Reset",
     settings: "Settings",
@@ -191,6 +192,7 @@ export const en = {
       createdInRange: "Created in range",
       openOrders: "Open operational orders",
       deliveredInRange: "Delivered in range",
+      exceptionOpenOrders: "Exception open orders",
       paidInvoiced: "Paid invoices",
       overdue: "Overdue open orders",
       stale: "Stale active orders",
@@ -649,6 +651,8 @@ export const en = {
     pickupConfirmation: "Pickup confirmation",
     deliveryConfirmation: "Delivery confirmation",
     noConfirmationsForStage: "No confirmation records for this stage yet.",
+    photoProof: "Proof photo",
+    signatureProof: "Proof signature",
     noPhoto: "No photo",
     noSignature: "No signature",
     timeline: {

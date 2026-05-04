@@ -1,5 +1,11 @@
 import axios from "axios";
-import { clearAuth, getToken } from "./auth";
+import {
+  clearAuth,
+  getRefreshToken,
+  getToken,
+  saveAuth,
+  type AuthUser,
+} from "./auth";
 
 function isLocalhostHost(hostname: string) {
   return hostname === "localhost" || hostname === "127.0.0.1";
@@ -74,6 +80,66 @@ export const api = axios.create({
   baseURL: normalizedBaseUrl || undefined,
 });
 
+const refreshApi = axios.create({
+  baseURL: normalizedBaseUrl || undefined,
+});
+
+type RefreshResponse = {
+  token: string;
+  refreshToken?: string | null;
+  user?: AuthUser | null;
+};
+
+let refreshInFlight: Promise<string | null> | null = null;
+
+function isAuthRoute(url: string) {
+  return (
+    url.includes("/api/auth/login") ||
+    url.includes("/api/auth/refresh") ||
+    url.includes("/api/auth/register")
+  );
+}
+
+function redirectToLogin() {
+  if (typeof window === "undefined") return;
+  if (window.location.pathname === "/login") return;
+  const next = encodeURIComponent(window.location.pathname + window.location.search);
+  window.location.replace(`/login?next=${next}`);
+}
+
+async function performRefresh(): Promise<string | null> {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return null;
+
+  try {
+    const response = await refreshApi.post<RefreshResponse>("/api/auth/refresh", {
+      refreshToken,
+    });
+    const payload = response.data;
+    const nextToken = String(payload?.token ?? "").trim();
+    const nextRefresh = String(payload?.refreshToken ?? "").trim();
+    const nextUser = payload?.user;
+    if (!nextToken || !nextUser) return null;
+
+    saveAuth(nextToken, nextUser, {
+      refreshToken: nextRefresh || refreshToken,
+    });
+    return nextToken;
+  } catch {
+    return null;
+  }
+}
+
+export async function tryRefreshSession(): Promise<boolean> {
+  if (!refreshInFlight) {
+    refreshInFlight = performRefresh().finally(() => {
+      refreshInFlight = null;
+    });
+  }
+  const token = await refreshInFlight;
+  return Boolean(token);
+}
+
 api.interceptors.request.use((config) => {
   const requestUrl = String(config.url ?? "");
 
@@ -82,24 +148,36 @@ api.interceptors.request.use((config) => {
     config.url = requestUrl.slice(4);
   }
 
-  const token = typeof window !== "undefined" ? getToken() : null;
-  if (token) config.headers.Authorization = `Bearer ${token}`;
+  if (!isAuthRoute(requestUrl)) {
+    const token = typeof window !== "undefined" ? getToken() : null;
+    if (token) config.headers.Authorization = `Bearer ${token}`;
+  }
   return config;
 });
 
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
     const status = error?.response?.status;
     const reqUrl = String(error?.config?.url ?? "");
-    const isLoginCall = reqUrl.includes("/api/auth/login");
+    const originalRequest = error?.config ?? {};
+    const alreadyRetried = Boolean(originalRequest?._retry);
 
-    if (typeof window !== "undefined" && status === 401 && !isLoginCall) {
-      clearAuth();
-      if (window.location.pathname !== "/login") {
-        const next = encodeURIComponent(window.location.pathname + window.location.search);
-        window.location.replace(`/login?next=${next}`);
+    if (typeof window !== "undefined" && status === 401 && !isAuthRoute(reqUrl)) {
+      if (!alreadyRetried) {
+        originalRequest._retry = true;
+        const refreshed = await tryRefreshSession();
+        if (refreshed) {
+          const token = getToken();
+          if (token) {
+            originalRequest.headers = originalRequest.headers ?? {};
+            originalRequest.headers.Authorization = `Bearer ${token}`;
+          }
+          return api.request(originalRequest);
+        }
       }
+      clearAuth();
+      redirectToLogin();
     }
 
     return Promise.reject(error);

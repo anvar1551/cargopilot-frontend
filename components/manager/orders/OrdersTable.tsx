@@ -230,28 +230,28 @@ export default function OrdersTable({
     <div className="space-y-4">
       <div className="rounded-2xl border border-border/70 bg-muted/20 p-3 sm:p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          {!hideQuickFilters ? (
-            <div className="flex flex-1 items-center gap-2">
-              <div className="relative w-full max-w-xl">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={globalFilter}
-                  onChange={(e) => setGlobalFilter(e.target.value)}
-                  placeholder={t("ordersTable.searchPlaceholder")}
-                  className="pl-9 pr-10"
-                />
-                {globalFilter ? (
-                  <button
-                    type="button"
-                    onClick={() => setGlobalFilter("")}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    title={t("ordersTable.clearSearch")}
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                ) : null}
-              </div>
+          <div className="flex flex-1 items-center gap-2">
+            <div className="relative w-full max-w-xl">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={globalFilter}
+                onChange={(e) => setGlobalFilter(e.target.value)}
+                placeholder={t("ordersTable.searchPlaceholder")}
+                className="pl-9 pr-10"
+              />
+              {globalFilter ? (
+                <button
+                  type="button"
+                  onClick={() => setGlobalFilter("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  title={t("ordersTable.clearSearch")}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              ) : null}
+            </div>
 
+            {!hideQuickFilters ? (
               <Select
                 value={statusFilter}
                 onValueChange={(v) => setStatusFilter(v as (typeof STATUS_OPTIONS)[number])}
@@ -269,10 +269,8 @@ export default function OrdersTable({
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-          ) : (
-            <div className="flex-1" />
-          )}
+            ) : null}
+          </div>
 
           <div className="flex flex-wrap items-center gap-2">
             <Button

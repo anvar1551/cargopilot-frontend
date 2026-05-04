@@ -20,6 +20,8 @@ import { Lock, Mail, ShieldCheck, Truck } from "lucide-react";
 
 type LoginResponse = {
   token: string;
+  refreshToken?: string;
+  accessTokenExpiresInSec?: number;
   user: AuthUser & { password?: string };
 };
 
@@ -63,7 +65,7 @@ export default function LoginPage() {
         password,
       });
 
-      const { token, user } = res.data;
+      const { token, refreshToken, user } = res.data;
 
       saveAuth(token, {
         id: user.id,
@@ -72,6 +74,8 @@ export default function LoginPage() {
         role: user.role,
         warehouseId: user.warehouseId ?? null,
         customerEntityId: user.customerEntityId ?? null,
+      }, {
+        refreshToken: refreshToken ?? null,
       });
 
       toast.success("Logged in successfully");

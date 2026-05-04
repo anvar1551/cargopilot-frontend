@@ -7,17 +7,14 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   AlertTriangle,
-  ArrowRightLeft,
   ChevronLeft,
   ChevronRight,
   CheckCircle2,
-  Filter,
   PackageCheck,
   Printer,
   RefreshCw,
   ScanLine,
   Search,
-  Truck,
   Warehouse,
   Wallet,
 } from "lucide-react";
@@ -85,13 +82,6 @@ type LastScanFeedback = {
   invalidTokens: string[];
   skippedByLimit: number;
 };
-
-type QuickFilterKey =
-  | "all"
-  | "needs_intake"
-  | "on_floor"
-  | "outbound"
-  | "exceptions";
 
 const copy = {
   en: {
@@ -668,37 +658,6 @@ function formatCashAmount(amount: number, currency: string | null | undefined, l
   }
 }
 
-function StatTile({
-  title,
-  value,
-  hint,
-  icon: Icon,
-}: {
-  title: string;
-  value: number;
-  hint: string;
-  icon: React.ComponentType<{ className?: string }>;
-}) {
-  return (
-    <Card className="rounded-3xl border-border/70">
-      <CardContent className="p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-              {title}
-            </p>
-            <p className="mt-3 text-3xl font-semibold">{value}</p>
-            <p className="mt-2 text-xs text-muted-foreground">{hint}</p>
-          </div>
-          <div className="rounded-2xl border border-border/70 bg-muted/25 p-2.5">
-            <Icon className="h-4 w-4 text-muted-foreground" />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
 export default function WarehouseDashboardPage() {
   const { locale, t } = useI18n();
   const text = copy[locale];
@@ -706,7 +665,6 @@ export default function WarehouseDashboardPage() {
   const [userResolved, setUserResolved] = useState(false);
   const userSettings = useMemo(() => loadUserSettings(), []);
   const [q, setQ] = useState("");
-  const [activeQuickFilter, setActiveQuickFilter] = useState<QuickFilterKey>("all");
   const [quickScanValue, setQuickScanValue] = useState("");
   const [handoverToken, setHandoverToken] = useState("");
   const [handoverNote, setHandoverNote] = useState("");
@@ -1139,65 +1097,7 @@ export default function WarehouseDashboardPage() {
     });
   }, [orders]);
 
-  const laneCards = [
-    {
-      title: isPickupPoint ? text.ppInboundLane : text.inboundLane,
-      hint: isPickupPoint ? text.ppInboundLaneHint : text.inboundLaneHint,
-      statuses: isPickupPoint ? ["at_warehouse"] : ["picked_up"],
-      icon: ScanLine,
-    },
-    {
-      title: isPickupPoint ? text.ppSortLane : text.sortLane,
-      hint: isPickupPoint ? text.ppSortLaneHint : text.sortLaneHint,
-      statuses: isPickupPoint ? ["out_for_delivery"] : ["at_warehouse"],
-      icon: Warehouse,
-    },
-    {
-      title: isPickupPoint ? text.ppOutboundLane : text.outboundLane,
-      hint: isPickupPoint ? text.ppOutboundLaneHint : text.outboundLaneHint,
-      statuses: isPickupPoint
-        ? ["in_transit"]
-        : ["in_transit", "out_for_delivery"],
-      icon: ArrowRightLeft,
-    },
-    {
-      title: isPickupPoint ? text.ppIssueLane : text.issueLane,
-      hint: isPickupPoint ? text.ppIssueLaneHint : text.issueLaneHint,
-      statuses: ["exception", "return_in_progress"],
-      icon: AlertTriangle,
-    },
-  ] as const;
-
-  const laneCount = (statuses: readonly string[]) =>
-    statuses.reduce((sum, status) => sum + (statusCounts.get(status) ?? 0), 0);
-
-  const quickFilterMeta: Array<{
-    key: QuickFilterKey;
-    label: string;
-    count: number;
-  }> = [
-    { key: "all", label: text.filterAll, count: orders.length },
-    { key: "needs_intake", label: intakeTitle, count: needsIntake },
-    { key: "on_floor", label: onFloorTitle, count: onFloor },
-    { key: "outbound", label: outboundTitle, count: outboundWave },
-    { key: "exceptions", label: exceptionTitle, count: exceptions },
-  ];
-
-  const quickFilterStatuses: Record<QuickFilterKey, string[] | null> = {
-    all: null,
-    needs_intake: isPickupPoint ? ["at_warehouse"] : ["picked_up"],
-    on_floor: isPickupPoint ? ["out_for_delivery"] : ["at_warehouse"],
-    outbound: isPickupPoint
-      ? ["in_transit"]
-      : ["in_transit", "out_for_delivery"],
-    exceptions: ["exception", "return_in_progress"],
-  };
-
-  const filteredOrders = useMemo(() => {
-    const statuses = quickFilterStatuses[activeQuickFilter];
-    if (!statuses || statuses.length === 0) return orders;
-    return orders.filter((order) => statuses.includes(order.status));
-  }, [activeQuickFilter, orders, quickFilterStatuses]);
+  const filteredOrders = orders;
 
   const handoverMatchedOrder = useMemo(
     () => findOrderByToken(rawOrders, handoverToken),
@@ -1582,117 +1482,49 @@ export default function WarehouseDashboardPage() {
           </CardContent>
         </Card>
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {isLoading ? (
-            Array.from({ length: 4 }).map((_, index) => (
-              <Card key={index} className="rounded-3xl">
-                <CardContent className="p-5">
-                  <Skeleton className="h-4 w-24" />
-                  <Skeleton className="mt-3 h-10 w-16" />
-                  <Skeleton className="mt-2 h-3 w-32" />
-                </CardContent>
-              </Card>
-            ))
-          ) : (
-            <>
-              <StatTile
-                title={text.intakeQueue}
-                value={needsIntake}
-                hint={text.intakeQueueHint}
-                icon={PackageCheck}
-              />
-              <StatTile
-                title={text.onFloor}
-                value={onFloor}
-                hint={text.onFloorHint}
-                icon={Warehouse}
-              />
-              <StatTile
-                title={text.outboundWave}
-                value={outboundWave}
-                hint={text.outboundWaveHint}
-                icon={Truck}
-              />
-              <StatTile
-                title={text.exceptions}
-                value={exceptions}
-                hint={text.exceptionsHint}
-                icon={AlertTriangle}
-              />
-            </>
-          )}
-        </div>
-
         <Card className="rounded-3xl border-border/70">
-          <CardContent className="p-5">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex items-start gap-3">
-                <div className="rounded-2xl border border-border/70 bg-muted/25 p-2">
-                  <Filter className="h-4 w-4 text-muted-foreground" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium">{text.quickFilters}</p>
-                  <p className="text-xs text-muted-foreground">{text.quickFiltersHint}</p>
-                </div>
+          <CardHeader className="pb-3">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <CardTitle className="text-base">{text.boardTitle}</CardTitle>
+                <p className="mt-1 text-sm text-muted-foreground">{text.boardSubtitle}</p>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                {quickFilterMeta.map((filter) => (
-                  <Button
-                    key={filter.key}
-                    type="button"
-                    variant={activeQuickFilter === filter.key ? "default" : "outline"}
-                    size="sm"
-                    className="rounded-full"
-                    onClick={() => setActiveQuickFilter(filter.key)}
-                  >
-                    {filter.label}
-                    <Badge variant="secondary" className="ml-1.5 rounded-full">
-                      {filter.count}
-                    </Badge>
-                  </Button>
-                ))}
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Button variant="outline" size="sm" onClick={goPrev} disabled={!canPrev || isFetching}>
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <span>{text.page.replace("{page}", String(page))}</span>
+                <Button variant="outline" size="sm" onClick={goNext} disabled={!canNext || isFetching}>
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
               </div>
             </div>
+          </CardHeader>
+          <CardContent>
+            {!userResolved || isLoading ? (
+              <div className="space-y-3">
+                <Skeleton className="h-10 w-80" />
+                <Skeleton className="h-[540px] w-full" />
+              </div>
+            ) : !user?.warehouseId ? (
+              <div className="rounded-3xl border border-dashed border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">
+                {text.unlinkedWarehouse}
+              </div>
+            ) : (
+              <DispatchCenter
+                orders={filteredOrders}
+                role="warehouse"
+                onRefresh={handleRefresh}
+                detailsBasePath="/dashboard/warehouse/orders"
+                externalScanRequest={externalScanRequest}
+                onExternalScanProcessedAction={handleExternalScanProcessed}
+              />
+            )}
           </CardContent>
         </Card>
 
         <div className="space-y-4">
-          <Card className="rounded-3xl border-border/70">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">{text.queueHealth}</CardTitle>
-              <p className="text-sm text-muted-foreground">{text.queueHealthHint}</p>
-            </CardHeader>
-            <CardContent className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
-              {laneCards.map((lane) => {
-                const Icon = lane.icon;
-                return (
-                  <div key={lane.title} className="rounded-3xl border border-border/70 bg-muted/15 p-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="text-sm font-medium leading-tight">{lane.title}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">{lane.hint}</p>
-                      </div>
-                      <div className="rounded-2xl border border-border/70 bg-background p-1.5">
-                        <Icon className="h-3.5 w-3.5 text-muted-foreground" />
-                      </div>
-                    </div>
-                    <div className="mt-3 flex items-end justify-between gap-2">
-                      <p className="text-2xl font-semibold">{laneCount(lane.statuses)}</p>
-                      <div className="flex max-w-[70%] flex-wrap justify-end gap-1">
-                        {lane.statuses.map((status) => (
-                          <Badge key={status} variant={statusVariant(status)} className="rounded-full">
-                            {getStatusLabel(status, t)}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </CardContent>
-          </Card>
-
           <div className="grid gap-4 xl:grid-cols-2">
             {isPickupPoint ? (
               <Card className="rounded-3xl border-border/70">
@@ -2141,47 +1973,6 @@ export default function WarehouseDashboardPage() {
           </div>
         </div>
 
-        <Card className="rounded-3xl border-border/70">
-          <CardHeader className="pb-3">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <CardTitle className="text-base">{text.boardTitle}</CardTitle>
-                <p className="mt-1 text-sm text-muted-foreground">{text.boardSubtitle}</p>
-              </div>
-
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Button variant="outline" size="sm" onClick={goPrev} disabled={!canPrev || isFetching}>
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <span>{text.page.replace("{page}", String(page))}</span>
-                <Button variant="outline" size="sm" onClick={goNext} disabled={!canNext || isFetching}>
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {!userResolved || isLoading ? (
-              <div className="space-y-3">
-                <Skeleton className="h-10 w-80" />
-                <Skeleton className="h-[540px] w-full" />
-              </div>
-            ) : !user?.warehouseId ? (
-              <div className="rounded-3xl border border-dashed border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">
-                {text.unlinkedWarehouse}
-              </div>
-            ) : (
-              <DispatchCenter
-                orders={filteredOrders}
-                role="warehouse"
-                onRefresh={handleRefresh}
-                detailsBasePath="/dashboard/warehouse/orders"
-                externalScanRequest={externalScanRequest}
-                onExternalScanProcessedAction={handleExternalScanProcessed}
-              />
-            )}
-          </CardContent>
-        </Card>
       </div>
     </PageShell>
   );

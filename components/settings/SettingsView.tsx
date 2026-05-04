@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   BellRing,
@@ -21,6 +22,7 @@ import {
   type UserSettings,
 } from "@/lib/user-settings";
 import { changePassword } from "@/lib/users";
+import { fetchManagerOpsMetrics } from "@/lib/manager";
 
 import { useI18n } from "@/components/i18n/I18nProvider";
 import LanguageSwitcher from "@/components/i18n/LanguageSwitcher";
@@ -52,6 +54,7 @@ export default function SettingsView({
   title?: string;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { t } = useI18n();
   const [user] = React.useState(() => getUser());
   const [settings, setSettings] = React.useState<UserSettings>(DEFAULT_USER_SETTINGS);
@@ -60,6 +63,17 @@ export default function SettingsView({
   const [newPassword, setNewPassword] = React.useState("");
   const [confirmPassword, setConfirmPassword] = React.useState("");
   const [isChangingPassword, setIsChangingPassword] = React.useState(false);
+  const showOpsDiagnostics = role === "manager" && searchParams.get("ops") === "1";
+
+  const opsMetricsQuery = useQuery({
+    queryKey: ["manager-ops-metrics", "settings"],
+    queryFn: fetchManagerOpsMetrics,
+    enabled: showOpsDiagnostics,
+    staleTime: 45_000,
+    refetchInterval: 90_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: true,
+  });
 
   React.useEffect(() => {
     const loaded = loadUserSettings();
@@ -407,6 +421,46 @@ export default function SettingsView({
                 </div>
               </CardContent>
             </Card>
+
+            {showOpsDiagnostics ? (
+              <Card className="rounded-2xl border-border/70">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Hidden Ops Metrics</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2 text-xs">
+                  {opsMetricsQuery.isLoading ? (
+                    <p className="text-muted-foreground">Loading diagnostics...</p>
+                  ) : opsMetricsQuery.data ? (
+                    <>
+                      <div className="rounded-lg border px-3 py-2">
+                        <span className="text-muted-foreground">Cache hit ratio: </span>
+                        <span className="font-medium">
+                          {Math.round((opsMetricsQuery.data.analytics.totals.cacheHitRatio || 0) * 100)}%
+                        </span>
+                      </div>
+                      <div className="rounded-lg border px-3 py-2">
+                        <span className="text-muted-foreground">Summary p95: </span>
+                        <span className="font-medium">
+                          {Math.round(opsMetricsQuery.data.analytics.summary.p95Ms || 0)} ms
+                        </span>
+                      </div>
+                      <div className="rounded-lg border px-3 py-2">
+                        <span className="text-muted-foreground">Worker lag: </span>
+                        <span className="font-medium">
+                          {Math.round(opsMetricsQuery.data.worker.lastLagMs || 0)} ms
+                        </span>
+                      </div>
+                      <div className="rounded-lg border px-3 py-2">
+                        <span className="text-muted-foreground">SSE active: </span>
+                        <span className="font-medium">{opsMetricsQuery.data.sse.analytics.active}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-muted-foreground">No diagnostics payload.</p>
+                  )}
+                </CardContent>
+              </Card>
+            ) : null}
           </div>
         </div>
       </div>

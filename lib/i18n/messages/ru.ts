@@ -1,6 +1,7 @@
 ﻿export const ru = {
   common: {
     back: "Назад",
+    close: "Закрыть",
     save: "Сохранять",
     reset: "Перезагрузить",
     settings: "Настройки",
@@ -194,6 +195,7 @@
       createdInRange: "Создано за период",
       openOrders: "Открытые операционные заказы",
       deliveredInRange: "Доставлено за период",
+      exceptionOpenOrders: "Открытые заказы с исключениями",
       paidInvoiced: "Оплаченные счета",
       overdue: "Просроченные открытые заказы",
       stale: "Зависшие активные заказы",
@@ -659,6 +661,8 @@
     pickupConfirmation: "Подтверждение забора",
     deliveryConfirmation: "Подтверждение доставки",
     noConfirmationsForStage: "Для этого этапа подтверждений пока нет.",
+    photoProof: "Фото подтверждения",
+    signatureProof: "Подпись подтверждения",
     noPhoto: "Нет фото",
     noSignature: "Нет подписи",
     timeline: {

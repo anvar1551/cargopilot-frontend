@@ -1,6 +1,7 @@
 export const uz = {
   common: {
     back: "Orqaga",
+    close: "Yopish",
     save: "Saqlash",
     reset: "Tiklash",
     settings: "Sozlamalar",
@@ -193,6 +194,7 @@ export const uz = {
       createdInRange: "Davrda yaratilgan",
       openOrders: "Ochiq operatsion buyurtmalar",
       deliveredInRange: "Davrda yetkazilgan",
+      exceptionOpenOrders: "Muammo holatidagi ochiq buyurtmalar",
       paidInvoiced: "To'langan invoice",
       overdue: "Muddati o'tgan ochiq buyurtmalar",
       stale: "Sust faol buyurtmalar",
@@ -654,6 +656,8 @@ export const uz = {
     pickupConfirmation: "Olib ketish tasdig'i",
     deliveryConfirmation: "Yetkazib berish tasdig'i",
     noConfirmationsForStage: "Ushbu bosqich uchun tasdiqlar hali yo'q.",
+    photoProof: "Tasdiq fotosi",
+    signatureProof: "Tasdiq imzosi",
     noPhoto: "Foto yo'q",
     noSignature: "Imzo yo'q",
     timeline: {
