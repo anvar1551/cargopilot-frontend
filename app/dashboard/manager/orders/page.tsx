@@ -13,7 +13,6 @@ import { exportOrdersCsv, fetchOrders } from "@/lib/orders";
 import { getStatusLabel } from "@/lib/i18n/labels";
 import { fetchDrivers } from "@/lib/manager";
 import { fetchWarehouses } from "@/lib/warehouses";
-import { usePageVisibility } from "@/lib/usePageVisibility";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -146,7 +145,6 @@ function triggerCsvDownload(blob: Blob, fileName: string) {
 
 export default function ManagerOrdersPage() {
   const { t } = useI18n();
-  const isPageVisible = usePageVisibility();
 
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [presetName, setPresetName] = useState("");
@@ -203,9 +201,8 @@ export default function ManagerOrdersPage() {
         assignedDriverId: filters.assignedDriverId || undefined,
         warehouseId: filters.warehouseId || undefined,
         region: filters.region.trim() || undefined,
-      }),
+    }),
     placeholderData: (prev) => prev,
-    refetchInterval: isPageVisible ? 90_000 : false,
   });
 
   const exportMutation = useMutation({

@@ -7,7 +7,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchOrderById, fetchOrders } from "@/lib/orders";
 import { fetchManagerOverview } from "@/lib/manager";
 import { getStatusLabel } from "@/lib/i18n/labels";
-import { usePageVisibility } from "@/lib/usePageVisibility";
 
 import { useI18n } from "@/components/i18n/I18nProvider";
 import { Badge } from "@/components/ui/badge";
@@ -297,13 +296,11 @@ export default function ManagerDashboardPage() {
   const { locale, t } = useI18n();
   const text = copy[locale];
   const queryClient = useQueryClient();
-  const isPageVisible = usePageVisibility();
 
   const overviewQuery = useQuery<ManagerOverview>({
     queryKey: ["manager-overview"],
     queryFn: fetchManagerOverview,
     staleTime: 30_000,
-    refetchInterval: isPageVisible ? 120_000 : false,
     refetchOnWindowFocus: false,
   });
 
@@ -316,7 +313,6 @@ export default function ManagerDashboardPage() {
         limit: 80,
       }),
     staleTime: 20_000,
-    refetchInterval: isPageVisible ? 90_000 : false,
     refetchOnWindowFocus: false,
   });
 
