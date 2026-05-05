@@ -117,6 +117,7 @@ const EMPTY_LINES: FeatureCollection<LineFeature<Record<string, unknown>>> = {
 };
 
 const DEFAULT_CENTER: [number, number] = [69.2401, 41.2995];
+const STREAM_VIEWPORT_UPDATE_MIN_GAP_MS = 20_000;
 
 let mapboxModulePromise: Promise<MapboxLike> | null = null;
 async function loadMapbox(token: string) {
@@ -319,6 +320,12 @@ export default function ManagerLiveMapPage() {
   const fittedInitiallyRef = React.useRef(false);
   const lastAutoFocusedDriverIdRef = React.useRef<string | null>(null);
   const viewportDebounceTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const streamHealthyRef = React.useRef(false);
+  const lastStreamViewportUpdateAtRef = React.useRef(0);
+
+  React.useEffect(() => {
+    streamHealthyRef.current = streamHealthy;
+  }, [streamHealthy]);
 
   const queueViewportUpdate = React.useCallback(() => {
     const map = mapRef.current;
@@ -337,7 +344,20 @@ export default function ManagerLiveMapPage() {
     viewportDebounceTimerRef.current = setTimeout(() => {
       viewportDebounceTimerRef.current = null;
       setStreamViewport((current) => {
-        return hasMeaningfulViewportChange(current, normalized) ? normalized : current;
+        if (!hasMeaningfulViewportChange(current, normalized)) return current;
+
+        // Avoid excessive SSE reconnect churn while users pan/zoom continuously.
+        if (current && streamHealthyRef.current) {
+          const now = Date.now();
+          if (now - lastStreamViewportUpdateAtRef.current < STREAM_VIEWPORT_UPDATE_MIN_GAP_MS) {
+            return current;
+          }
+          lastStreamViewportUpdateAtRef.current = now;
+          return normalized;
+        }
+
+        lastStreamViewportUpdateAtRef.current = Date.now();
+        return normalized;
       });
     }, 700);
   }, []);

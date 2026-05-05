@@ -964,7 +964,9 @@ export async function updateDriverProfile(
 }
 
 export async function fetchManagerLiveMapSnapshot(): Promise<ManagerLiveMapSnapshot> {
-  const allowMockFallback = process.env.NEXT_PUBLIC_LIVE_MAP_ALLOW_MOCK === "true";
+  const allowMockFallback =
+    process.env.NODE_ENV !== "production" &&
+    process.env.NEXT_PUBLIC_LIVE_MAP_ALLOW_MOCK === "true";
 
   try {
     const res = await api.get("/api/manager/live-map/snapshot");
