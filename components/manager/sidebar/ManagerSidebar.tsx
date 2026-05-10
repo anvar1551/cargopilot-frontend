@@ -4,9 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { useI18n } from "@/components/i18n/I18nProvider";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import {
   Tooltip,
   TooltipContent,
@@ -20,11 +18,14 @@ import {
   Activity,
   Building2,
   CircleDollarSign,
-  ChevronLeft,
-  ChevronRight,
+  ChevronDown,
+  CircleHelp,
+  Headset,
   LayoutDashboard,
   Map,
   Package,
+  PanelLeftClose,
+  PanelLeftOpen,
   Send,
   Settings,
   Truck,
@@ -76,6 +77,11 @@ const NAV_GROUPS: NavGroup[] = [
         labelKey: "managerSidebar.item.dispatchCenter",
         href: "/dashboard/manager/dispatch",
         icon: Send,
+      },
+      {
+        labelKey: "managerSidebar.item.support",
+        href: "/dashboard/manager/support",
+        icon: Headset,
       },
     ],
   },
@@ -144,32 +150,36 @@ function NavLink({
       href={item.href}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "group relative flex items-center rounded-xl transition-all",
-        collapsed ? "justify-center px-0 py-2.5" : "gap-2.5 px-2.5 py-2",
+        "group relative flex items-center rounded-md transition-all",
+        collapsed ? "justify-center px-0 py-2.5" : "gap-3 px-3 py-2.5",
         active
-          ? "bg-primary/12 text-primary shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.18)]"
-          : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+          ? "bg-teal-50 text-teal-700 shadow-[inset_3px_0_0_0_rgb(13_148_136)]"
+          : "text-slate-600 hover:bg-slate-50 hover:text-slate-950",
       )}
     >
       <span
         className={cn(
-          "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border transition-colors",
+          "flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors",
           active
-            ? "border-primary/30 bg-primary/10"
-            : "border-border/70 bg-background group-hover:border-border",
+            ? "text-teal-700"
+            : "text-slate-500 group-hover:text-slate-950",
         )}
       >
         <Icon
           className={cn(
             "h-4 w-4",
-            active ? "text-primary" : "text-muted-foreground group-hover:text-foreground",
+            active ? "text-teal-700" : "text-slate-500 group-hover:text-slate-950",
           )}
         />
       </span>
 
       {!collapsed ? <span className="truncate text-sm font-medium">{label}</span> : null}
 
-      {active && !collapsed ? <span className="ml-auto h-1.5 w-1.5 rounded-full bg-primary" /> : null}
+      {!collapsed && item.href.endsWith("/support") ? (
+        <span className="ml-auto rounded-md bg-teal-600 px-1.5 py-0.5 text-[11px] font-semibold text-white">
+          4
+        </span>
+      ) : null}
     </Link>
   );
 
@@ -194,72 +204,38 @@ export default function ManagerSidebar() {
     <TooltipProvider delayDuration={120}>
       <aside
         className={cn(
-          "sticky top-0 flex h-dvh flex-col border-r bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70",
-          isCollapsed ? "w-[84px]" : "w-[280px]",
+          "sticky top-0 flex h-dvh flex-col border-r bg-white",
+          isCollapsed ? "w-[72px]" : "w-[220px]",
         )}
       >
-        <div className="px-3 pb-3 pt-4">
-          <div
-            className={cn(
-              "rounded-2xl border border-border/70 bg-gradient-to-br from-background to-muted/30",
-              isCollapsed ? "p-2.5" : "p-3",
-            )}
-          >
-            <div className="flex items-center justify-between gap-2">
-              <Link
-                href="/dashboard/manager"
-                className={cn(
-                  "inline-flex items-center gap-2.5",
-                  isCollapsed && "w-full justify-center",
-                )}
-              >
-                <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-primary/25 bg-primary/10 text-xs font-semibold text-primary">
-                  CP
-                </span>
-                {!isCollapsed ? (
-                  <span className="space-y-0.5">
-                    <span className="block text-sm font-semibold leading-none">
-                      {t("common.role.manager")}
-                    </span>
-                    <span className="block text-[11px] leading-none text-muted-foreground">
-                      {t("managerSidebar.consoleTitle")}
-                    </span>
-                  </span>
-                ) : null}
-              </Link>
-
-              {!isCollapsed ? (
-                <Badge variant="secondary" className="rounded-full px-2 py-0.5 text-[10px] uppercase">
-                  {t("managerSidebar.adminBadge")}
-                </Badge>
-              ) : null}
-            </div>
-
-            {!isCollapsed ? <Separator className="my-3" /> : null}
-
-            <div className={cn("flex", isCollapsed ? "justify-center" : "justify-end")}>
+        <div className={cn("border-b px-2 py-3", isCollapsed ? "flex justify-center" : "flex justify-end")}>
+          <Tooltip>
+            <TooltipTrigger asChild>
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
                 onClick={toggle}
-                className="h-8 w-8 rounded-lg"
+                className="h-8 w-8 rounded-md text-slate-500 hover:bg-slate-50 hover:text-slate-950"
                 aria-label={isCollapsed ? t("managerSidebar.expand") : t("managerSidebar.collapse")}
               >
-                {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+                {isCollapsed ? (
+                  <PanelLeftOpen className="h-4 w-4" />
+                ) : (
+                  <PanelLeftClose className="h-4 w-4" />
+                )}
               </Button>
-            </div>
-          </div>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              {isCollapsed ? t("managerSidebar.expand") : t("managerSidebar.collapse")}
+            </TooltipContent>
+          </Tooltip>
         </div>
 
-        <nav className="flex-1 space-y-5 overflow-y-auto px-3 pb-3">
+        <nav className="flex-1 space-y-3 overflow-y-auto px-2 py-4">
           {NAV_GROUPS.map((group) => (
-            <div key={group.labelKey} className="space-y-1.5">
-              {!isCollapsed ? (
-                <div className="px-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                  {t(group.labelKey)}
-                </div>
-              ) : null}
+            <div key={group.labelKey} className="space-y-1 border-b pb-3 last:border-b-0">
+              {!isCollapsed ? null : null}
               <div className="space-y-1">
                 {group.items.map((item) => (
                   <NavLink
@@ -275,16 +251,16 @@ export default function ManagerSidebar() {
           ))}
         </nav>
 
-        <div className="p-3 pt-2">
+        <div className="mt-auto border-t p-3">
           {!isCollapsed ? (
-            <div className="rounded-2xl border border-border/70 bg-muted/25 px-3 py-3 text-xs text-muted-foreground">
-              {t("managerSidebar.hint")}
+            <div className="flex items-center gap-3 rounded-md px-2 py-2 text-sm text-slate-600">
+              <CircleHelp className="h-5 w-5 text-slate-500" />
+              <span className="min-w-0 flex-1 truncate">Help & Resources</span>
+              <ChevronDown className="h-4 w-4 text-slate-500" />
             </div>
           ) : (
             <div className="flex justify-center">
-              <Badge variant="outline" className="rounded-full text-[10px]">
-                MGR
-              </Badge>
+              <CircleHelp className="h-5 w-5 text-slate-500" />
             </div>
           )}
         </div>

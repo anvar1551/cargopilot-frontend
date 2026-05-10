@@ -100,11 +100,12 @@ export const en = {
       admin: "Admin",
     },
     item: {
-      dashboard: "Dashboard",
+      dashboard: "Overview",
       analytics: "Analytics",
       liveMap: "Live Map",
       manageOrders: "Manage Orders",
       dispatchCenter: "Dispatch Center",
+      support: "Support",
       drivers: "Drivers",
       warehouses: "Warehouses",
       customers: "Customers",

@@ -13,9 +13,9 @@ import {
   type CreateOrderPayload,
 } from "@/lib/validators/order";
 import type { CreateOrderParcelsFieldArray } from "./create-order-form.types";
-import { createOrder } from "@/lib/orders";
+import { createOrder, type Order, type OrdersResponse } from "@/lib/orders";
 import { fetchPricingQuote, type PricingQuote } from "@/lib/pricing";
-import { getUser } from "@/lib/auth";
+import { getUser, type AuthUser } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
 import { useI18n } from "@/components/i18n/I18nProvider";
@@ -54,6 +54,124 @@ type CreateOrderDialogProps = {
   triggerLabel?: string;
   triggerClassName?: string;
 };
+
+type OrdersCache = OrdersResponse | Order[] | undefined;
+
+type CreateOrderResponse = {
+  order?: Order | null;
+  paymentUrl?: string | null;
+  warning?: string | null;
+};
+
+type CreateOrderMutationContext = {
+  optimisticOrderId?: string;
+};
+
+function buildOptimisticOrder(
+  values: CreateOrderPayload,
+  user: AuthUser | null,
+  isManager: boolean,
+  presetCustomerEntityId: string | null,
+): Order {
+  const now = new Date().toISOString();
+  const optimisticId = `optimistic-order-${Date.now()}`;
+  const customerEntityId = isManager
+    ? values.customerEntityId ?? presetCustomerEntityId ?? null
+    : user?.customerEntityId ?? null;
+
+  return {
+    id: optimisticId,
+    orderNumber: "Creating...",
+    status: "pending",
+    pickupAddress: values.addresses?.pickupAddress ?? null,
+    dropoffAddress: values.addresses?.dropoffAddress ?? null,
+    pickupLat: values.addresses?.senderAddress?.latitude ?? null,
+    pickupLng: values.addresses?.senderAddress?.longitude ?? null,
+    dropoffLat: values.addresses?.receiverAddress?.latitude ?? null,
+    dropoffLng: values.addresses?.receiverAddress?.longitude ?? null,
+    createdAt: now,
+    updatedAt: now,
+    plannedDeliveryAt: values.schedule?.plannedDeliveryAt ?? null,
+    destinationCity: values.addresses?.destinationCity ?? null,
+    serviceType: values.shipment?.serviceType ?? null,
+    customer: user
+      ? {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+        }
+      : null,
+    customerEntity: customerEntityId
+      ? {
+          id: customerEntityId,
+          name: null,
+          companyName: null,
+          phone: null,
+        }
+      : null,
+    senderName: values.sender?.name ?? null,
+    senderPhone: values.sender?.phone ?? null,
+    receiverName: values.receiver?.name ?? null,
+    receiverPhone: values.receiver?.phone ?? null,
+    parcels: (values.shipment?.parcels ?? []).map((_, index) => ({
+      id: `${optimisticId}-parcel-${index}`,
+      labelKey: null,
+      parcelCode: null,
+      pieceNo: index + 1,
+      pieceTotal: values.shipment?.parcels?.length ?? 1,
+    })),
+    __optimistic: true,
+  };
+}
+
+function prependOrderToCache(cache: OrdersCache, optimisticOrder: Order): OrdersCache {
+  if (!cache) return cache;
+  if (Array.isArray(cache)) {
+    return [
+      optimisticOrder,
+      ...cache.filter((order) => order.id !== optimisticOrder.id),
+    ];
+  }
+
+  return {
+    ...cache,
+    total: typeof cache.total === "number" ? cache.total + 1 : cache.total,
+    orders: [
+      optimisticOrder,
+      ...(cache.orders ?? []).filter((order) => order.id !== optimisticOrder.id),
+    ],
+  };
+}
+
+function replaceOrderInCache(
+  cache: OrdersCache,
+  optimisticOrderId: string,
+  createdOrder?: Order | null,
+): OrdersCache {
+  if (!cache) return cache;
+  if (Array.isArray(cache)) {
+    return createdOrder
+      ? cache.map((order) =>
+          order.id === optimisticOrderId ? createdOrder : order,
+        )
+      : cache.filter((order) => order.id !== optimisticOrderId);
+  }
+
+  const nextOrders = createdOrder
+    ? (cache.orders ?? []).map((order) =>
+        order.id === optimisticOrderId ? createdOrder : order,
+      )
+    : (cache.orders ?? []).filter((order) => order.id !== optimisticOrderId);
+
+  return {
+    ...cache,
+    total:
+      !createdOrder && typeof cache.total === "number"
+        ? Math.max(0, cache.total - 1)
+        : cache.total,
+    orders: nextOrders,
+  };
+}
 
 export default function CreateOrderDialog({
   mode = "customer",
@@ -245,7 +363,14 @@ export default function CreateOrderDialog({
     }
   }, [form, open, pricingQuoteQuery.data, pricingReady]);
 
-  const mutation = useMutation({
+  const paymentsEnabled = process.env.NEXT_PUBLIC_PAYMENTS_ENABLED === "true";
+
+  const mutation = useMutation<
+    CreateOrderResponse,
+    unknown,
+    CreateOrderPayload,
+    CreateOrderMutationContext
+  >({
     mutationFn: async (values: CreateOrderPayload) => {
       const normalized: CreateOrderPayload = {
         ...values,
@@ -259,16 +384,50 @@ export default function CreateOrderDialog({
         normalized.customerEntityId = user?.customerEntityId ?? undefined;
       }
 
-      return createOrder(normalized);
+      return createOrder(normalized) as Promise<CreateOrderResponse>;
     },
-    onSuccess: async (data, variables) => {
+    onMutate: async (variables) => {
+      if (paymentsEnabled) return {};
+
+      const optimisticOrder = buildOptimisticOrder(
+        variables,
+        user,
+        isManager,
+        presetCustomerEntityId,
+      );
+
+      await qc.cancelQueries({ queryKey: ["orders"] });
+      qc.setQueriesData<OrdersCache>({ queryKey: ["orders"] }, (cache) =>
+        prependOrderToCache(cache, optimisticOrder),
+      );
+
+      setOpen(false);
+      setTab("customer");
+      toast.loading(t("createOrder.creating"), { id: optimisticOrder.id });
+
+      return { optimisticOrderId: optimisticOrder.id };
+    },
+    onSuccess: (data, variables, context) => {
       const affectedCustomerEntityId =
         (isManager
           ? variables.customerEntityId ?? presetCustomerEntityId
           : user?.customerEntityId) ?? null;
 
-      await Promise.all([
+      if (context?.optimisticOrderId) {
+        qc.setQueriesData<OrdersCache>({ queryKey: ["orders"] }, (cache) =>
+          replaceOrderInCache(cache, context.optimisticOrderId!, data?.order),
+        );
+        toast.dismiss(context.optimisticOrderId);
+      }
+
+      void Promise.all([
         qc.invalidateQueries({ queryKey: ["orders"] }),
+        qc.invalidateQueries({ queryKey: ["orders", "manager-dashboard"] }),
+        qc.invalidateQueries({ queryKey: ["manager-overview"] }),
+        qc.invalidateQueries({ queryKey: ["manager-analytics-v2-summary"] }),
+        qc.invalidateQueries({ queryKey: ["manager-analytics-v2-trend"] }),
+        qc.invalidateQueries({ queryKey: ["manager-analytics-v2-warnings"] }),
+        qc.invalidateQueries({ queryKey: ["manager-analytics-v2-finance-queue"] }),
         qc.invalidateQueries({ queryKey: ["customers"] }),
         affectedCustomerEntityId
           ? qc.invalidateQueries({
@@ -280,13 +439,24 @@ export default function CreateOrderDialog({
       if (typeof data?.warning === "string" && data.warning.trim()) {
         toast.warning(data.warning);
       }
-      setOpen(false);
+      if (!context?.optimisticOrderId) {
+        setOpen(false);
+        setTab("customer");
+      }
       setTab("customer");
       form.reset();
 
       if (data?.paymentUrl) window.location.href = data.paymentUrl;
     },
-    onError: (error: unknown) => {
+    onError: (error: unknown, _variables, context) => {
+      if (context?.optimisticOrderId) {
+        qc.setQueriesData<OrdersCache>({ queryKey: ["orders"] }, (cache) =>
+          replaceOrderInCache(cache, context.optimisticOrderId!, null),
+        );
+        toast.dismiss(context.optimisticOrderId);
+        setOpen(true);
+      }
+
       const message =
         typeof error === "object" && error !== null
           ? (
@@ -333,7 +503,6 @@ export default function CreateOrderDialog({
     if (tab === "shipment") return setTab("customer");
   }
 
-  const paymentsEnabled = process.env.NEXT_PUBLIC_PAYMENTS_ENABLED === "true";
   const canSubmit = !mutation.isPending;
   const activeTabIndex = TAB_STEPS.findIndex((step) => step.key === tab);
 

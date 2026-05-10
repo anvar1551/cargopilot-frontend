@@ -927,7 +927,7 @@ export default function OrderDetailsView({
   const refreshOrderQueries = React.useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["order", orderId] });
     queryClient.invalidateQueries({ queryKey: ["orders"] });
-    queryClient.invalidateQueries({ queryKey: ["manager-analytics-summary"] });
+    queryClient.invalidateQueries({ queryKey: ["manager-analytics-v2-summary"] });
   }, [orderId, queryClient]);
 
   const runCashAction = React.useCallback(

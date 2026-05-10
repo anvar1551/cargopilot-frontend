@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   AlertTriangle,
@@ -49,10 +49,11 @@ import {
   type CashQueueSummary,
   type OrdersResponse,
 } from "@/lib/orders";
-import { fetchDrivers, type DriverLite } from "@/lib/manager";
+import { fetchDrivers, subscribeManagerAnalyticsStream, type DriverLite } from "@/lib/manager";
 import { playScanSound, primeScanSound } from "@/lib/scan-sound";
 import { loadUserSettings } from "@/lib/user-settings";
 import { fetchWarehouses, normalizeWarehouseType } from "@/lib/warehouses";
+import { usePageVisibility } from "@/lib/usePageVisibility";
 import {
   Select,
   SelectContent,
@@ -660,6 +661,8 @@ function formatCashAmount(amount: number, currency: string | null | undefined, l
 
 export default function WarehouseDashboardPage() {
   const { locale, t } = useI18n();
+  const queryClient = useQueryClient();
+  const isPageVisible = usePageVisibility();
   const text = copy[locale];
   const [user, setUser] = useState<AuthUser | null>(null);
   const [userResolved, setUserResolved] = useState(false);
@@ -684,6 +687,8 @@ export default function WarehouseDashboardPage() {
   const debouncedQ = useDebouncedValue(q);
   const isSearchMode = debouncedQ.trim().length > 0;
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
+  const [warehouseStreamConnectedAt, setWarehouseStreamConnectedAt] = useState<string | null>(null);
+  const warehouseInvalidateTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [baseCursorStack, setBaseCursorStack] = useState<Array<string | null>>([null]);
   const [baseCursorIndex, setBaseCursorIndex] = useState(0);
@@ -711,6 +716,8 @@ export default function WarehouseDashboardPage() {
     queryFn: fetchWarehouses,
     enabled: Boolean(user?.warehouseId),
     staleTime: 60_000,
+    refetchInterval: isPageVisible && !warehouseStreamConnectedAt ? 60_000 : false,
+    refetchOnWindowFocus: false,
   });
 
   const driversQuery = useQuery<DriverLite[]>({
@@ -718,6 +725,8 @@ export default function WarehouseDashboardPage() {
     queryFn: fetchDrivers,
     enabled: Boolean(user?.warehouseId),
     staleTime: 60_000,
+    refetchInterval: isPageVisible && !warehouseStreamConnectedAt ? 60_000 : false,
+    refetchOnWindowFocus: false,
   });
 
   const baseQuery = useQuery<OrdersResponse>({
@@ -735,6 +744,8 @@ export default function WarehouseDashboardPage() {
       }),
     enabled: !isSearchMode && Boolean(user?.warehouseId),
     placeholderData: (prev) => prev,
+    refetchInterval: isPageVisible && !warehouseStreamConnectedAt ? 45_000 : false,
+    refetchOnWindowFocus: false,
   });
 
   const searchQuery = useQuery<OrdersResponse>({
@@ -754,6 +765,8 @@ export default function WarehouseDashboardPage() {
       }),
     enabled: isSearchMode && Boolean(user?.warehouseId),
     placeholderData: (prev) => prev,
+    refetchInterval: isPageVisible && !warehouseStreamConnectedAt ? 45_000 : false,
+    refetchOnWindowFocus: false,
   });
 
   React.useEffect(() => {
@@ -818,6 +831,8 @@ export default function WarehouseDashboardPage() {
     queryFn: () => fetchCashQueue(cashFilters),
     enabled: Boolean(user?.warehouseId),
     placeholderData: (prev) => prev,
+    refetchInterval: isPageVisible && !warehouseStreamConnectedAt ? 45_000 : false,
+    refetchOnWindowFocus: false,
   });
 
   const cashSummaryQuery = useQuery({
@@ -838,7 +853,41 @@ export default function WarehouseDashboardPage() {
       }),
     enabled: Boolean(user?.warehouseId),
     placeholderData: (prev) => prev,
+    refetchInterval: isPageVisible && !warehouseStreamConnectedAt ? 45_000 : false,
+    refetchOnWindowFocus: false,
   });
+
+  React.useEffect(() => {
+    if (!isPageVisible || !user?.warehouseId) return;
+
+    const scheduleRefresh = () => {
+      if (warehouseInvalidateTimerRef.current) return;
+      warehouseInvalidateTimerRef.current = setTimeout(() => {
+        warehouseInvalidateTimerRef.current = null;
+        void Promise.all([
+          queryClient.invalidateQueries({ queryKey: ["warehouse-orders"] }),
+          queryClient.invalidateQueries({ queryKey: ["warehouse-cash-queue"] }),
+          queryClient.invalidateQueries({ queryKey: ["warehouse-cash-queue-summary"] }),
+          queryClient.invalidateQueries({ queryKey: ["warehouse-drivers-manifest"] }),
+          queryClient.invalidateQueries({ queryKey: ["warehouses", "warehouse-dashboard"] }),
+        ]);
+      }, 320);
+    };
+
+    const unsubscribe = subscribeManagerAnalyticsStream({
+      onReady: (payload) => setWarehouseStreamConnectedAt(payload.connectedAt ?? new Date().toISOString()),
+      onRefresh: () => scheduleRefresh(),
+      onError: () => setWarehouseStreamConnectedAt(null),
+    });
+
+    return () => {
+      unsubscribe();
+      if (warehouseInvalidateTimerRef.current) {
+        clearTimeout(warehouseInvalidateTimerRef.current);
+        warehouseInvalidateTimerRef.current = null;
+      }
+    };
+  }, [isPageVisible, queryClient, user?.warehouseId]);
 
   const cashQueueItems = cashQueueQuery.data?.items ?? [];
   const cashQueueMeta = cashQueueQuery.data?.meta ?? {

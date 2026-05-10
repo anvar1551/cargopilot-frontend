@@ -102,11 +102,12 @@
       admin: "Админ",
     },
     item: {
-      dashboard: "Панель управления",
+      dashboard: "Обзор",
       analytics: "Аналитика",
       liveMap: "Живая карта",
       manageOrders: "Управление заказами",
       dispatchCenter: "Диспетчерский центр",
+      support: "Поддержка",
       drivers: "Драйверы",
       warehouses: "Склады",
       customers: "Клиенты",

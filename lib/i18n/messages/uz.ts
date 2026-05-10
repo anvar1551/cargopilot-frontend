@@ -101,11 +101,12 @@ export const uz = {
       admin: "Admin",
     },
     item: {
-      dashboard: "Panel",
+      dashboard: "Overview",
       analytics: "Analitika",
       liveMap: "Jonli xarita",
       manageOrders: "Buyurtmalar",
       dispatchCenter: "Dispatch markazi",
+      support: "Support",
       drivers: "Haydovchilar",
       warehouses: "Omborlar",
       customers: "Mijozlar",

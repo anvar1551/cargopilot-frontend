@@ -105,7 +105,7 @@ export default function DashboardShell({ children }: { children: ReactNode }) {
     <div className="min-h-dvh bg-muted/30">
       <AppTopbar />
 
-      <div className="w-full px-3 sm:px-6 lg:px-8">
+      <div className="w-full">
         {isManager ? (
           <>
             {isMobileOpen ? (
@@ -123,10 +123,10 @@ export default function DashboardShell({ children }: { children: ReactNode }) {
             ) : null}
 
             <div
-              className="grid gap-6 xl:grid-cols-[var(--manager-sidebar-width)_minmax(0,1fr)]"
+              className="grid gap-0 xl:grid-cols-[var(--manager-sidebar-width)_minmax(0,1fr)]"
               style={
                 {
-                  "--manager-sidebar-width": isCollapsed ? "72px" : "16rem",
+                  "--manager-sidebar-width": isCollapsed ? "72px" : "220px",
                 } as CSSProperties
               }
             >

@@ -420,7 +420,7 @@ export default function ManagerPricingPage() {
     onSuccess: () => {
       toast.success(t("pricingPage.toast.slaPolicyUpdated"));
       queryClient.invalidateQueries({ queryKey: ["pricing", "sla-policy"] });
-      queryClient.invalidateQueries({ queryKey: ["manager-analytics-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["manager-analytics-v2-summary"] });
     },
     onError: () => toast.error(t("pricingPage.toast.actionFailed")),
   });

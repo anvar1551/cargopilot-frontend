@@ -48,9 +48,21 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 
 type MapboxMapLike = {
-  on: (event: string, handler: (event?: { error?: Error }) => void) => void;
+  on: (event: string, handler: (event?: { error?: Error; id?: string }) => void) => void;
   addSource: (id: string, source: unknown) => void;
   addLayer: (layer: unknown) => void;
+  hasImage: (id: string) => boolean;
+  addImage: (
+    id: string,
+    image:
+      | {
+          width: number;
+          height: number;
+          data: Uint8Array | Uint8ClampedArray;
+        }
+      | ImageData,
+    options?: { pixelRatio?: number; sdf?: boolean },
+  ) => void;
   getSource: (id: string) => { setData: (data: unknown) => void } | undefined;
   resize: () => void;
   fitBounds: (
@@ -82,6 +94,7 @@ type DriverFeatureProps = {
   id: string;
   status: LiveMapDriverStatus;
   label: string;
+  headingDeg: number;
 };
 
 type PointFeature<Props extends Record<string, unknown>> = {
@@ -117,7 +130,22 @@ const EMPTY_LINES: FeatureCollection<LineFeature<Record<string, unknown>>> = {
 };
 
 const DEFAULT_CENTER: [number, number] = [69.2401, 41.2995];
+const INITIAL_SNAPSHOT_VIEWPORT: LiveMapViewport = {
+  minLat: 41.1,
+  minLng: 68.85,
+  maxLat: 41.5,
+  maxLng: 69.65,
+};
 const STREAM_VIEWPORT_UPDATE_MIN_GAP_MS = 20_000;
+const LIVE_MAP_ICON_ID = {
+  driverOnline: "cp-driver-online",
+  driverIdle: "cp-driver-idle",
+  driverStale: "cp-driver-stale",
+  driverOffline: "cp-driver-offline",
+  warehouse: "cp-warehouse",
+  pickup: "cp-pickup",
+  dropoff: "cp-dropoff",
+} as const;
 
 let mapboxModulePromise: Promise<MapboxLike> | null = null;
 async function loadMapbox(token: string) {
@@ -136,6 +164,14 @@ function statusRank(status: LiveMapDriverStatus) {
   if (status === "idle") return 2;
   if (status === "stale") return 1;
   return 0;
+}
+
+function stableSeed(input: string) {
+  let hash = 0;
+  for (let index = 0; index < input.length; index += 1) {
+    hash = (hash * 31 + input.charCodeAt(index)) >>> 0;
+  }
+  return hash;
 }
 
 function driverLabel(driver: ManagerLiveMapDriver) {
@@ -243,6 +279,144 @@ function isFiniteCoord(value: unknown) {
   return typeof value === "number" && Number.isFinite(value);
 }
 
+function roundedRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number,
+) {
+  const r = Math.min(radius, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + width, y, x + width, y + height, r);
+  ctx.arcTo(x + width, y + height, x, y + height, r);
+  ctx.arcTo(x, y + height, x, y, r);
+  ctx.arcTo(x, y, x + width, y, r);
+  ctx.closePath();
+}
+
+function makeCanvasImage(
+  size: number,
+  drawer: (ctx: CanvasRenderingContext2D, size: number) => void,
+) {
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    return { width: size, height: size, data: new Uint8Array(size * size * 4) };
+  }
+  drawer(ctx, size);
+  const imageData = ctx.getImageData(0, 0, size, size);
+  return {
+    width: size,
+    height: size,
+    data: new Uint8Array(imageData.data.buffer),
+  };
+}
+
+function makeDriverCarIcon(color: string) {
+  return makeCanvasImage(44, (ctx, size) => {
+    const cx = size / 2;
+    const cy = size / 2;
+
+    // body
+    ctx.fillStyle = color;
+    roundedRect(ctx, cx - 14, cy - 3, 28, 12, 4);
+    ctx.fill();
+
+    // roof
+    ctx.beginPath();
+    ctx.moveTo(cx - 8, cy - 3);
+    ctx.lineTo(cx - 4, cy - 10);
+    ctx.lineTo(cx + 4, cy - 10);
+    ctx.lineTo(cx + 8, cy - 3);
+    ctx.closePath();
+    ctx.fill();
+
+    // windows
+    ctx.fillStyle = "rgba(255,255,255,0.9)";
+    roundedRect(ctx, cx - 5, cy - 8.5, 10, 5.5, 2);
+    ctx.fill();
+
+    // wheels
+    ctx.fillStyle = "#111827";
+    ctx.beginPath();
+    ctx.arc(cx - 9, cy + 9, 3, 0, Math.PI * 2);
+    ctx.arc(cx + 9, cy + 9, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // outline for contrast
+    ctx.strokeStyle = "rgba(15,23,42,0.35)";
+    ctx.lineWidth = 1;
+    roundedRect(ctx, cx - 14, cy - 3, 28, 12, 4);
+    ctx.stroke();
+  });
+}
+
+function makePinIcon(color: string, glyph: string) {
+  return makeCanvasImage(48, (ctx, size) => {
+    const cx = size / 2;
+    const topY = 9;
+    const radius = 11;
+
+    // pin head
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(cx, topY + radius, radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // pin tail
+    ctx.beginPath();
+    ctx.moveTo(cx - 6, topY + radius + 7);
+    ctx.lineTo(cx + 6, topY + radius + 7);
+    ctx.lineTo(cx, size - 6);
+    ctx.closePath();
+    ctx.fill();
+
+    // core
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.arc(cx, topY + radius, 7.4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // glyph
+    ctx.fillStyle = "#111827";
+    ctx.font = "bold 9px Arial, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(glyph, cx, topY + radius + 0.4);
+  });
+}
+
+const LIVE_MAP_ICON_BUILDERS: Record<
+  string,
+  () => { width: number; height: number; data: Uint8Array | Uint8ClampedArray }
+> = {
+  [LIVE_MAP_ICON_ID.driverOnline]: () => makeDriverCarIcon("#0d9488"),
+  [LIVE_MAP_ICON_ID.driverIdle]: () => makeDriverCarIcon("#6366f1"),
+  [LIVE_MAP_ICON_ID.driverStale]: () => makeDriverCarIcon("#d97706"),
+  [LIVE_MAP_ICON_ID.driverOffline]: () => makeDriverCarIcon("#64748b"),
+  [LIVE_MAP_ICON_ID.warehouse]: () => makePinIcon("#f59e0b", "WH"),
+  [LIVE_MAP_ICON_ID.pickup]: () => makePinIcon("#0ea5e9", "PU"),
+  [LIVE_MAP_ICON_ID.dropoff]: () => makePinIcon("#16a34a", "DO"),
+};
+
+function addLiveMapIconById(map: MapboxMapLike, iconId: string) {
+  const builder = LIVE_MAP_ICON_BUILDERS[iconId];
+  if (!builder) return;
+  if (map.hasImage(iconId)) return;
+  map.addImage(iconId, builder(), { pixelRatio: 1 });
+}
+
+function registerLiveMapIcons(map: MapboxMapLike) {
+  for (const iconId of Object.values(LIVE_MAP_ICON_ID)) {
+    addLiveMapIconById(map, iconId);
+  }
+}
+
 function normalizeViewport(next: LiveMapViewport | null): LiveMapViewport | null {
   if (!next) return null;
   const minLat = Number(next.minLat.toFixed(4));
@@ -308,6 +482,7 @@ export default function ManagerLiveMapPage() {
   const [showWarehouses, setShowWarehouses] = React.useState(true);
   const [driverQuery, setDriverQuery] = React.useState("");
   const [selectedDriverId, setSelectedDriverId] = React.useState<string | null>(null);
+  const [expandedDriverId, setExpandedDriverId] = React.useState<string | null>(null);
   const [tick, setTick] = React.useState(0);
   const [streamViewport, setStreamViewport] = React.useState<LiveMapViewport | null>(null);
   const [streamHealthy, setStreamHealthy] = React.useState(false);
@@ -364,7 +539,7 @@ export default function ManagerLiveMapPage() {
 
   const snapshotQuery = useQuery({
     queryKey: ["manager-live-map-snapshot"],
-    queryFn: fetchManagerLiveMapSnapshot,
+    queryFn: () => fetchManagerLiveMapSnapshot(streamViewport ?? INITIAL_SNAPSHOT_VIEWPORT),
     refetchInterval: isPageVisible && !streamHealthy ? 180_000 : false,
     staleTime: 45_000,
     placeholderData: (prev) => prev,
@@ -381,20 +556,26 @@ export default function ManagerLiveMapPage() {
       onEvent: (event: LiveMapEvent) => {
         setStreamHealthy(true);
         queryClient.setQueryData<ManagerLiveMapSnapshot>(["manager-live-map-snapshot"], (current) => {
-          if (!current) return current;
-
           if (event.type === "driver_location_upsert") {
             const payload = event.payload;
             if (!isFiniteCoord(payload.lat) || !isFiniteCoord(payload.lng)) return current;
+            const nextLiveEnabled = payload.liveEnabled ?? true;
+            const nextStatus =
+              payload.status ??
+              deriveLiveMapDriverStatus(payload.heartbeatAt ?? payload.recordedAt, nextLiveEnabled);
+            const baseSnapshot: ManagerLiveMapSnapshot =
+              current ?? {
+                generatedAt: event.at,
+                isMock: false,
+                drivers: [],
+                orders: [],
+                warehouses: [],
+              };
 
             let changed = false;
-            const nextDrivers = current.drivers.map((driver) => {
+            const nextDrivers = baseSnapshot.drivers.map((driver) => {
               if (driver.id !== payload.driverId) return driver;
               changed = true;
-              const nextLiveEnabled = payload.liveEnabled ?? driver.liveEnabled ?? true;
-              const nextStatus =
-                payload.status ??
-                deriveLiveMapDriverStatus(payload.heartbeatAt ?? payload.recordedAt, nextLiveEnabled);
               return {
                 ...driver,
                 liveEnabled: nextLiveEnabled,
@@ -409,14 +590,35 @@ export default function ManagerLiveMapPage() {
               };
             });
 
-            if (!changed) return current;
+            if (!changed) {
+              nextDrivers.push({
+                id: payload.driverId,
+                name: `Driver ${payload.driverId.slice(0, 6)}`,
+                email: "",
+                warehouseId: payload.warehouseId ?? null,
+                warehouseIds: payload.warehouseId ? [payload.warehouseId] : [],
+                driverType: "local",
+                liveEnabled: nextLiveEnabled,
+                lat: payload.lat,
+                lng: payload.lng,
+                speedKmh: payload.speedKmh,
+                headingDeg: payload.headingDeg,
+                lastSeenAt: payload.heartbeatAt ?? payload.recordedAt,
+                status: nextStatus,
+                region: null,
+                activeOrderId: payload.orderId ?? null,
+                seed: stableSeed(payload.driverId),
+              });
+            }
             return {
-              ...current,
+              ...baseSnapshot,
               generatedAt: event.at,
               isMock: false,
               drivers: nextDrivers,
             };
           }
+
+          if (!current) return current;
 
           if (event.type === "driver_presence_update") {
             const payload = event.payload;
@@ -550,16 +752,19 @@ export default function ManagerLiveMapPage() {
   React.useEffect(() => {
     if (visibleDrivers.length === 0) {
       setSelectedDriverId(null);
+      setExpandedDriverId(null);
       return;
     }
     if (!selectedDriverId) {
       setSelectedDriverId(visibleDrivers[0].id);
+      if (!expandedDriverId) setExpandedDriverId(visibleDrivers[0].id);
       return;
     }
     if (!visibleDrivers.some((driver) => driver.id === selectedDriverId)) {
       setSelectedDriverId(visibleDrivers[0].id);
+      setExpandedDriverId(visibleDrivers[0].id);
     }
-  }, [selectedDriverId, visibleDrivers]);
+  }, [expandedDriverId, selectedDriverId, visibleDrivers]);
 
   const selectedDriver = React.useMemo(
     () => visibleDrivers.find((driver) => driver.id === selectedDriverId) ?? null,
@@ -579,6 +784,7 @@ export default function ManagerLiveMapPage() {
           id: driver.id,
           status: driver.status,
           label: driverLabel(driver),
+          headingDeg: driver.headingDeg ?? 0,
         },
       })),
     };
@@ -795,7 +1001,7 @@ export default function ManagerLiveMapPage() {
 
         const map = new mapbox.Map({
           container: mapContainerEl,
-          style: "mapbox://styles/mapbox/light-v11",
+          style: "mapbox://styles/mapbox/streets-v12",
           center: DEFAULT_CENTER,
           zoom: 10,
           attributionControl: true,
@@ -817,6 +1023,7 @@ export default function ManagerLiveMapPage() {
           map.addSource("cp-live-warehouses", { type: "geojson", data: EMPTY_POINTS });
           map.addSource("cp-live-drivers", { type: "geojson", data: EMPTY_POINTS });
           map.addSource("cp-live-driver-selected", { type: "geojson", data: EMPTY_POINTS });
+          registerLiveMapIcons(map);
 
           map.addLayer({
             id: "cp-live-heatmap-layer",
@@ -860,41 +1067,44 @@ export default function ManagerLiveMapPage() {
 
           map.addLayer({
             id: "cp-live-pickups-layer",
-            type: "circle",
+            type: "symbol",
             source: "cp-live-pickups",
-            paint: {
-              "circle-radius": 4.8,
-              "circle-color": "#38bdf8",
-              "circle-stroke-width": 1.3,
-              "circle-stroke-color": "#ffffff",
-              "circle-opacity": 0.95,
+            layout: {
+              "icon-image": LIVE_MAP_ICON_ID.pickup,
+              "icon-size": 1,
+              "icon-anchor": "bottom",
+              "icon-allow-overlap": true,
+              "icon-ignore-placement": true,
             },
+            paint: { "icon-opacity": 0.97 },
           });
 
           map.addLayer({
             id: "cp-live-dropoffs-layer",
-            type: "circle",
+            type: "symbol",
             source: "cp-live-dropoffs",
-            paint: {
-              "circle-radius": 4.8,
-              "circle-color": "#22c55e",
-              "circle-stroke-width": 1.3,
-              "circle-stroke-color": "#ffffff",
-              "circle-opacity": 0.95,
+            layout: {
+              "icon-image": LIVE_MAP_ICON_ID.dropoff,
+              "icon-size": 1,
+              "icon-anchor": "bottom",
+              "icon-allow-overlap": true,
+              "icon-ignore-placement": true,
             },
+            paint: { "icon-opacity": 0.97 },
           });
 
           map.addLayer({
             id: "cp-live-warehouses-layer",
-            type: "circle",
+            type: "symbol",
             source: "cp-live-warehouses",
-            paint: {
-              "circle-radius": 7.2,
-              "circle-color": "#fbbf24",
-              "circle-stroke-width": 2,
-              "circle-stroke-color": "#111827",
-              "circle-opacity": 0.9,
+            layout: {
+              "icon-image": LIVE_MAP_ICON_ID.warehouse,
+              "icon-size": 1.05,
+              "icon-anchor": "bottom",
+              "icon-allow-overlap": true,
+              "icon-ignore-placement": true,
             },
+            paint: { "icon-opacity": 0.95 },
           });
 
           map.addLayer({
@@ -916,25 +1126,28 @@ export default function ManagerLiveMapPage() {
 
           map.addLayer({
             id: "cp-live-drivers-layer",
-            type: "circle",
+            type: "symbol",
             source: "cp-live-drivers",
-            paint: {
-              "circle-radius": 7,
-              "circle-color": [
+            layout: {
+              "icon-image": [
                 "match",
                 ["get", "status"],
                 "online",
-                "#14b8a6",
+                LIVE_MAP_ICON_ID.driverOnline,
                 "idle",
-                "#818cf8",
+                LIVE_MAP_ICON_ID.driverIdle,
                 "stale",
-                "#f59e0b",
-                "#94a3b8",
+                LIVE_MAP_ICON_ID.driverStale,
+                LIVE_MAP_ICON_ID.driverOffline,
               ],
-              "circle-stroke-width": 1.6,
-              "circle-stroke-color": "#ffffff",
-              "circle-opacity": 0.95,
+              "icon-size": 1.1,
+              "icon-anchor": "center",
+              "icon-allow-overlap": true,
+              "icon-ignore-placement": true,
+              "icon-rotate": ["coalesce", ["get", "headingDeg"], 0],
+              "icon-rotation-alignment": "map",
             },
+            paint: { "icon-opacity": 0.97 },
           });
 
           map.addLayer({
@@ -987,6 +1200,13 @@ export default function ManagerLiveMapPage() {
           });
         });
 
+        map.on("styleimagemissing", (event) => {
+          if (disposed) return;
+          const missingIconId = event?.id;
+          if (!missingIconId) return;
+          if (!(missingIconId in LIVE_MAP_ICON_BUILDERS)) return;
+          addLiveMapIconById(map, missingIconId);
+        });
         map.on("moveend", () => {
           if (disposed) return;
           queueViewportUpdate();
@@ -1278,19 +1498,26 @@ export default function ManagerLiveMapPage() {
                     ) : null}
                     {visibleDrivers.map((driver) => {
                       const isSelected = selectedDriver?.id === driver.id;
+                      const isExpanded = expandedDriverId === driver.id;
                       const accent = statusAccent(driver.status);
                       return (
-                        <button
+                        <div
                           key={driver.id}
-                          type="button"
-                          onClick={() => setSelectedDriverId(driver.id)}
                           className={cn(
-                            "w-full rounded-xl border px-3 py-2.5 text-left transition",
+                            "rounded-xl border px-3 py-2.5 text-left transition",
                             isSelected
                               ? accent.selectedRow
                               : "border-border/70 bg-background hover:bg-muted/40",
                           )}
                         >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedDriverId(driver.id);
+                              setExpandedDriverId((current) => (current === driver.id ? null : driver.id));
+                            }}
+                            className="w-full text-left"
+                          >
                           <div className="flex items-start justify-between gap-3">
                             <div className="flex min-w-0 items-center gap-2.5">
                               <span
@@ -1324,7 +1551,42 @@ export default function ManagerLiveMapPage() {
                               {t("managerLiveMap.panel.warehouse")}: {driver.warehouseId || "-"}
                             </p>
                           </div>
-                        </button>
+                          </button>
+                          {isExpanded ? (
+                            <div className="mt-2 border-t border-border/60 pt-2">
+                              <div className="grid grid-cols-2 gap-2 text-xs">
+                                <div className="rounded-lg border border-border/60 bg-white/75 px-2.5 py-2">
+                                  <p className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+                                    <MapPin className="h-3 w-3" />
+                                    {t("managerLiveMap.panel.coordinates")}
+                                  </p>
+                                  <p className="mt-1 font-medium text-foreground">
+                                    {driver.lat.toFixed(5)}, {driver.lng.toFixed(5)}
+                                  </p>
+                                </div>
+                                <div className="rounded-lg border border-border/60 bg-white/75 px-2.5 py-2">
+                                  <p className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+                                    <Truck className="h-3 w-3" />
+                                    {t("managerLiveMap.controls.status")}
+                                  </p>
+                                  <p className="mt-1 font-medium text-foreground">{formatDriverStatus(driver.status)}</p>
+                                </div>
+                              </div>
+                              <div className="mt-2 flex justify-end">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-8 bg-white/75"
+                                  onClick={centerOnSelectedDriver}
+                                >
+                                  <LocateFixed className="mr-1.5 h-3.5 w-3.5" />
+                                  {t("managerLiveMap.panel.focus")}
+                                </Button>
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
                       );
                     })}
                   </div>
@@ -1368,77 +1630,6 @@ export default function ManagerLiveMapPage() {
                   </Button>
                 </div>
 
-                {selectedDriver ? (
-                  <div
-                    className={cn(
-                      "absolute bottom-4 left-4 z-10 max-w-[95%] rounded-2xl border p-3 shadow-xl backdrop-blur",
-                      statusAccent(selectedDriver.status).panel,
-                    )}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-                          {t("managerLiveMap.panel.summaryTitle")}
-                        </p>
-                        <p className="truncate text-sm font-semibold">
-                          {selectedDriver.name || selectedDriver.email || selectedDriver.id}
-                        </p>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {selectedDriver.email || selectedDriver.id}
-                        </p>
-                      </div>
-                      <Badge variant="outline" className={statusAccent(selectedDriver.status).badge}>
-                        {formatDriverStatus(selectedDriver.status)}
-                      </Badge>
-                    </div>
-                    <div className="my-2 h-px bg-gradient-to-r from-transparent via-border/70 to-transparent" />
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div className="rounded-lg border border-border/60 bg-white/70 px-2.5 py-2">
-                        <p className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-                          <Clock3 className="h-3 w-3" />
-                          {t("managerLiveMap.panel.lastSeen")}
-                        </p>
-                        <p className="mt-1 font-medium text-foreground">{formatLastSeen(selectedDriver.lastSeenAt)}</p>
-                      </div>
-                      <div className="rounded-lg border border-border/60 bg-white/70 px-2.5 py-2">
-                        <p className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-                          <Gauge className="h-3 w-3" />
-                          {t("managerLiveMap.panel.speed")}
-                        </p>
-                        <p className="mt-1 font-medium text-foreground">{selectedDriver.speedKmh} km/h</p>
-                      </div>
-                      <div className="rounded-lg border border-border/60 bg-white/70 px-2.5 py-2">
-                        <p className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-                          <Building2 className="h-3 w-3" />
-                          {t("managerLiveMap.panel.warehouse")}
-                        </p>
-                        <p className="mt-1 truncate font-medium text-foreground">{selectedDriver.warehouseId || "-"}</p>
-                      </div>
-                      <div className="rounded-lg border border-border/60 bg-white/70 px-2.5 py-2">
-                        <p className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-                          <MapPin className="h-3 w-3" />
-                          {t("managerLiveMap.panel.coordinates")}
-                        </p>
-                        <p className="mt-1 font-medium text-foreground">
-                          {selectedDriver.lat.toFixed(5)}, {selectedDriver.lng.toFixed(5)}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="mt-2 flex items-center justify-end gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-8 bg-white/75"
-                        onClick={centerOnSelectedDriver}
-                      >
-                        <LocateFixed className="mr-1.5 h-3.5 w-3.5" />
-                        {t("managerLiveMap.panel.focus")}
-                      </Button>
-                    </div>
-                  </div>
-                ) : null}
-
                 <div className="absolute bottom-4 right-4 grid gap-1 rounded-xl border border-border/70 bg-background/95 p-2 text-xs text-foreground shadow-sm">
                   <div className="inline-flex items-center gap-2">
                     <span className="h-2.5 w-2.5 rounded-full bg-teal-500" />
@@ -1461,15 +1652,15 @@ export default function ManagerLiveMapPage() {
                     {t("managerLiveMap.legend.route")}
                   </div>
                   <div className="inline-flex items-center gap-2">
-                    <span className="h-2.5 w-2.5 rounded-full bg-amber-300" />
+                    <Warehouse className="h-3 w-3 text-amber-500" />
                     {t("managerLiveMap.legend.warehouse")}
                   </div>
                   <div className="inline-flex items-center gap-2">
-                    <span className="h-2.5 w-2.5 rounded-full bg-sky-400" />
+                    <MapPinned className="h-3 w-3 text-sky-500" />
                     {t("managerLiveMap.legend.pickup")}
                   </div>
                   <div className="inline-flex items-center gap-2">
-                    <span className="h-2.5 w-2.5 rounded-full bg-green-500" />
+                    <MapPinned className="h-3 w-3 text-green-500" />
                     {t("managerLiveMap.legend.dropoff")}
                   </div>
                   <div className="inline-flex items-center gap-2">
