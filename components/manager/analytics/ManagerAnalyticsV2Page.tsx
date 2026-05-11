@@ -448,19 +448,19 @@ export function ManagerAnalyticsV2Page() {
             : keys;
 
         if (effectiveKeys.includes("summary")) {
-          maybeInvalidate("summary", reason === "scheduled" ? 30_000 : 10_000);
+          maybeInvalidate("summary", reason === "scheduled" ? 30_000 : 1_500);
         }
         if (effectiveKeys.includes("trend")) {
-          maybeInvalidate("trend", reason === "scheduled" ? 30_000 : 10_000);
+          maybeInvalidate("trend", reason === "scheduled" ? 30_000 : 5_000);
         }
         if (effectiveKeys.includes("warnings")) {
-          maybeInvalidate("warnings", 15_000);
+          maybeInvalidate("warnings", reason === "scheduled" ? 15_000 : 3_000);
         }
         if (showQueue && effectiveKeys.includes("finance-queue")) {
-          maybeInvalidate("finance-queue", 20_000);
+          maybeInvalidate("finance-queue", reason === "scheduled" ? 20_000 : 4_000);
         }
         if (reason !== "scheduled") {
-          maybeInvalidate("ops", 20_000);
+          maybeInvalidate("ops", 10_000);
         }
       },
       onError: () => setStreamConnectedAt(null),
