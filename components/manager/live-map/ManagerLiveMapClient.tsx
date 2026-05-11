@@ -79,6 +79,17 @@ type MapboxMapLike = {
   remove: () => void;
 };
 
+type DriverAnimationState = {
+  from: [number, number];
+  to: [number, number];
+  fromHeading: number;
+  toHeading: number;
+  status: LiveMapDriverStatus;
+  label: string;
+  startedAt: number;
+  durationMs: number;
+};
+
 type MapboxLike = {
   accessToken: string;
   Map: new (options: {
@@ -137,6 +148,7 @@ const INITIAL_SNAPSHOT_VIEWPORT: LiveMapViewport = {
   maxLng: 69.65,
 };
 const STREAM_VIEWPORT_UPDATE_MIN_GAP_MS = 20_000;
+const DRIVER_ANIMATION_DURATION_MS = 2200;
 const LIVE_MAP_ICON_ID = {
   driverOnline: "cp-driver-online",
   driverIdle: "cp-driver-idle",
@@ -191,6 +203,36 @@ function driverDisplay(driver: ManagerLiveMapDriver, tick: number) {
     lat: driver.lat + driftLat,
     lng: driver.lng + driftLng,
     headingDeg: Math.round((driver.headingDeg + tick * 9) % 360),
+  };
+}
+
+function shortestHeadingDelta(from: number, to: number) {
+  return ((((to - from) % 360) + 540) % 360) - 180;
+}
+
+function easeOutCubic(value: number) {
+  return 1 - Math.pow(1 - value, 3);
+}
+
+function makeDriverFeature(args: {
+  id: string;
+  coordinates: [number, number];
+  status: LiveMapDriverStatus;
+  label: string;
+  headingDeg: number;
+}): PointFeature<DriverFeatureProps> {
+  return {
+    type: "Feature",
+    geometry: {
+      type: "Point",
+      coordinates: args.coordinates,
+    },
+    properties: {
+      id: args.id,
+      status: args.status,
+      label: args.label,
+      headingDeg: args.headingDeg,
+    },
   };
 }
 
@@ -318,41 +360,38 @@ function makeCanvasImage(
 }
 
 function makeDriverCarIcon(color: string) {
-  return makeCanvasImage(44, (ctx, size) => {
-    const cx = size / 2;
-    const cy = size / 2;
+  return makeCanvasImage(48, (ctx, size) => {
+    // Rasterized Lucide CarFront icon for Mapbox sprite usage.
+    const scale = size / 24;
+    ctx.save();
+    ctx.scale(scale, scale);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.lineWidth = 1.9;
+    ctx.strokeStyle = "rgba(15,23,42,0.28)";
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
 
-    // body
-    ctx.fillStyle = color;
-    roundedRect(ctx, cx - 14, cy - 3, 28, 12, 4);
-    ctx.fill();
+    const drawCarFront = (stroke: string, width: number) => {
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = width;
+      const p1 = new Path2D("M21 8l-2 2-1.5-3.7A2 2 0 0 0 15.646 5H8.4a2 2 0 0 0-1.903 1.257L5 10 3 8");
+      const p2 = new Path2D("M5 18v2");
+      const p3 = new Path2D("M19 18v2");
+      ctx.stroke(p1);
+      roundedRect(ctx, 3, 10, 18, 8, 2);
+      ctx.stroke();
+      ctx.stroke(p2);
+      ctx.stroke(p3);
+      ctx.beginPath();
+      ctx.arc(7, 14, 0.65, 0, Math.PI * 2);
+      ctx.arc(17, 14, 0.65, 0, Math.PI * 2);
+      ctx.fillStyle = stroke;
+      ctx.fill();
+    };
 
-    // roof
-    ctx.beginPath();
-    ctx.moveTo(cx - 8, cy - 3);
-    ctx.lineTo(cx - 4, cy - 10);
-    ctx.lineTo(cx + 4, cy - 10);
-    ctx.lineTo(cx + 8, cy - 3);
-    ctx.closePath();
-    ctx.fill();
-
-    // windows
-    ctx.fillStyle = "rgba(255,255,255,0.9)";
-    roundedRect(ctx, cx - 5, cy - 8.5, 10, 5.5, 2);
-    ctx.fill();
-
-    // wheels
-    ctx.fillStyle = "#111827";
-    ctx.beginPath();
-    ctx.arc(cx - 9, cy + 9, 3, 0, Math.PI * 2);
-    ctx.arc(cx + 9, cy + 9, 3, 0, Math.PI * 2);
-    ctx.fill();
-
-    // outline for contrast
-    ctx.strokeStyle = "rgba(15,23,42,0.35)";
-    ctx.lineWidth = 1;
-    roundedRect(ctx, cx - 14, cy - 3, 28, 12, 4);
-    ctx.stroke();
+    drawCarFront("rgba(15,23,42,0.45)", 3.8);
+    drawCarFront(color, 2.2);
+    ctx.restore();
   });
 }
 
@@ -497,6 +536,11 @@ export default function ManagerLiveMapPage() {
   const viewportDebounceTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const streamHealthyRef = React.useRef(false);
   const lastStreamViewportUpdateAtRef = React.useRef(0);
+  const driverAnimationTargetsRef = React.useRef<globalThis.Map<string, PointFeature<DriverFeatureProps>>>(
+    new globalThis.Map(),
+  );
+  const driverAnimationStatesRef = React.useRef<globalThis.Map<string, DriverAnimationState>>(new globalThis.Map());
+  const driverAnimationFrameRef = React.useRef<number | null>(null);
 
   React.useEffect(() => {
     streamHealthyRef.current = streamHealthy;
@@ -774,19 +818,15 @@ export default function ManagerLiveMapPage() {
   const driverFeatures = React.useMemo<FeatureCollection<PointFeature<DriverFeatureProps>>>(() => {
     return {
       type: "FeatureCollection",
-      features: filteredDrivers.map((driver) => ({
-        type: "Feature",
-        geometry: {
-          type: "Point",
-          coordinates: [driver.lng, driver.lat],
-        },
-        properties: {
+      features: filteredDrivers.map((driver) =>
+        makeDriverFeature({
           id: driver.id,
+          coordinates: [driver.lng, driver.lat],
           status: driver.status,
           label: driverLabel(driver),
           headingDeg: driver.headingDeg ?? 0,
-        },
-      })),
+        }),
+      ),
     };
   }, [filteredDrivers]);
 
@@ -1268,6 +1308,185 @@ export default function ManagerLiveMapPage() {
     };
   }, [mapContainerEl, mapReadyTick]);
 
+  const updateDriverMapSources = React.useCallback(
+    (collection: FeatureCollection<PointFeature<DriverFeatureProps>>) => {
+      const map = mapRef.current;
+      if (!map || !isMapReadyRef.current) return;
+
+      const visibleCollection = showDrivers ? collection : EMPTY_POINTS;
+      map.getSource("cp-live-drivers")?.setData(visibleCollection);
+
+      if (!showDrivers || !selectedDriverId) {
+        map.getSource("cp-live-driver-selected")?.setData(EMPTY_POINTS);
+        return;
+      }
+
+      const selectedFeature = collection.features.find(
+        (feature) => feature.properties.id === selectedDriverId,
+      );
+      map.getSource("cp-live-driver-selected")?.setData(
+        selectedFeature
+          ? {
+              type: "FeatureCollection",
+              features: [
+                {
+                  ...selectedFeature,
+                  properties: {
+                    id: selectedFeature.properties.id,
+                    status: selectedFeature.properties.status,
+                    label: selectedFeature.properties.label,
+                  },
+                },
+              ],
+            }
+          : EMPTY_POINTS,
+      );
+    },
+    [selectedDriverId, showDrivers],
+  );
+
+  React.useEffect(() => {
+    if (!mapRef.current || !isMapReadyRef.current) return;
+
+    if (!showDrivers) {
+      if (driverAnimationFrameRef.current != null) {
+        window.cancelAnimationFrame(driverAnimationFrameRef.current);
+        driverAnimationFrameRef.current = null;
+      }
+      driverAnimationTargetsRef.current.clear();
+      driverAnimationStatesRef.current.clear();
+      updateDriverMapSources(EMPTY_POINTS as FeatureCollection<PointFeature<DriverFeatureProps>>);
+      return;
+    }
+
+    const now = performance.now();
+    const previousTargets = driverAnimationTargetsRef.current;
+    const previousAnimations = driverAnimationStatesRef.current;
+    const nextTargets = new globalThis.Map<string, PointFeature<DriverFeatureProps>>();
+    const nextAnimations = new globalThis.Map<string, DriverAnimationState>();
+
+    const currentFeatureFor = (id: string) => {
+      const previousAnimation = previousAnimations.get(id);
+      const previousTarget = previousTargets.get(id);
+      if (!previousAnimation) return previousTarget;
+
+      const progress = Math.min(1, Math.max(0, (now - previousAnimation.startedAt) / previousAnimation.durationMs));
+      const eased = easeOutCubic(progress);
+      const fromLng = previousAnimation.from[0];
+      const fromLat = previousAnimation.from[1];
+      const toLng = previousAnimation.to[0];
+      const toLat = previousAnimation.to[1];
+      const heading =
+        previousAnimation.fromHeading +
+        shortestHeadingDelta(previousAnimation.fromHeading, previousAnimation.toHeading) * eased;
+
+      return makeDriverFeature({
+        id,
+        coordinates: [
+          fromLng + (toLng - fromLng) * eased,
+          fromLat + (toLat - fromLat) * eased,
+        ],
+        status: previousAnimation.status,
+        label: previousAnimation.label,
+        headingDeg: Math.round((heading + 360) % 360),
+      });
+    };
+
+    for (const feature of driverFeatures.features) {
+      const id = feature.properties.id;
+      const currentFeature = currentFeatureFor(id);
+      const from = currentFeature?.geometry.coordinates ?? feature.geometry.coordinates;
+      const to = feature.geometry.coordinates;
+      const fromHeading = Number(currentFeature?.properties.headingDeg ?? feature.properties.headingDeg ?? 0);
+      const toHeading = Number(feature.properties.headingDeg ?? fromHeading);
+      const hasPositionChange =
+        Math.abs(from[0] - to[0]) > 0.000001 || Math.abs(from[1] - to[1]) > 0.000001;
+      const hasHeadingChange = Math.abs(shortestHeadingDelta(fromHeading, toHeading)) > 2;
+
+      nextTargets.set(id, feature);
+
+      if (currentFeature && (hasPositionChange || hasHeadingChange)) {
+        nextAnimations.set(id, {
+          from,
+          to,
+          fromHeading,
+          toHeading,
+          status: feature.properties.status,
+          label: feature.properties.label,
+          startedAt: now,
+          durationMs: DRIVER_ANIMATION_DURATION_MS,
+        });
+      }
+    }
+
+    driverAnimationTargetsRef.current = nextTargets;
+    driverAnimationStatesRef.current = nextAnimations;
+
+    const renderFrame = () => {
+      const frameNow = performance.now();
+      const animatedFeatures: Array<PointFeature<DriverFeatureProps>> = [];
+      const states = driverAnimationStatesRef.current;
+
+      for (const [id, targetFeature] of driverAnimationTargetsRef.current) {
+        const animation = states.get(id);
+        if (!animation) {
+          animatedFeatures.push(targetFeature);
+          continue;
+        }
+
+        const progress = Math.min(1, Math.max(0, (frameNow - animation.startedAt) / animation.durationMs));
+        const eased = easeOutCubic(progress);
+        const [fromLng, fromLat] = animation.from;
+        const [toLng, toLat] = animation.to;
+        const heading =
+          animation.fromHeading +
+          shortestHeadingDelta(animation.fromHeading, animation.toHeading) * eased;
+
+        animatedFeatures.push(
+          makeDriverFeature({
+            id,
+            coordinates: [
+              fromLng + (toLng - fromLng) * eased,
+              fromLat + (toLat - fromLat) * eased,
+            ],
+            status: animation.status,
+            label: animation.label,
+            headingDeg: Math.round((heading + 360) % 360),
+          }),
+        );
+
+        if (progress >= 1) {
+          states.delete(id);
+        }
+      }
+
+      updateDriverMapSources({
+        type: "FeatureCollection",
+        features: animatedFeatures,
+      });
+
+      if (states.size > 0) {
+        driverAnimationFrameRef.current = window.requestAnimationFrame(renderFrame);
+      } else {
+        driverAnimationFrameRef.current = null;
+      }
+    };
+
+    if (driverAnimationFrameRef.current != null) {
+      window.cancelAnimationFrame(driverAnimationFrameRef.current);
+      driverAnimationFrameRef.current = null;
+    }
+
+    renderFrame();
+
+    return () => {
+      if (driverAnimationFrameRef.current != null) {
+        window.cancelAnimationFrame(driverAnimationFrameRef.current);
+        driverAnimationFrameRef.current = null;
+      }
+    };
+  }, [driverFeatures, showDrivers, updateDriverMapSources]);
+
   React.useEffect(() => {
     const map = mapRef.current;
     if (!map || !isMapReadyRef.current) return;
@@ -1277,10 +1496,6 @@ export default function ManagerLiveMapPage() {
     map.getSource("cp-live-pickups")?.setData(showOrders ? pickupFeatures : EMPTY_POINTS);
     map.getSource("cp-live-dropoffs")?.setData(showOrders ? dropoffFeatures : EMPTY_POINTS);
     map.getSource("cp-live-warehouses")?.setData(showWarehouses ? warehouseFeatures : EMPTY_POINTS);
-    map.getSource("cp-live-drivers")?.setData(showDrivers ? driverFeatures : EMPTY_POINTS);
-    map
-      .getSource("cp-live-driver-selected")
-      ?.setData(showDrivers && selectedDriver ? selectedDriverFeature : EMPTY_POINTS);
 
     if (!fittedInitiallyRef.current && allVisibleCoords.length) {
       fittedInitiallyRef.current = true;
@@ -1294,9 +1509,6 @@ export default function ManagerLiveMapPage() {
     pickupFeatures,
     recenterMap,
     routeFeatures,
-    selectedDriver,
-    selectedDriverFeature,
-    showDrivers,
     showHeatmap,
     showOrders,
     showRoutes,
