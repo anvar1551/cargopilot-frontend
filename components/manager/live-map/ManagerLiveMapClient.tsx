@@ -474,6 +474,12 @@ function normalizeViewport(next: LiveMapViewport | null): LiveMapViewport | null
   return { minLat, minLng, maxLat, maxLng };
 }
 
+function liveMapViewportKey(viewport: LiveMapViewport | null) {
+  const normalized = normalizeViewport(viewport);
+  if (!normalized) return "global";
+  return `${normalized.minLat}:${normalized.minLng}:${normalized.maxLat}:${normalized.maxLng}`;
+}
+
 function hasMeaningfulViewportChange(
   current: LiveMapViewport | null,
   next: LiveMapViewport | null,
@@ -529,6 +535,11 @@ export default function ManagerLiveMapPage() {
   const [mapError, setMapError] = React.useState<string | null>(null);
   const [mapContainerEl, setMapContainerEl] = React.useState<HTMLDivElement | null>(null);
   const [mapReadyTick, setMapReadyTick] = React.useState(0);
+  const activeSnapshotViewport = streamViewport ?? INITIAL_SNAPSHOT_VIEWPORT;
+  const liveMapSnapshotQueryKey = React.useMemo(
+    () => ["manager-live-map-snapshot", liveMapViewportKey(activeSnapshotViewport)] as const,
+    [activeSnapshotViewport],
+  );
   const mapRef = React.useRef<MapboxMapLike | null>(null);
   const isMapReadyRef = React.useRef(false);
   const fittedInitiallyRef = React.useRef(false);
@@ -582,8 +593,8 @@ export default function ManagerLiveMapPage() {
   }, []);
 
   const snapshotQuery = useQuery({
-    queryKey: ["manager-live-map-snapshot"],
-    queryFn: () => fetchManagerLiveMapSnapshot(streamViewport ?? INITIAL_SNAPSHOT_VIEWPORT),
+    queryKey: liveMapSnapshotQueryKey,
+    queryFn: () => fetchManagerLiveMapSnapshot(activeSnapshotViewport),
     refetchInterval: isPageVisible && !streamHealthy ? 180_000 : false,
     staleTime: 45_000,
     placeholderData: (prev) => prev,
@@ -599,7 +610,7 @@ export default function ManagerLiveMapPage() {
       },
       onEvent: (event: LiveMapEvent) => {
         setStreamHealthy(true);
-        queryClient.setQueryData<ManagerLiveMapSnapshot>(["manager-live-map-snapshot"], (current) => {
+        queryClient.setQueryData<ManagerLiveMapSnapshot>(liveMapSnapshotQueryKey, (current) => {
           if (event.type === "driver_location_upsert") {
             const payload = event.payload;
             if (!isFiniteCoord(payload.lat) || !isFiniteCoord(payload.lng)) return current;
@@ -720,7 +731,7 @@ export default function ManagerLiveMapPage() {
       unsubscribe();
       setStreamHealthy(false);
     };
-  }, [isPageVisible, mapReadyTick, queryClient, streamViewport]);
+  }, [isPageVisible, liveMapSnapshotQueryKey, mapReadyTick, queryClient, streamViewport]);
 
   React.useEffect(() => {
     if (!isPageVisible || !snapshotQuery.data?.isMock) return;
@@ -1503,7 +1514,6 @@ export default function ManagerLiveMapPage() {
     }
   }, [
     allVisibleCoords.length,
-    driverFeatures,
     dropoffFeatures,
     heatmapFeatures,
     pickupFeatures,
