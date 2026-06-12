@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useFieldArray, useForm, useWatch } from "react-hook-form";
@@ -14,8 +14,18 @@ import {
 } from "@/lib/validators/order";
 import type { CreateOrderParcelsFieldArray } from "./create-order-form.types";
 import { createOrder, type Order, type OrdersResponse } from "@/lib/orders";
-import { fetchPricingQuote, type PricingQuote } from "@/lib/pricing";
+import {
+  fetchPricingQuote,
+  fetchPricingQuoteOptions,
+  type PricingQuote,
+  type PricingQuoteOptionsResponse,
+} from "@/lib/pricing";
 import { getUser, type AuthUser } from "@/lib/auth";
+import {
+  getCompanyPaymentPolicy,
+  listAvailablePaymentProviders,
+  type PaymentEnvironment,
+} from "@/lib/paymentProviders";
 import { cn } from "@/lib/utils";
 
 import { useI18n } from "@/components/i18n/I18nProvider";
@@ -66,6 +76,47 @@ type CreateOrderResponse = {
 type CreateOrderMutationContext = {
   optimisticOrderId?: string;
 };
+
+const ONLINE_PRICING_REASON_KEYS = new Set([
+  "missing_required_fields",
+  "origin_region_not_found",
+  "destination_region_not_found",
+  "zone_not_found",
+  "tariff_plan_not_found",
+  "rate_not_found",
+]);
+
+function extractApiErrorMessage(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  const candidate = error as {
+    response?: { data?: { error?: string } };
+    message?: string;
+  };
+  return candidate.response?.data?.error ?? candidate.message;
+}
+
+function resolveFriendlyCreateOrderError(
+  message: string | undefined,
+  t: (key: string, values?: Record<string, string | number>) => string,
+): string | null {
+  if (!message) return null;
+
+  const reasonMatch = message.match(/\(([^)]+)\)\s*$/);
+  const reason = reasonMatch?.[1]?.trim();
+  if (reason && ONLINE_PRICING_REASON_KEYS.has(reason)) {
+    return t(`createOrder.payment.quoteReason.${reason}`);
+  }
+
+  if (message.includes("No payable pricing components found for online payment")) {
+    return t("createOrder.payment.onlinePricingNoComponents");
+  }
+
+  if (message.includes("Online payment requires active pricing rule quote")) {
+    return t("createOrder.payment.onlinePricingRequired");
+  }
+
+  return null;
+}
 
 function buildOptimisticOrder(
   values: CreateOrderPayload,
@@ -188,6 +239,7 @@ export default function CreateOrderDialog({
   const qc = useQueryClient();
   const user = useMemo(() => getUser(), []);
   const isManager = mode === "manager";
+  const paymentAttemptKeyRef = useRef<string | null>(null);
 
   const form = useForm<CreateOrderFormValues, unknown, CreateOrderPayload>({
     resolver: zodResolver(createOrderPayloadSchema),
@@ -213,10 +265,11 @@ export default function CreateOrderDialog({
       },
       shipment: {
         serviceType: "DOOR_TO_DOOR",
+        transportMode: "ROAD",
         weightKg: undefined,
         codEnabled: false,
         codAmount: undefined,
-        currency: "EUR",
+        currency: "UZS",
         parcels: [{ weightKg: null, lengthCm: null, widthCm: null, heightCm: null }],
         pieceTotal: 1,
         fragile: false,
@@ -225,12 +278,14 @@ export default function CreateOrderDialog({
         itemValue: undefined,
       },
       payment: {
-        paymentType: null,
-        deliveryChargePaidBy: null,
+        paymentType: "CASH",
+        provider: null,
+        idempotencyKey: null,
+        deliveryChargePaidBy: "SENDER",
         codPaidStatus: null,
         serviceCharge: undefined,
-        serviceChargePaidStatus: null,
-        ifRecipientNotAvailable: null,
+        serviceChargePaidStatus: "NOT_PAID",
+        ifRecipientNotAvailable: "CALL_SENDER",
       },
       schedule: {
         plannedPickupAt: null,
@@ -265,6 +320,14 @@ export default function CreateOrderDialog({
     control: form.control,
     name: "addresses.receiverAddress.city",
   });
+  const senderCountryCode = useWatch({
+    control: form.control,
+    name: "addresses.senderAddress.country",
+  });
+  const receiverCountryCode = useWatch({
+    control: form.control,
+    name: "addresses.receiverAddress.country",
+  });
   const destinationCity = useWatch({
     control: form.control,
     name: "addresses.destinationCity",
@@ -272,6 +335,10 @@ export default function CreateOrderDialog({
   const serviceType = useWatch({
     control: form.control,
     name: "shipment.serviceType",
+  });
+  const transportMode = useWatch({
+    control: form.control,
+    name: "shipment.transportMode",
   });
   const weightKg = useWatch({
     control: form.control,
@@ -301,22 +368,80 @@ export default function CreateOrderDialog({
       "pricing-quote",
       pricingCustomerEntityId,
       serviceType,
+      transportMode,
       weightKg,
       pricingOriginQuery,
       pricingDestinationQuery,
+      senderCountryCode,
+      receiverCountryCode,
     ],
     queryFn: () =>
       fetchPricingQuote({
         customerEntityId: pricingCustomerEntityId,
         serviceType: serviceType ?? null,
+        transportMode: transportMode?.trim() || null,
         weightKg: typeof weightKg === "number" ? weightKg : null,
         originQuery: pricingOriginQuery,
         destinationQuery: pricingDestinationQuery,
+        originCountryCode: senderCountryCode?.trim() || null,
+        destinationCountryCode: receiverCountryCode?.trim() || null,
       }),
     enabled: pricingReady,
     retry: false,
     staleTime: 30_000,
   });
+
+  const pricingQuoteOptionsQuery = useQuery<PricingQuoteOptionsResponse>({
+    queryKey: [
+      "pricing-quote-options",
+      pricingCustomerEntityId,
+      serviceType,
+      weightKg,
+      pricingOriginQuery,
+      pricingDestinationQuery,
+      senderCountryCode,
+      receiverCountryCode,
+    ],
+    queryFn: () =>
+      fetchPricingQuoteOptions({
+        customerEntityId: pricingCustomerEntityId,
+        serviceType: serviceType ?? null,
+        weightKg: typeof weightKg === "number" ? weightKg : null,
+        originQuery: pricingOriginQuery,
+        destinationQuery: pricingDestinationQuery,
+        originCountryCode: senderCountryCode?.trim() || null,
+        destinationCountryCode: receiverCountryCode?.trim() || null,
+      }),
+    enabled: pricingReady,
+    retry: false,
+    staleTime: 30_000,
+  });
+
+  useEffect(() => {
+    if (!open || !pricingReady) return;
+    const availableModes = pricingQuoteOptionsQuery.data?.availableModes ?? [];
+    if (!availableModes.length) return;
+    const forcedMode =
+      availableModes.length === 1
+        ? availableModes[0]
+        : pricingQuoteOptionsQuery.data?.recommendedTransportMode ?? availableModes[0];
+    const currentMode = (form.getValues("shipment.transportMode") ?? "ROAD")
+      .trim()
+      .toUpperCase();
+    if (currentMode === forcedMode && availableModes.includes(currentMode)) return;
+    if (availableModes.length > 1 && availableModes.includes(currentMode)) return;
+
+    form.setValue("shipment.transportMode", forcedMode as never, {
+      shouldDirty: false,
+      shouldValidate: true,
+    });
+  }, [
+    form,
+    open,
+    pricingReady,
+    pricingQuoteOptionsQuery.data?.availableModes,
+    pricingQuoteOptionsQuery.data?.recommendedTransportMode,
+  ]);
 
   useEffect(() => {
     if (!isManager || !presetCustomerEntityId) return;
@@ -364,6 +489,32 @@ export default function CreateOrderDialog({
   }, [form, open, pricingQuoteQuery.data, pricingReady]);
 
   const paymentsEnabled = process.env.NEXT_PUBLIC_PAYMENTS_ENABLED === "true";
+  const paymentEnvironment: PaymentEnvironment =
+    process.env.NEXT_PUBLIC_PAYMENT_ENV === "PRODUCTION" ? "PRODUCTION" : "TEST";
+
+  const paymentType = useWatch({
+    control: form.control,
+    name: "payment.paymentType",
+  });
+
+  const paymentPolicyQuery = useQuery({
+    queryKey: ["company-payment-policy", user?.companyId],
+    queryFn: () => getCompanyPaymentPolicy({ companyId: user?.companyId ?? undefined }),
+    enabled: open && Boolean(user?.companyId),
+  });
+
+  const availableProvidersQuery = useQuery({
+    queryKey: ["available-payment-providers", user?.companyId, paymentEnvironment],
+    queryFn: () =>
+      listAvailablePaymentProviders({
+        companyId: user?.companyId ?? undefined,
+        environment: paymentEnvironment,
+      }),
+    enabled: open && Boolean(user?.companyId),
+  });
+
+  const effectivePaymentsEnabled =
+    paymentPolicyQuery.data?.effectiveOnlinePaymentsEnabled ?? paymentsEnabled;
 
   const mutation = useMutation<
     CreateOrderResponse,
@@ -372,6 +523,10 @@ export default function CreateOrderDialog({
     CreateOrderMutationContext
   >({
     mutationFn: async (values: CreateOrderPayload) => {
+      const onlinePaymentType =
+        values.payment?.paymentType === "CARD" ||
+        values.payment?.paymentType === "TRANSFER";
+
       const normalized: CreateOrderPayload = {
         ...values,
         shipment: {
@@ -384,10 +539,41 @@ export default function CreateOrderDialog({
         normalized.customerEntityId = user?.customerEntityId ?? undefined;
       }
 
+      if (onlinePaymentType && effectivePaymentsEnabled) {
+        if (!paymentAttemptKeyRef.current) {
+          paymentAttemptKeyRef.current =
+            globalThis.crypto?.randomUUID?.() ??
+            `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        }
+
+        const policy = paymentPolicyQuery.data;
+        const availableProviders = availableProvidersQuery.data ?? [];
+        const fallbackProvider =
+          normalized.payment?.provider ??
+          policy?.defaultProvider ??
+          (availableProviders.length === 1 ? availableProviders[0].provider : null);
+
+        normalized.payment = {
+          ...(normalized.payment ?? {}),
+          provider: fallbackProvider,
+          idempotencyKey: paymentAttemptKeyRef.current,
+        };
+      } else {
+        paymentAttemptKeyRef.current = null;
+        normalized.payment = {
+          ...(normalized.payment ?? {}),
+          provider: null,
+          idempotencyKey: null,
+        };
+      }
+
       return createOrder(normalized) as Promise<CreateOrderResponse>;
     },
     onMutate: async (variables) => {
-      if (paymentsEnabled) return {};
+      const onlinePaymentType =
+        variables.payment?.paymentType === "CARD" ||
+        variables.payment?.paymentType === "TRANSFER";
+      if (effectivePaymentsEnabled && onlinePaymentType) return {};
 
       const optimisticOrder = buildOptimisticOrder(
         variables,
@@ -445,6 +631,7 @@ export default function CreateOrderDialog({
       }
       setTab("customer");
       form.reset();
+      paymentAttemptKeyRef.current = null;
 
       if (data?.paymentUrl) window.location.href = data.paymentUrl;
     },
@@ -457,15 +644,13 @@ export default function CreateOrderDialog({
         setOpen(true);
       }
 
-      const message =
-        typeof error === "object" && error !== null
-          ? (
-              error as {
-                response?: { data?: { error?: string } };
-                message?: string;
-              }
-            ).response?.data?.error ?? (error as { message?: string }).message
-          : undefined;
+      const message = extractApiErrorMessage(error);
+      const friendlyMessage = resolveFriendlyCreateOrderError(message, t);
+      if (friendlyMessage) {
+        setTab("payment");
+        toast.error(friendlyMessage);
+        return;
+      }
 
       toast.error(message || t("createOrder.createdFailed"));
     },
@@ -604,6 +789,9 @@ export default function CreateOrderDialog({
                     parcels={parcels}
                     pricingQuote={pricingQuoteQuery.data}
                     pricingLoading={pricingQuoteQuery.isFetching}
+                    availableTransportModes={
+                      pricingQuoteOptionsQuery.data?.availableModes ?? []
+                    }
                   />
                 </TabsContent>
 
@@ -613,13 +801,15 @@ export default function CreateOrderDialog({
                     paymentsEnabled={paymentsEnabled}
                     pricingQuote={pricingQuoteQuery.data}
                     pricingLoading={pricingQuoteQuery.isFetching}
+                    paymentPolicy={paymentPolicyQuery.data}
+                    availableProviders={availableProvidersQuery.data ?? []}
                   />
                 </TabsContent>
 
                 <TabsContent value="review" className="mt-0 space-y-4 data-[state=inactive]:hidden" forceMount>
                   <ReviewStep
                     form={form}
-                    paymentsEnabled={paymentsEnabled}
+                    paymentsEnabled={effectivePaymentsEnabled}
                     pricingQuote={pricingQuoteQuery.data}
                   />
                 </TabsContent>
@@ -660,7 +850,8 @@ export default function CreateOrderDialog({
                 >
                   {mutation.isPending
                     ? t("createOrder.creating")
-                    : paymentsEnabled
+                    : effectivePaymentsEnabled &&
+                        (paymentType === "CARD" || paymentType === "TRANSFER")
                       ? t("createOrder.createAndPay")
                       : t("createOrder.createShipment")}
                 </Button>

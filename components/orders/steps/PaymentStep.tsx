@@ -15,6 +15,7 @@ import {
 import type { CreateOrderFormApi } from "@/components/orders/create-order-form.types";
 import type { CreateOrderFormValues } from "@/lib/validators/order";
 import type { PricingQuote } from "@/lib/pricing";
+import type { AvailablePaymentProvider, CompanyPaymentPolicy } from "@/lib/paymentProviders";
 
 import { useI18n } from "@/components/i18n/I18nProvider";
 import { Button } from "@/components/ui/button";
@@ -39,6 +40,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { IconField } from "../IconField";
 
 const PAYMENT_TYPES = ["CASH", "CARD", "COD", "TRANSFER", "OTHER"] as const;
+const ONLINE_PAYMENT_TYPES = new Set(["CARD", "TRANSFER"]);
 const PAID_BY = ["SENDER", "RECIPIENT", "COMPANY"] as const;
 const PAID_STATUS = ["NOT_PAID", "PAID", "PARTIAL"] as const;
 const RECIPIENT_UNAVAILABLE = [
@@ -249,22 +251,79 @@ function DateTimeField({
 
 export function PaymentStep({
   form,
+  paymentsEnabled,
   pricingQuote,
   pricingLoading,
+  paymentPolicy,
+  availableProviders,
 }: {
   form: CreateOrderFormApi;
   paymentsEnabled?: boolean;
   pricingQuote?: PricingQuote;
   pricingLoading?: boolean;
+  paymentPolicy?: CompanyPaymentPolicy | null;
+  availableProviders?: AvailablePaymentProvider[];
 }) {
   const { t } = useI18n();
   const paymentType = form.watch("payment.paymentType");
+  const selectedProvider = form.watch("payment.provider");
   const deliveryChargePaidBy = form.watch("payment.deliveryChargePaidBy");
   const ifRecipientNotAvailable = form.watch("payment.ifRecipientNotAvailable");
   const serviceChargePaidStatus = form.watch("payment.serviceChargePaidStatus");
   const plannedPickupAt = form.watch("schedule.plannedPickupAt");
   const plannedDeliveryAt = form.watch("schedule.plannedDeliveryAt");
   const promiseDate = form.watch("schedule.promiseDate");
+
+  const isOnlineType = Boolean(paymentType && ONLINE_PAYMENT_TYPES.has(paymentType));
+  const globalPaymentsEnabled =
+    paymentPolicy?.globalPaymentsEnabled ?? Boolean(paymentsEnabled);
+  const companyPaymentsEnabled = paymentPolicy?.onlinePaymentsEnabled;
+  const policyAllowsOnline = Boolean(
+    paymentPolicy?.effectiveOnlinePaymentsEnabled ?? globalPaymentsEnabled,
+  );
+  const providerOptions = availableProviders ?? [];
+  const providerSelectionDisabled =
+    !isOnlineType ||
+    !policyAllowsOnline ||
+    providerOptions.length === 0 ||
+    (paymentPolicy ? !paymentPolicy.allowProviderOverride : false);
+
+  const onlineDisabledReason = !policyAllowsOnline
+    ? !globalPaymentsEnabled
+      ? "Disabled by global switch (PAYMENTS_ENABLED=false)"
+      : companyPaymentsEnabled === false
+        ? "Disabled in company payment policy"
+        : "Online payments disabled"
+    : null;
+
+  const preferredProvider =
+    paymentPolicy?.defaultProvider ??
+    (providerOptions.length === 1 ? providerOptions[0].provider : null);
+
+  React.useEffect(() => {
+    if (!isOnlineType) {
+      form.setValue("payment.provider", null, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+      return;
+    }
+
+    if (!policyAllowsOnline) {
+      form.setValue("payment.provider", null, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+      return;
+    }
+
+    if (!selectedProvider && preferredProvider) {
+      form.setValue("payment.provider", preferredProvider, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+    }
+  }, [form, isOnlineType, policyAllowsOnline, preferredProvider, selectedProvider]);
 
   return (
     <div className="space-y-4">
@@ -396,6 +455,55 @@ export function PaymentStep({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Online provider</Label>
+            <Select
+              value={selectedProvider ?? undefined}
+              onValueChange={(value) =>
+                form.setValue("payment.provider", value as "CLICK" | "PAYME" | "UZUM" | "STRIPE", {
+                  shouldValidate: true,
+                  shouldDirty: true,
+                })
+              }
+              disabled={providerSelectionDisabled}
+            >
+              <SelectTrigger className="rounded-2xl">
+                <SelectValue
+                  placeholder={
+                    !isOnlineType
+                      ? "Only for card/transfer"
+                      : onlineDisabledReason
+                        ? onlineDisabledReason
+                        : providerOptions.length === 0
+                          ? "No active providers"
+                          : "Select provider"
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {providerOptions.map((item) => (
+                  <SelectItem key={`${item.provider}-${item.environment}`} value={item.provider}>
+                    {item.provider} ({item.integrationMode})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <span>Global switch: {globalPaymentsEnabled ? "ON" : "OFF"}</span>
+              {paymentPolicy ? (
+                <span>Company policy: {paymentPolicy.onlinePaymentsEnabled ? "ON" : "OFF"}</span>
+              ) : null}
+              <span>Effective: {policyAllowsOnline ? "ON" : "OFF"}</span>
+              {paymentPolicy?.defaultProvider ? (
+                <span>Default: {paymentPolicy.defaultProvider}</span>
+              ) : null}
+              {paymentPolicy && !paymentPolicy.allowProviderOverride ? <span>Override locked</span> : null}
+            </div>
+            {onlineDisabledReason ? (
+              <p className="mt-1 text-xs text-amber-700">{onlineDisabledReason}</p>
+            ) : null}
           </div>
         </div>
 

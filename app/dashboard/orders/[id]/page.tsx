@@ -17,6 +17,16 @@ function prettyStatus(status: string) {
   return String(status || "").replaceAll("_", " ");
 }
 
+function prettyPaymentState(state?: string | null) {
+  const value = String(state ?? "").toUpperCase();
+  if (!value || value === "UNPAID") return "Unpaid";
+  if (value === "PENDING") return "Pending";
+  if (value === "PAID") return "Paid";
+  if (value === "FAILED") return "Failed";
+  if (value === "REFUNDED") return "Refunded";
+  return value;
+}
+
 export default function SharedOrderDetailsPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
@@ -100,6 +110,9 @@ export default function SharedOrderDetailsPage() {
             </div>
             <div>
               <span className="font-medium">Warehouse:</span> {order.currentWarehouse?.name ?? "-"}
+            </div>
+            <div>
+              <span className="font-medium">Payment:</span> {prettyPaymentState(order.paymentState)}
             </div>
           </CardContent>
         </Card>

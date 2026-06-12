@@ -110,7 +110,7 @@ export type SupportAssignee = {
 };
 
 export async function fetchSupportTickets(params: SupportTicketFilters = {}) {
-  const res = await api.get<SupportTicketsResponse>("/api/manager/support/tickets", {
+  const res = await api.get<SupportTicketsResponse>("/api/support/tickets", {
     params: {
       ...params,
       status: params.status && params.status !== "all" ? params.status : undefined,
@@ -124,44 +124,44 @@ export async function fetchSupportTickets(params: SupportTicketFilters = {}) {
 }
 
 export async function fetchSupportTicket(id: string) {
-  const res = await api.get<SupportTicket>(`/api/manager/support/tickets/${id}`);
+  const res = await api.get<SupportTicket>(`/api/support/tickets/${id}`);
   return res.data;
 }
 
 export async function fetchSupportAssignees() {
-  const res = await api.get<{ items: SupportAssignee[] }>("/api/manager/support/assignees");
+  const res = await api.get<{ items: SupportAssignee[] }>("/api/support/assignees");
   return res.data.items;
 }
 
 export async function updateSupportTicketStatus(id: string, status: SupportTicketStatus) {
-  const res = await api.patch<SupportTicket>(`/api/manager/support/tickets/${id}/status`, { status });
+  const res = await api.patch<SupportTicket>(`/api/support/tickets/${id}/status`, { status });
   return res.data;
 }
 
 export async function createSupportTicket(payload: CreateSupportTicketPayload) {
-  const res = await api.post<SupportTicket>("/api/manager/support/tickets", payload);
+  const res = await api.post<SupportTicket>("/api/support/tickets", payload);
   return res.data;
 }
 
 export async function assignSupportTicket(id: string, ownerId?: string | null) {
-  const res = await api.patch<SupportTicket>(`/api/manager/support/tickets/${id}/assign`, {
+  const res = await api.patch<SupportTicket>(`/api/support/tickets/${id}/assign`, {
     ownerId: ownerId ?? null,
   });
   return res.data;
 }
 
 export async function addSupportTicketNote(id: string, body: string) {
-  const res = await api.post<SupportTicket>(`/api/manager/support/tickets/${id}/notes`, { body });
+  const res = await api.post<SupportTicket>(`/api/support/tickets/${id}/notes`, { body });
   return res.data;
 }
 
 export async function addSupportTicketMessage(id: string, body: string) {
-  const res = await api.post<SupportTicket>(`/api/manager/support/tickets/${id}/messages`, { body });
+  const res = await api.post<SupportTicket>(`/api/support/tickets/${id}/messages`, { body });
   return res.data;
 }
 
 export async function escalateSupportTicket(id: string) {
-  const res = await api.post<SupportTicket>(`/api/manager/support/tickets/${id}/escalate`);
+  const res = await api.post<SupportTicket>(`/api/support/tickets/${id}/escalate`);
   return res.data;
 }
 
@@ -176,7 +176,7 @@ export function subscribeSupportStream(args: {
   onError?: (error: Error) => void;
 }) {
   return subscribeAuthenticatedSse({
-    path: "/api/manager/support/stream",
+    path: "/api/support/stream",
     lastEventIdKey: "cp:sse:manager-support:last-id",
     onReady: (payload) => args.onReady?.((payload ?? {}) as { connectedAt?: string }),
     onEvent: (frame) => {
@@ -199,3 +199,4 @@ export function subscribeSupportStream(args: {
     onError: args.onError,
   });
 }
+

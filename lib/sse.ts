@@ -15,6 +15,7 @@ type SubscribeAuthenticatedSseArgs = {
   onError?: (error: Error) => void;
   retryBaseMs?: number;
   retryMaxMs?: number;
+  pauseWhenHidden?: boolean;
 };
 
 export function buildApiUrl(path: string) {
@@ -96,6 +97,7 @@ export function subscribeAuthenticatedSse(args: SubscribeAuthenticatedSseArgs) {
   const decoder = new TextDecoder();
   const retryBaseMs = args.retryBaseMs ?? 900;
   const retryMaxMs = args.retryMaxMs ?? 12_000;
+  const pauseWhenHidden = args.pauseWhenHidden ?? true;
 
   let closed = false;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -103,7 +105,16 @@ export function subscribeAuthenticatedSse(args: SubscribeAuthenticatedSseArgs) {
 
   const scheduleReconnect = (delayMs?: number) => {
     if (closed || reconnectTimer) return;
-    const delay = delayMs ?? Math.min(retryMaxMs, retryBaseMs + attempt * 700);
+    if (pauseWhenHidden && typeof document !== "undefined" && document.visibilityState === "hidden") {
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        void connect();
+      }, Math.max(delayMs ?? 5_000, 5_000));
+      return;
+    }
+    const baseDelay = delayMs ?? Math.min(retryMaxMs, retryBaseMs + attempt * 700);
+    const jitter = Math.floor(Math.random() * Math.max(50, Math.floor(baseDelay * 0.15)));
+    const delay = Math.min(retryMaxMs, baseDelay + jitter);
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null;
       void connect();
@@ -146,7 +157,10 @@ export function subscribeAuthenticatedSse(args: SubscribeAuthenticatedSseArgs) {
       }
 
       if (!response.ok) {
-        if (!shouldReconnectForStatus(response.status)) return;
+        if (!shouldReconnectForStatus(response.status)) {
+          args.onError?.(new Error(`SSE_NON_RETRYABLE_${response.status}`));
+          return;
+        }
         throw new Error(`SSE_UNAVAILABLE_${response.status}`);
       }
       if (!response.body) throw new Error("SSE_EMPTY_BODY");

@@ -72,10 +72,12 @@ const ASSIGNABLE_STATUSES = new Set([
 export default function OrdersTable({
   data,
   onRefresh,
+  onDeleteOrder,
   hideQuickFilters = false,
 }: {
   data: ManagerOrderRow[];
   onRefresh?: () => void;
+  onDeleteOrder?: (order: ManagerOrderRow) => void;
   hideQuickFilters?: boolean;
 }) {
   const router = useRouter();
@@ -92,7 +94,7 @@ export default function OrdersTable({
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [assignOpen, setAssignOpen] = useState(false);
-  const columns = React.useMemo(() => getColumns(t), [t]);
+  const columns = React.useMemo(() => getColumns(t, onDeleteOrder), [onDeleteOrder, t]);
 
   const statusCountMap = useMemo(() => {
     const map = new Map<string, number>();

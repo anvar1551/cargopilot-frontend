@@ -113,6 +113,36 @@ export const en = {
       createUser: "Users",
       settings: "Settings",
     },
+    business: {
+      group: "Business",
+      overview: "Overview",
+      customers: "Customers",
+      companies: "Companies",
+      branches: "Branches",
+      agents: "Agents",
+      warehouses: "Warehouses",
+      pickupPoints: "Pickup Points",
+    },
+    businessDesc: {
+      overview: "Entity control center",
+      customers: "Manage customer entities",
+      companies: "Legal and billing entities",
+      branches: "Operational branch units",
+      agents: "Field and office agents",
+      warehouses: "Storage and scan nodes",
+      pickupPoints: "Last-mile pickup counters",
+    },
+    billing: {
+      group: "Billing & Pricing",
+      pricing: "Pricing",
+      providers: "Payment Providers",
+      integrations: "Integrations",
+    },
+    billingDesc: {
+      pricing: "Tariffs, SLA, and zone rules",
+      providers: "Provider credentials and activation",
+      integrations: "Carriers, SMS, webhooks, and retries",
+    },
     consoleTitle: "Operations Console",
     adminBadge: "Admin",
     expand: "Expand sidebar",
@@ -1144,6 +1174,10 @@ export const en = {
         tariff_plan_not_found: "No active tariff plan matches this shipment.",
         rate_not_found: "No matching weight rate found in the tariff.",
       },
+      onlinePricingRequired:
+        "Online payment requires an active pricing quote. Check origin, destination, weight, and tariff setup.",
+      onlinePricingNoComponents:
+        "No payable pricing components were generated for this shipment. Verify tariff/rule configuration.",
       enum: {
         paymentType: {
           CASH: "Cash",

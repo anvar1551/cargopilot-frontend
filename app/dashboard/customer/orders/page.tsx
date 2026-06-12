@@ -46,6 +46,7 @@ type CustomerOrder = {
   id: string;
   orderNumber?: string | number | null;
   status?: OrderStatus | string | null;
+  paymentState?: string | null;
   createdAt?: string | null;
   pickupAddress?: string | null;
   dropoffAddress?: string | null;
@@ -212,6 +213,24 @@ function isDelivered(order: CustomerOrder) {
 
 function isFinalStatus(status?: string | null) {
   return ["delivered", "returned", "cancelled"].includes(String(status ?? ""));
+}
+
+function paymentStateVariant(state?: string | null) {
+  const value = String(state ?? "").toLowerCase();
+  if (value === "paid") return "default" as const;
+  if (value === "pending") return "secondary" as const;
+  if (value === "failed" || value === "refunded") return "destructive" as const;
+  return "outline" as const;
+}
+
+function paymentStateLabel(state?: string | null) {
+  const value = String(state ?? "").toUpperCase();
+  if (!value || value === "UNPAID") return "Unpaid";
+  if (value === "PENDING") return "Pending";
+  if (value === "PAID") return "Paid";
+  if (value === "FAILED") return "Failed";
+  if (value === "REFUNDED") return "Refunded";
+  return value;
 }
 
 function OrderRowSkeleton() {
@@ -531,6 +550,12 @@ export default function CustomerOrdersPage() {
                               className="rounded-full capitalize"
                             >
                               {getStatusLabel(String(order.status ?? ""), t)}
+                            </Badge>
+                            <Badge
+                              variant={paymentStateVariant(order.paymentState)}
+                              className="rounded-full"
+                            >
+                              {paymentStateLabel(order.paymentState)}
                             </Badge>
 
                             <span className="text-xs text-muted-foreground">

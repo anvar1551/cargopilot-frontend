@@ -321,24 +321,6 @@ function isFiniteCoord(value: unknown) {
   return typeof value === "number" && Number.isFinite(value);
 }
 
-function roundedRect(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  radius: number,
-) {
-  const r = Math.min(radius, width / 2, height / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + width, y, x + width, y + height, r);
-  ctx.arcTo(x + width, y + height, x, y + height, r);
-  ctx.arcTo(x, y + height, x, y, r);
-  ctx.arcTo(x, y, x + width, y, r);
-  ctx.closePath();
-}
-
 function makeCanvasImage(
   size: number,
   drawer: (ctx: CanvasRenderingContext2D, size: number) => void,
@@ -359,38 +341,45 @@ function makeCanvasImage(
   };
 }
 
-function makeDriverCarIcon(color: string) {
-  return makeCanvasImage(48, (ctx, size) => {
-    // Rasterized Lucide CarFront icon for Mapbox sprite usage.
-    const scale = size / 24;
+function makeDriverVehicleIcon(color: string) {
+  return makeCanvasImage(64, (ctx, size) => {
+    const cx = size / 2;
+    const cy = size / 2;
+    const outerRadius = 20;
+    const coreRadius = 13;
+
+    // Soft halo for better visual focus on dense maps.
+    const glow = ctx.createRadialGradient(cx, cy, 4, cx, cy, outerRadius + 9);
+    glow.addColorStop(0, "rgba(15,23,42,0.24)");
+    glow.addColorStop(1, "rgba(15,23,42,0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(cx, cy, outerRadius + 9, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Outer status ring.
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(cx, cy, outerRadius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Inner core.
+    ctx.fillStyle = "rgba(255,255,255,0.98)";
+    ctx.beginPath();
+    ctx.arc(cx, cy, coreRadius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Direction arrow (map rotates icon by headingDeg).
     ctx.save();
-    ctx.scale(scale, scale);
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    ctx.lineWidth = 1.9;
-    ctx.strokeStyle = "rgba(15,23,42,0.28)";
-    ctx.fillStyle = "rgba(255,255,255,0.92)";
-
-    const drawCarFront = (stroke: string, width: number) => {
-      ctx.strokeStyle = stroke;
-      ctx.lineWidth = width;
-      const p1 = new Path2D("M21 8l-2 2-1.5-3.7A2 2 0 0 0 15.646 5H8.4a2 2 0 0 0-1.903 1.257L5 10 3 8");
-      const p2 = new Path2D("M5 18v2");
-      const p3 = new Path2D("M19 18v2");
-      ctx.stroke(p1);
-      roundedRect(ctx, 3, 10, 18, 8, 2);
-      ctx.stroke();
-      ctx.stroke(p2);
-      ctx.stroke(p3);
-      ctx.beginPath();
-      ctx.arc(7, 14, 0.65, 0, Math.PI * 2);
-      ctx.arc(17, 14, 0.65, 0, Math.PI * 2);
-      ctx.fillStyle = stroke;
-      ctx.fill();
-    };
-
-    drawCarFront("rgba(15,23,42,0.45)", 3.8);
-    drawCarFront(color, 2.2);
+    ctx.translate(cx, cy);
+    ctx.fillStyle = "#0f172a";
+    ctx.beginPath();
+    ctx.moveTo(0, -9);
+    ctx.lineTo(6, 6);
+    ctx.lineTo(0, 2.5);
+    ctx.lineTo(-6, 6);
+    ctx.closePath();
+    ctx.fill();
     ctx.restore();
   });
 }
@@ -434,10 +423,10 @@ const LIVE_MAP_ICON_BUILDERS: Record<
   string,
   () => { width: number; height: number; data: Uint8Array | Uint8ClampedArray }
 > = {
-  [LIVE_MAP_ICON_ID.driverOnline]: () => makeDriverCarIcon("#0d9488"),
-  [LIVE_MAP_ICON_ID.driverIdle]: () => makeDriverCarIcon("#6366f1"),
-  [LIVE_MAP_ICON_ID.driverStale]: () => makeDriverCarIcon("#d97706"),
-  [LIVE_MAP_ICON_ID.driverOffline]: () => makeDriverCarIcon("#64748b"),
+  [LIVE_MAP_ICON_ID.driverOnline]: () => makeDriverVehicleIcon("#0d9488"),
+  [LIVE_MAP_ICON_ID.driverIdle]: () => makeDriverVehicleIcon("#6366f1"),
+  [LIVE_MAP_ICON_ID.driverStale]: () => makeDriverVehicleIcon("#d97706"),
+  [LIVE_MAP_ICON_ID.driverOffline]: () => makeDriverVehicleIcon("#64748b"),
   [LIVE_MAP_ICON_ID.warehouse]: () => makePinIcon("#f59e0b", "WH"),
   [LIVE_MAP_ICON_ID.pickup]: () => makePinIcon("#0ea5e9", "PU"),
   [LIVE_MAP_ICON_ID.dropoff]: () => makePinIcon("#16a34a", "DO"),
@@ -520,9 +509,9 @@ export default function ManagerLiveMapPage() {
   const [warehouseFilter, setWarehouseFilter] = React.useState("all");
   const [regionFilter, setRegionFilter] = React.useState("all");
   const [statusFilter, setStatusFilter] = React.useState("all");
-  const [showOrders, setShowOrders] = React.useState(true);
+  const [showOrders, setShowOrders] = React.useState(false);
   const [showDrivers, setShowDrivers] = React.useState(true);
-  const [showRoutes, setShowRoutes] = React.useState(true);
+  const [showRoutes, setShowRoutes] = React.useState(false);
   const [showHeatmap, setShowHeatmap] = React.useState(false);
   const [showWarehouses, setShowWarehouses] = React.useState(true);
   const [driverQuery, setDriverQuery] = React.useState("");

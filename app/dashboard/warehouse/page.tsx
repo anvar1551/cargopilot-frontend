@@ -939,6 +939,7 @@ export default function WarehouseDashboardPage() {
         typeof order.status === "string" && order.status.trim().length > 0
           ? order.status
           : "pending",
+      paymentState: order.paymentState ?? null,
       pickupAddress: order.pickupAddress,
       dropoffAddress: order.dropoffAddress,
       createdAt: order.createdAt,

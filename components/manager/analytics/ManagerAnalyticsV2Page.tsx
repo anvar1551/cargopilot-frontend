@@ -272,7 +272,7 @@ export function ManagerAnalyticsV2Page() {
     searchParams.get("ops") === "1";
 
   const [rangeDays, setRangeDays] = useState("30");
-  const [queueStatus, setQueueStatus] = useState<"all" | "expected" | "held">("all");
+  const [queueStatus, setQueueStatus] = useState<"all" | "expected" | "held" | "settled">("all");
   const [queueKind, setQueueKind] = useState<"all" | "cod" | "service_charge">("all");
   const [queueHolderType, setQueueHolderType] = useState<
     "all" | "driver" | "warehouse" | "pickup_point" | "none"
@@ -284,6 +284,7 @@ export function ManagerAnalyticsV2Page() {
   const [handoffToDriverId, setHandoffToDriverId] = useState("");
   const [handoffToWarehouseId, setHandoffToWarehouseId] = useState("");
   const [streamConnectedAt, setStreamConnectedAt] = useState<string | null>(null);
+  const streamLastSignalAtRef = useRef(0);
   const lastScheduledRefreshAtRef = useRef(0);
   const lastInvalidateAtRef = useRef<Record<AnalyticsInvalidateKey, number>>({
     summary: 0,
@@ -425,9 +426,11 @@ export function ManagerAnalyticsV2Page() {
 
     const unsubscribe = subscribeManagerAnalyticsStream({
       onReady: (payload) => {
+        streamLastSignalAtRef.current = Date.now();
         setStreamConnectedAt(payload.connectedAt ?? new Date().toISOString());
       },
       onRefresh: (payload) => {
+        streamLastSignalAtRef.current = Date.now();
         const reason = String(payload?.reason ?? "");
         const nowMs = Date.now();
         if (reason === "scheduled") {
@@ -463,7 +466,12 @@ export function ManagerAnalyticsV2Page() {
           maybeInvalidate("ops", 10_000);
         }
       },
-      onError: () => setStreamConnectedAt(null),
+      onError: () => {
+        const graceMs = 45_000;
+        if (Date.now() - streamLastSignalAtRef.current > graceMs) {
+          setStreamConnectedAt(null);
+        }
+      },
     });
     return () => {
       unsubscribe();
@@ -509,7 +517,9 @@ export function ManagerAnalyticsV2Page() {
     });
   }, [handoffToType, warehousesQuery.data]);
 
-  const canSettleSelected = selectedCashItems.length > 0;
+  const selectedHeldCashItems = selectedQueueItems.filter((item) => item.status === "held");
+  const canMutateSelectedCash =
+    selectedCashItems.length > 0 && selectedHeldCashItems.length === selectedCashItems.length;
 
   const settleSelectedMutation = useMutation({
     mutationFn: async () => settleOrderCashBulk({ items: selectedCashItems }),
@@ -623,6 +633,11 @@ export function ManagerAnalyticsV2Page() {
           item.status === "held" &&
           (item.holderType === "warehouse" || item.holderType === "pickup_point"),
       ),
+    },
+    {
+      key: "settled",
+      title: "Settled to finance",
+      items: queueItems.filter((item) => item.status === "settled"),
     },
   ];
 
@@ -1026,12 +1041,13 @@ export function ManagerAnalyticsV2Page() {
                   {showQueue ? (
                     <>
                       <div className="flex flex-wrap items-center gap-2">
-                        <Select value={queueStatus} onValueChange={(value: "all" | "expected" | "held") => { setQueueStatus(value); setQueuePage(1); }}>
+                        <Select value={queueStatus} onValueChange={(value: "all" | "expected" | "held" | "settled") => { setQueueStatus(value); setQueuePage(1); setSelectedQueueIds([]); }}>
                           <SelectTrigger className="h-9 w-[160px]"><SelectValue /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value="all">{t("managerAnalytics.finance.filterStatusAll")}</SelectItem>
                             <SelectItem value="expected">Expected</SelectItem>
                             <SelectItem value="held">Held</SelectItem>
+                            <SelectItem value="settled">Settled</SelectItem>
                           </SelectContent>
                         </Select>
                         <Select value={queueKind} onValueChange={(value: "all" | "cod" | "service_charge") => { setQueueKind(value); setQueuePage(1); }}>
@@ -1088,7 +1104,7 @@ export function ManagerAnalyticsV2Page() {
                             {t("managerAnalytics.finance.clearSelection")}
                           </Button>
                           <Badge variant="outline">{t("managerAnalytics.finance.selectedCount", { count: selectedCashItems.length })}</Badge>
-                          <Button type="button" size="sm" onClick={() => settleSelectedMutation.mutate()} disabled={!canSettleSelected || settleSelectedMutation.isPending}>
+                          <Button type="button" size="sm" onClick={() => settleSelectedMutation.mutate()} disabled={!canMutateSelectedCash || settleSelectedMutation.isPending}>
                             {settleSelectedMutation.isPending ? t("managerAnalytics.finance.settlingSelected") : t("managerAnalytics.finance.settleSelected")}
                           </Button>
                           <Select value={handoffToType} onValueChange={(value: HandoffType) => { setHandoffToType(value); setHandoffToDriverId(""); setHandoffToWarehouseId(""); }}>
@@ -1118,7 +1134,7 @@ export function ManagerAnalyticsV2Page() {
                               </SelectContent>
                             </Select>
                           )}
-                          <Button type="button" size="sm" variant="outline" onClick={() => handoffSelectedMutation.mutate()} disabled={!canSettleSelected || !handoffDestinationReady || handoffSelectedMutation.isPending}>
+                          <Button type="button" size="sm" variant="outline" onClick={() => handoffSelectedMutation.mutate()} disabled={!canMutateSelectedCash || !handoffDestinationReady || handoffSelectedMutation.isPending}>
                             {handoffSelectedMutation.isPending ? t("managerAnalytics.finance.handingOffSelected") : t("managerAnalytics.finance.handoffSelected")}
                           </Button>
                         </div>

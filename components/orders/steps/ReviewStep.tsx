@@ -30,7 +30,7 @@ function collectPhones(...values: Array<string | null | undefined>) {
 
 function prettyMoney(amount: number | null, currency?: string | null) {
   if (amount == null) return "-";
-  const currentCurrency = currency ?? "EUR";
+  const currentCurrency = currency ?? "UZS";
   return `${amount.toFixed(2)} ${currentCurrency}`;
 }
 
@@ -65,9 +65,10 @@ export function ReviewStep({
   const itemValue = safeNumber(form.watch("shipment.itemValue"));
 
   const codAmount = safeNumber(form.watch("shipment.codAmount"));
-  const currency = form.watch("shipment.currency") ?? "EUR";
+  const currency = form.watch("shipment.currency") ?? "UZS";
 
   const stripeAmount = safeNumber(form.watch("amount"));
+  const paymentType = form.watch("payment.paymentType");
 
   const note = form.watch("note");
   const schedulePickup = form.watch("schedule.plannedPickupAt");
@@ -81,6 +82,9 @@ export function ReviewStep({
   if (!pieceTotal || pieceTotal < 1) missing.push(t("createOrder.review.parcels"));
 
   const paymentStatus = stripeAmount != null ? "PAY_NOW" : "MANUAL";
+  const onlinePayment = paymentType === "CARD" || paymentType === "TRANSFER";
+  const stripeCurrency =
+    onlinePayment && pricingQuote?.currency ? pricingQuote.currency : currency;
   const hasBlockingErrors = missing.length > 0;
 
   return (
@@ -250,7 +254,9 @@ export function ReviewStep({
         <div className="grid grid-cols-1 gap-3 text-sm md:grid-cols-3">
           <div className="rounded-xl border border-border/60 bg-background/60 p-4">
             <p className="text-muted-foreground">{t("createOrder.review.stripeAmount")}</p>
-            <p className="font-medium">{stripeAmount != null ? prettyMoney(stripeAmount, "EUR") : "-"}</p>
+            <p className="font-medium">
+              {stripeAmount != null ? prettyMoney(stripeAmount, stripeCurrency) : "-"}
+            </p>
           </div>
           <div className="rounded-xl border border-border/60 bg-background/60 p-4">
             <p className="text-muted-foreground">{t("createOrder.review.cod")}</p>
@@ -258,7 +264,7 @@ export function ReviewStep({
           </div>
           <div className="rounded-xl border border-border/60 bg-background/60 p-4">
             <p className="text-muted-foreground">{t("createOrder.review.currency")}</p>
-            <p className="font-medium">{currency || "-"}</p>
+            <p className="font-medium">{stripeCurrency || "-"}</p>
           </div>
         </div>
 

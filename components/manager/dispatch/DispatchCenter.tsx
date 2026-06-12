@@ -76,6 +76,7 @@ type OrderItem = {
   id: string;
   orderNumber?: string | number | null;
   status: string;
+  paymentState?: string | null;
   pickupAddress?: string | null;
   dropoffAddress?: string | null;
   createdAt?: string | null;
@@ -173,6 +174,24 @@ function statusVariant(status: string) {
     default:
       return "outline" as const;
   }
+}
+
+function paymentStateVariant(state?: string | null) {
+  const value = String(state ?? "").toLowerCase();
+  if (value === "paid") return "default" as const;
+  if (value === "pending") return "secondary" as const;
+  if (value === "failed" || value === "refunded") return "destructive" as const;
+  return "outline" as const;
+}
+
+function paymentStateLabel(state?: string | null) {
+  const value = String(state ?? "").toUpperCase();
+  if (!value || value === "UNPAID") return "Unpaid";
+  if (value === "PENDING") return "Pending";
+  if (value === "PAID") return "Paid";
+  if (value === "FAILED") return "Failed";
+  if (value === "REFUNDED") return "Refunded";
+  return value;
 }
 
 function errorMessage(err: unknown, fallback: string) {
@@ -673,6 +692,9 @@ export default function DispatchCenter({
                     <div className="mt-1 text-sm truncate">
                       {o.pickupAddress} <span className="text-muted-foreground">{"->"}</span> {o.dropoffAddress}
                     </div>
+                    <Badge variant={paymentStateVariant(o.paymentState)} className="mt-2">
+                      {paymentStateLabel(o.paymentState)}
+                    </Badge>
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">
@@ -944,6 +966,7 @@ export default function DispatchCenter({
               <TableRow className="bg-muted/30 hover:bg-muted/30">
                 <TableHead className="w-[110px]">Status</TableHead>
                 <TableHead className="w-[150px]">Order</TableHead>
+                <TableHead className="w-[120px]">Payment</TableHead>
                 <TableHead>Route</TableHead>
                 <TableHead className="w-[240px]">Customer</TableHead>
                 <TableHead className="w-[110px] text-right">Batch</TableHead>
@@ -952,7 +975,7 @@ export default function DispatchCenter({
             <TableBody>
               {filteredOrders.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="h-24 text-center text-sm text-muted-foreground">
+                  <TableCell colSpan={6} className="h-24 text-center text-sm text-muted-foreground">
                     {t("dispatch.noOrders")}
                   </TableCell>
                 </TableRow>
@@ -972,6 +995,11 @@ export default function DispatchCenter({
                       </TableCell>
                       <TableCell>
                         <span className="text-xs text-muted-foreground font-mono">{orderLabel(o)}</span>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={paymentStateVariant(o.paymentState)}>
+                          {paymentStateLabel(o.paymentState)}
+                        </Badge>
                       </TableCell>
                       <TableCell>
                         <div className="truncate text-sm">

@@ -1,38 +1,49 @@
 import { api } from "@/lib/api";
 
 export type UserRole = "customer" | "manager" | "warehouse" | "driver";
+export type MembershipScopeType =
+  | "company"
+  | "branch"
+  | "warehouse"
+  | "agent"
+  | "pickup_point"
+  | "carrier"
+  | "client";
+
+export type RoleLite = {
+  id: string;
+  code: string;
+  name: string;
+  isSystem: boolean;
+};
 
 export type User = {
   id: string;
+  membershipId: string;
+  createdAt: string;
   name: string;
   email: string;
-  role: UserRole;
-  createdAt: string;
-
-  warehouse?: {
-    id: string;
-    name: string;
-  } | null;
-
-  customerEntity?: {
-    id: string;
-    name: string;
-    companyName?: string | null;
-  } | null;
+  warehouseId: string | null;
+  customerEntityId: string | null;
+  driverType: "local" | "linehaul" | null;
+  branchId: string | null;
+  roles: RoleLite[];
+  scopes: Array<{
+    scopeType: MembershipScopeType;
+    scopeRefId: string;
+  }>;
 };
 
 export type ListUsersResponse = {
-  data: User[];
+  items: User[];
   total: number;
   page: number;
   limit: number;
-  pageCount: number;
 };
 
 export async function fetchUsers(
   params?: {
     q?: string;
-    role?: UserRole;
     page?: number;
     limit?: number;
   },
@@ -52,14 +63,39 @@ export type CreateUserAsManagerInput = {
   name: string;
   email: string;
   password: string;
-  role: AppRole;
-  phone?: string | null;
+  roleCodes: string[];
+  branchId?: string | null;
   warehouseId?: string | null;
   customerEntityId?: string | null;
+  driverType?: "local" | "linehaul" | null;
+  scopes?: Array<{
+    scopeType: MembershipScopeType;
+    scopeRefId: string;
+  }>;
 };
 
 export async function createUser(input: CreateUserAsManagerInput) {
   const res = await api.post("/api/auth", input);
+  return res.data;
+}
+
+export async function updateUserAccess(
+  userId: string,
+  input: {
+    name?: string;
+    email?: string;
+    roleCodes?: string[];
+    branchId?: string | null;
+    warehouseId?: string | null;
+    customerEntityId?: string | null;
+    driverType?: "local" | "linehaul" | null;
+    scopes?: Array<{
+      scopeType: MembershipScopeType;
+      scopeRefId: string;
+    }>;
+  },
+) {
+  const res = await api.patch(`/api/auth/${userId}`, input);
   return res.data;
 }
 

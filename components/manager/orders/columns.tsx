@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { type ColumnDef } from "@tanstack/react-table";
-import { ArrowUpDown, ExternalLink, FileText, Package } from "lucide-react";
+import { ArrowUpDown, ExternalLink, FileText, Package, Trash2 } from "lucide-react";
 
 import type { Translate } from "@/lib/i18n/labels";
 import { getStatusLabel } from "@/lib/i18n/labels";
@@ -19,6 +19,7 @@ export type ManagerOrderRow = {
   id: string;
   orderNumber?: string | number | null;
   status?: string | null;
+  paymentState?: string | null;
   pickupAddress?: string | null;
   dropoffAddress?: string | null;
   createdAt?: string | null;
@@ -49,6 +50,25 @@ function statusVariant(status: string) {
   return "outline" as const;
 }
 
+function paymentStateVariant(state: string) {
+  const value = String(state || "").toLowerCase();
+  if (value === "paid") return "default" as const;
+  if (value === "pending") return "secondary" as const;
+  if (value === "failed" || value === "refunded") return "destructive" as const;
+  return "outline" as const;
+}
+
+function paymentStateLabel(state?: string | null) {
+  const value = String(state || "").toUpperCase();
+  if (!value) return "Unpaid";
+  if (value === "UNPAID") return "Unpaid";
+  if (value === "PENDING") return "Pending";
+  if (value === "PAID") return "Paid";
+  if (value === "FAILED") return "Failed";
+  if (value === "REFUNDED") return "Refunded";
+  return value;
+}
+
 function sortHeader(
   label: string,
   column: {
@@ -71,7 +91,10 @@ function sortHeader(
   );
 }
 
-export function getColumns(t: Translate): ColumnDef<ManagerOrderRow>[] {
+export function getColumns(
+  t: Translate,
+  onDeleteOrder?: (order: ManagerOrderRow) => void,
+): ColumnDef<ManagerOrderRow>[] {
   return [
     {
       id: "order",
@@ -101,6 +124,18 @@ export function getColumns(t: Translate): ColumnDef<ManagerOrderRow>[] {
         return (
           <Badge variant={statusVariant(status)} className="capitalize">
             {getStatusLabel(status, t)}
+          </Badge>
+        );
+      },
+    },
+    {
+      accessorKey: "paymentState",
+      header: "Payment",
+      cell: ({ row }) => {
+        const state = String(row.original.paymentState ?? "UNPAID");
+        return (
+          <Badge variant={paymentStateVariant(state)}>
+            {paymentStateLabel(state)}
           </Badge>
         );
       },
@@ -172,20 +207,39 @@ export function getColumns(t: Translate): ColumnDef<ManagerOrderRow>[] {
       id: "actions",
       header: "",
       cell: ({ row }) => {
-        const id = row.original.id;
+        const order = row.original;
+        const id = order.id;
         return (
-          <Button
-            asChild
-            variant="ghost"
-            size="icon"
-            title={t("ordersTable.openDetails")}
-            onClick={(event) => event.stopPropagation()}
-            className="h-8 w-8"
-          >
-            <Link href={`/dashboard/manager/orders?order=${id}`}>
-              <ExternalLink className="h-4 w-4" />
-            </Link>
-          </Button>
+          <div className="flex justify-end gap-1">
+            <Button
+              asChild
+              variant="ghost"
+              size="icon"
+              title={t("ordersTable.openDetails")}
+              onClick={(event) => event.stopPropagation()}
+              className="h-8 w-8"
+            >
+              <Link href={`/dashboard/manager/orders?order=${id}`}>
+                <ExternalLink className="h-4 w-4" />
+              </Link>
+            </Button>
+            {onDeleteOrder ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                title="Delete order"
+                className="h-8 w-8 text-red-600 hover:bg-red-50 hover:text-red-700"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onDeleteOrder(order);
+                }}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            ) : null}
+          </div>
         );
       },
     },

@@ -27,6 +27,7 @@ import { fetchManagerOpsMetrics } from "@/lib/manager";
 import { useI18n } from "@/components/i18n/I18nProvider";
 import LanguageSwitcher from "@/components/i18n/LanguageSwitcher";
 import PageShell from "@/components/layout/PageShell";
+import RbacAdminStudioSample from "@/components/settings/RbacAdminStudioSample";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -274,6 +275,8 @@ export default function SettingsView({
               </CardContent>
             </Card>
 
+            {role === "manager" ? <RbacAdminStudioSample /> : null}
+
             <Card className="rounded-2xl border-border/70">
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2 text-base">
@@ -453,6 +456,22 @@ export default function SettingsView({
                       <div className="rounded-lg border px-3 py-2">
                         <span className="text-muted-foreground">SSE active: </span>
                         <span className="font-medium">{opsMetricsQuery.data.sse.analytics.active}</span>
+                      </div>
+                      <div className="rounded-lg border px-3 py-2">
+                        <span className="text-muted-foreground">Redis status: </span>
+                        <span className="font-medium">
+                          {opsMetricsQuery.data.redis?.enabled
+                            ? `${opsMetricsQuery.data.redis.sharedClientStatus}${
+                                opsMetricsQuery.data.redis.cooldownActive ? " (cooldown)" : ""
+                              }`
+                            : "disabled"}
+                        </span>
+                      </div>
+                      <div className="rounded-lg border px-3 py-2">
+                        <span className="text-muted-foreground">Redis timeouts: </span>
+                        <span className="font-medium">
+                          {opsMetricsQuery.data.redis?.stats.operationTimeouts ?? 0}
+                        </span>
                       </div>
                     </>
                   ) : (

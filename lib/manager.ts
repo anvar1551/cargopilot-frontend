@@ -12,7 +12,7 @@ export type DriverLite = {
 };
 
 export async function fetchManagerOverview() {
-  const res = await api.get("/api/manager/overview");
+  const res = await api.get("/api/dashboard/overview");
   return res.data;
 }
 
@@ -210,6 +210,21 @@ export type ManagerOpsMetrics = {
     analyticsReconnectSpike: boolean;
     liveMapReconnectSpike: boolean;
   };
+  redis?: {
+    enabled: boolean;
+    sharedClientStatus: string;
+    cooldownActive: boolean;
+    cooldownRemainingMs: number;
+    lastUnavailableReason: string | null;
+    stats: {
+      connectAttempts: number;
+      connectFailures: number;
+      cooldownHits: number;
+      operationTimeouts: number;
+      notReadyErrors: number;
+      recycledClients: number;
+    };
+  };
 };
 
 export async function fetchManagerAnalyticsSummaryV2(params?: {
@@ -219,7 +234,7 @@ export async function fetchManagerAnalyticsSummaryV2(params?: {
   const safeParams: Record<string, number> = {};
   if (Number.isFinite(params?.rangeDays)) safeParams.rangeDays = Number(params?.rangeDays);
   if (Number.isFinite(params?.staleHours)) safeParams.staleHours = Number(params?.staleHours);
-  const res = await api.get("/api/manager/analytics/summary", { params: safeParams });
+  const res = await api.get("/api/analytics/summary", { params: safeParams });
   const raw = (res.data ?? {}) as Partial<ManagerAnalyticsV2Summary>;
   return {
     period: {
@@ -267,7 +282,7 @@ export async function fetchManagerAnalyticsTrendV2(params?: {
 }): Promise<ManagerAnalyticsV2Trend> {
   const safeParams: Record<string, number> = {};
   if (Number.isFinite(params?.rangeDays)) safeParams.rangeDays = Number(params?.rangeDays);
-  const res = await api.get("/api/manager/analytics/trend", { params: safeParams });
+  const res = await api.get("/api/analytics/trend", { params: safeParams });
   const raw = (res.data ?? {}) as Partial<ManagerAnalyticsV2Trend>;
   return {
     period: {
@@ -292,7 +307,7 @@ export async function fetchManagerAnalyticsWarningsV2(params?: {
   const safeParams: Record<string, number> = {};
   if (Number.isFinite(params?.rangeDays)) safeParams.rangeDays = Number(params?.rangeDays);
   if (Number.isFinite(params?.staleHours)) safeParams.staleHours = Number(params?.staleHours);
-  const res = await api.get("/api/manager/analytics/warnings", { params: safeParams });
+  const res = await api.get("/api/analytics/warnings", { params: safeParams });
   const raw = (res.data ?? {}) as Partial<ManagerAnalyticsV2Warnings>;
   return {
     overdueTotal: Number(raw.overdueTotal ?? 0),
@@ -316,7 +331,7 @@ export async function fetchManagerAnalyticsFinanceQueueV2(params?: {
   queueKinds?: string[];
   queueHolderTypes?: string[];
 }): Promise<ManagerAnalyticsV2FinanceQueue> {
-  const res = await api.get("/api/manager/analytics/finance-queue", {
+  const res = await api.get("/api/analytics/finance-queue", {
     params: {
       ...params,
       queueStatuses: params?.queueStatuses?.length
@@ -353,17 +368,17 @@ export async function fetchManagerAnalyticsFinanceQueueV2(params?: {
 }
 
 export async function invalidateManagerAnalyticsV2() {
-  const res = await api.post("/api/manager/analytics/refresh");
+  const res = await api.post("/api/analytics/refresh");
   return res.data as { ok: boolean };
 }
 
 export async function fetchManagerOpsMetrics(): Promise<ManagerOpsMetrics> {
-  const res = await api.get("/api/manager/ops/metrics");
+  const res = await api.get("/api/dashboard/ops/metrics");
   return (res.data ?? {}) as ManagerOpsMetrics;
 }
 
 export async function fetchDrivers(): Promise<DriverLite[]> {
-  const res = await api.get("/api/manager/drivers");
+  const res = await api.get("/api/dashboard/drivers");
   return Array.isArray(res.data) ? res.data : res.data?.drivers ?? [];
 }
 
@@ -480,7 +495,7 @@ export function subscribeManagerAnalyticsStream(args: {
   onError?: (error: Error) => void;
 }) {
   return subscribeAuthenticatedSse({
-    path: "/api/manager/analytics/stream",
+    path: "/api/analytics/stream",
     lastEventIdKey: "cp:sse:manager-analytics:last-id",
     onReady: (payload) => args.onReady?.((payload ?? {}) as { connectedAt?: string }),
     onEvent: (frame) => {
@@ -528,14 +543,14 @@ export function subscribeManagerLiveMapStream(args: {
   viewport?: LiveMapViewport | null;
 }) {
   const path = (() => {
-    if (!args.viewport) return "/api/manager/live-map/stream";
+    if (!args.viewport) return "/api/live-map/stream";
     const params = new URLSearchParams({
       minLat: String(args.viewport.minLat),
       minLng: String(args.viewport.minLng),
       maxLat: String(args.viewport.maxLat),
       maxLng: String(args.viewport.maxLng),
     });
-    return `/api/manager/live-map/stream?${params.toString()}`;
+    return `/api/live-map/stream?${params.toString()}`;
   })();
   return subscribeAuthenticatedSse({
     path,
@@ -710,7 +725,7 @@ export async function fetchManagerLiveMapSnapshot(
     process.env.NEXT_PUBLIC_LIVE_MAP_ALLOW_MOCK === "true";
 
   try {
-    const res = await api.get("/api/manager/live-map/snapshot", {
+    const res = await api.get("/api/live-map/snapshot", {
       params: viewport
         ? {
             minLat: viewport.minLat.toFixed(4),
@@ -863,3 +878,4 @@ export async function fetchManagerLiveMapSnapshot(
     isMock: true,
   };
 }
+

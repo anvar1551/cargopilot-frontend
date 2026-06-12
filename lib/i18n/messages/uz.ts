@@ -114,6 +114,36 @@ export const uz = {
       createUser: "Foydalanuvchilar",
       settings: "Sozlamalar",
     },
+    business: {
+      group: "Business",
+      overview: "Umumiy",
+      customers: "Mijozlar",
+      companies: "Kompaniyalar",
+      branches: "Filiallar",
+      agents: "Agentlar",
+      warehouses: "Omborlar",
+      pickupPoints: "Pickup pointlar",
+    },
+    businessDesc: {
+      overview: "Entitet boshqaruv markazi",
+      customers: "Mijoz entitetlari boshqaruvi",
+      companies: "Yuridik va billing entitetlari",
+      branches: "Operatsion filial bo'linmalari",
+      agents: "Field va office agentlar",
+      warehouses: "Saqlash va scan nuqtalari",
+      pickupPoints: "Oxirgi mil pickup punktlari",
+    },
+    billing: {
+      group: "Billing va tariflar",
+      pricing: "Tariflar",
+      providers: "To'lov provayderlari",
+      integrations: "Integratsiyalar",
+    },
+    billingDesc: {
+      pricing: "Tarif, SLA va zona qoidalari",
+      providers: "Provayder kalitlari va aktivatsiya",
+      integrations: "Tashuvchi, SMS, webhook va retrylar",
+    },
     consoleTitle: "Operatsion konsol",
     adminBadge: "Admin",
     expand: "Yon panelni kengaytirish",
@@ -1156,6 +1186,10 @@ export const uz = {
         tariff_plan_not_found: "Bu jo'natma uchun faol tarif rejasi yo'q.",
         rate_not_found: "Tarifda mos vazn oralig'i topilmadi.",
       },
+      onlinePricingRequired:
+        "Online to'lov uchun faol tarif hisobi kerak. Jo'nash regioni, yetib borish regioni, vazn va tarif sozlamalarini tekshiring.",
+      onlinePricingNoComponents:
+        "Bu jo'natma uchun to'lanadigan tarif komponentlari yaratilmagan. Tarif/qoida konfiguratsiyasini tekshiring.",
       enum: {
         paymentType: {
           CASH: "Naqd",

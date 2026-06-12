@@ -5,7 +5,7 @@ import { useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Bell, Menu, MessageSquare, Search } from "lucide-react";
-import { getUser } from "@/lib/auth";
+import { dashboardPathForUser, getUser } from "@/lib/auth";
 import { useI18n } from "@/components/i18n/I18nProvider";
 
 import UserMenu from "@/components/user/UserMenu";
@@ -132,7 +132,7 @@ export default function AppTopbar({
           ) : null}
           {/* Brand */}
           <Link
-            href={`/dashboard/${user.role}`}
+            href={dashboardPathForUser(user)}
             className="shrink-0 font-semibold tracking-tight"
           >
             CargoPilot

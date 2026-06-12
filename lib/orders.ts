@@ -104,6 +104,7 @@ export type Order = {
   id: string;
   orderNumber?: string | number | null;
   status?: string | null;
+  paymentState?: string | null;
   pickupAddress?: string | null;
   dropoffAddress?: string | null;
   pickupLat?: number | null;
@@ -202,6 +203,53 @@ export type Order = {
     }> | null;
   }> | null;
   [key: string]: unknown;
+};
+
+export type OrderLeg = {
+  id: string;
+  orderId: string;
+  sequence: number;
+  mode?: string | null;
+  status?: string | null;
+  fromCountry?: string | null;
+  toCountry?: string | null;
+  transitRoute?: unknown;
+  fromWarehouseId?: string | null;
+  toWarehouseId?: string | null;
+  carrierCode?: string | null;
+  carrierRef?: string | null;
+  vehicleRef?: string | null;
+  plannedDepartureAt?: string | null;
+  plannedArrivalAt?: string | null;
+  actualDepartureAt?: string | null;
+  actualArrivalAt?: string | null;
+  notes?: string | null;
+  carrierProviderId?: string | null;
+  carrierBookingStatus?:
+    | "not_requested"
+    | "requested"
+    | "booked"
+    | "failed"
+    | "cancelled"
+    | string
+    | null;
+  carrierTrackingNumber?: string | null;
+  carrierBookingError?: string | null;
+  carrierBookedAt?: string | null;
+  carrierLastStatusAt?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+};
+
+export type CarrierBookingResponse = {
+  leg: OrderLeg;
+  outbox: {
+    id: string;
+    status: string;
+    idempotencyKey: string;
+    providerId: string | null;
+    providerCode: string;
+  };
 };
 
 export type OrderProofStage = "pickup" | "delivery";
@@ -310,6 +358,16 @@ export async function exportOrdersCsv(params?: ListOrdersParams) {
   return res.data as Blob;
 }
 
+export async function deleteOrder(orderId: string) {
+  const res = await api.delete<{
+    deleted: true;
+    orderId: string;
+    orderNumber?: string | null;
+    cleanup?: Record<string, number>;
+  }>(`/api/orders/${orderId}`);
+  return res.data;
+}
+
 export async function downloadOrderImportTemplate() {
   const res = await api.get("/api/orders/import/template.csv", {
     responseType: "blob",
@@ -344,6 +402,45 @@ export async function fetchOrdersPaged(params?: {
 
 export async function fetchOrderById(id: string) {
   const res = await api.get(`/api/orders/${id}`);
+  return res.data;
+}
+
+export async function fetchOrderLegs(orderId: string) {
+  const res = await api.get<{ legs: OrderLeg[] }>(`/api/orders/${orderId}/legs`);
+  return res.data.legs;
+}
+
+export async function bookCarrierForOrderLeg(payload: {
+  orderId: string;
+  legId: string;
+  providerId: string;
+}) {
+  const res = await api.post<CarrierBookingResponse>(
+    `/api/orders/${payload.orderId}/legs/${payload.legId}/carrier-booking`,
+    { providerId: payload.providerId },
+  );
+  return res.data;
+}
+
+export async function syncCarrierTrackingForOrderLeg(payload: {
+  orderId: string;
+  legId: string;
+}) {
+  const res = await api.post<CarrierBookingResponse>(
+    `/api/orders/${payload.orderId}/legs/${payload.legId}/carrier-track-sync`,
+  );
+  return res.data;
+}
+
+export async function cancelCarrierForOrderLeg(payload: {
+  orderId: string;
+  legId: string;
+  reason?: string | null;
+}) {
+  const res = await api.post<CarrierBookingResponse>(
+    `/api/orders/${payload.orderId}/legs/${payload.legId}/carrier-cancel`,
+    { reason: payload.reason ?? null },
+  );
   return res.data;
 }
 

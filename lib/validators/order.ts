@@ -1,6 +1,16 @@
 import { z } from "zod";
 import { DEFAULT_SERVICE_TYPE, SERVICE_TYPES } from "@/lib/orders/service-types";
 
+const SUPPORTED_CURRENCIES = ["UZS", "USD", "CNY"] as const;
+const SUPPORTED_TRANSPORT_MODES = [
+  "ROAD",
+  "AIR",
+  "SEA",
+  "RAIL",
+  "COURIER",
+  "MULTIMODAL",
+] as const;
+
 export const addressSchema = z.object({
   country: z.string().optional().nullable(),
   city: z.string().optional().nullable(),
@@ -101,6 +111,13 @@ export const createOrderPayloadSchema = z
       dangerousGoods: z.boolean().optional(),
       shipmentInsurance: z.boolean().optional(),
       itemValue: optionalNumber(),
+      transportMode: z
+        .string()
+        .optional()
+        .nullable()
+        .transform((value) => String(value || "").trim().toUpperCase() || "ROAD")
+        .pipe(z.enum(SUPPORTED_TRANSPORT_MODES))
+        .default("ROAD"),
     }),
 
     payment: z
@@ -109,6 +126,11 @@ export const createOrderPayloadSchema = z
           .enum(["CASH", "CARD", "COD", "TRANSFER", "OTHER"])
           .optional()
           .nullable(),
+        provider: z
+          .enum(["CLICK", "PAYME", "UZUM", "STRIPE"])
+          .optional()
+          .nullable(),
+        idempotencyKey: z.string().trim().min(8).max(128).optional().nullable(),
 
         deliveryChargePaidBy: z
           .enum(["SENDER", "RECIPIENT", "COMPANY"])
@@ -191,6 +213,15 @@ export const createOrderPayloadSchema = z
           message: "City + street are required when saving dropoff address",
         });
       }
+    }
+
+    const cur = v.shipment?.currency?.trim().toUpperCase();
+    if (cur && !SUPPORTED_CURRENCIES.includes(cur as (typeof SUPPORTED_CURRENCIES)[number])) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["shipment", "currency"],
+        message: `Currency must be one of: ${SUPPORTED_CURRENCIES.join(", ")}`,
+      });
     }
   });
 
