@@ -34,7 +34,9 @@ let cachedUserRaw: string | null | undefined = undefined;
 let cachedUser: AuthUser | null = null;
 
 function normalizeRole(role: unknown): Role {
-  const value = String(role ?? "").trim().toLowerCase();
+  const value = String(role ?? "")
+    .trim()
+    .toLowerCase();
   switch (value) {
     case "manager":
     case "admin":
@@ -58,20 +60,27 @@ function normalizeRole(role: unknown): Role {
 
 function deriveRoleFromCodes(input: unknown): Role {
   if (!Array.isArray(input)) return "customer";
-  const codes = input.map((item) => String(item ?? "").trim().toLowerCase()).filter(Boolean);
-  if (
-    codes.includes("admin") ||
-    codes.includes("super_admin") ||
-    codes.includes("superadmin") ||
-    codes.includes("owner") ||
-    codes.includes("manager")
-  ) {
+  const codes = input
+    .map((item) =>
+      String(item ?? "")
+        .trim()
+        .toLowerCase(),
+    )
+    .filter(Boolean);
+  if (codes.some(isErpWorkspaceRoleCode)) {
     return "manager";
   }
-  if (codes.includes("warehouse") || codes.includes("pickup_point") || codes.includes("pickpoint")) {
+  if (codes.some(isWarehouseWorkspaceRoleCode)) {
     return "warehouse";
   }
-  if (codes.includes("driver") || codes.includes("courier")) {
+  if (
+    codes.some(
+      (code) =>
+        code === "driver" ||
+        code.includes("driver") ||
+        code.includes("courier"),
+    )
+  ) {
     return "driver";
   }
   if (codes.includes("customer") || codes.includes("client")) {
@@ -80,20 +89,72 @@ function deriveRoleFromCodes(input: unknown): Role {
   return "customer";
 }
 
+function isErpWorkspaceRoleCode(code: string) {
+  return (
+    code === "admin" ||
+    code === "super_admin" ||
+    code === "superadmin" ||
+    code === "owner" ||
+    code === "manager" ||
+    code === "branch_manager" ||
+    code === "accountant" ||
+    code === "dispatcher" ||
+    code === "support_agent"
+  );
+}
+
+function isWarehouseWorkspaceRoleCode(code: string) {
+  return (
+    code === "warehouse" ||
+    code.includes("warehouse") ||
+    code === "pickup_point" ||
+    code.includes("pickup_point") ||
+    code.includes("pickpoint")
+  );
+}
+
 function normalizeAuthUser(user: unknown): AuthUser {
   const raw = (user ?? {}) as Record<string, unknown>;
   const permissionCodes = Array.isArray(raw.permissionCodes)
-    ? raw.permissionCodes.map((item) => String(item ?? "").trim()).filter(Boolean)
-    : [];
+    ? raw.permissionCodes
+        .map((item) => String(item ?? "").trim())
+        .filter(Boolean)
+    : Array.isArray(raw.permissions)
+      ? raw.permissions
+          .map((item) =>
+            typeof item === "string"
+              ? item
+              : String((item as Record<string, unknown> | null)?.code ?? ""),
+          )
+          .map((item) => item.trim())
+          .filter(Boolean)
+      : [];
   const roleCodes = Array.isArray(raw.roleCodes)
-    ? raw.roleCodes.map((item) => String(item ?? "").trim().toLowerCase()).filter(Boolean)
-    : [];
+    ? raw.roleCodes
+        .map((item) =>
+          String(item ?? "")
+            .trim()
+            .toLowerCase(),
+        )
+        .filter(Boolean)
+    : Array.isArray(raw.roles)
+      ? raw.roles
+          .map((item) =>
+            typeof item === "string"
+              ? item
+              : String((item as Record<string, unknown> | null)?.code ?? ""),
+          )
+          .map((item) => item.trim().toLowerCase())
+          .filter(Boolean)
+      : [];
   const scopes = Array.isArray(raw.scopes)
     ? raw.scopes
         .map((item) => {
           if (!item || typeof item !== "object") return null;
           const typed = item as Record<string, unknown>;
-          const scopeType = String(typed.scopeType ?? "").trim().toLowerCase();
+          const scopeType = String(typed.scopeType ?? "")
+            .trim()
+            .toLowerCase();
           const scopeRefId = String(typed.scopeRefId ?? "").trim();
           if (!scopeType || !scopeRefId) return null;
           return {
@@ -104,8 +165,8 @@ function normalizeAuthUser(user: unknown): AuthUser {
         .filter((item): item is NonNullable<typeof item> => Boolean(item))
     : [];
   const rawRole =
-    raw.role ??
     (roleCodes.length > 0 ? deriveRoleFromCodes(roleCodes) : null) ??
+    raw.role ??
     "customer";
 
   return {
@@ -122,7 +183,9 @@ function normalizeAuthUser(user: unknown): AuthUser {
     warehouseId:
       raw.warehouseId === undefined ? null : (raw.warehouseId as string | null),
     customerEntityId:
-      raw.customerEntityId === undefined ? null : (raw.customerEntityId as string | null),
+      raw.customerEntityId === undefined
+        ? null
+        : (raw.customerEntityId as string | null),
   };
 }
 
@@ -139,7 +202,10 @@ export function saveAuth(
   const normalizedUser = normalizeAuthUser(user);
   window.localStorage.setItem(TOKEN_KEY, token);
   window.localStorage.setItem(USER_KEY, JSON.stringify(normalizedUser));
-  if (typeof options?.refreshToken === "string" && options.refreshToken.trim()) {
+  if (
+    typeof options?.refreshToken === "string" &&
+    options.refreshToken.trim()
+  ) {
     window.localStorage.setItem(REFRESH_TOKEN_KEY, options.refreshToken.trim());
   }
   cachedUserRaw = JSON.stringify(normalizedUser);
@@ -246,14 +312,61 @@ export function roleToDashboardPath(role: Role): string {
   }
 }
 
-export function hasPermission(user: AuthUser | null | undefined, permission: string): boolean {
+export function hasPermission(
+  user: AuthUser | null | undefined,
+  permission: string,
+): boolean {
   if (!user || !permission) return false;
   const set = new Set((user.permissionCodes ?? []).map((item) => item.trim()));
   return set.has(permission);
 }
 
-export function dashboardPathForUser(user: AuthUser | null | undefined): string {
+function firstScopeRef(
+  user: AuthUser | null | undefined,
+  scopeTypes: ScopeType[],
+) {
+  if (!user?.scopes?.length) return null;
+  const accepted = new Set(scopeTypes);
+  return (
+    user.scopes.find((scope) => accepted.has(scope.scopeType))?.scopeRefId ??
+    null
+  );
+}
+
+export function getPrimaryWarehouseId(user: AuthUser | null | undefined) {
+  return (
+    user?.warehouseId ?? firstScopeRef(user, ["warehouse", "pickup_point"])
+  );
+}
+
+export function getPrimaryCustomerEntityId(user: AuthUser | null | undefined) {
+  return user?.customerEntityId ?? firstScopeRef(user, ["client"]);
+}
+
+export function dashboardPathForUser(
+  user: AuthUser | null | undefined,
+): string {
   if (!user) return "/dashboard/customer";
+  const roleCodes = user.roleCodes ?? [];
+  const hasErpWorkspaceRole = roleCodes.some(isErpWorkspaceRoleCode);
+  const hasWarehouseWorkspaceRole = roleCodes.some(
+    isWarehouseWorkspaceRoleCode,
+  );
+
+  if (hasWarehouseWorkspaceRole && !hasErpWorkspaceRole) {
+    return "/dashboard/warehouse";
+  }
+  if (hasErpWorkspaceRole) {
+    return "/dashboard/manager";
+  }
+  if (
+    user.role !== "manager" &&
+    (getPrimaryWarehouseId(user) ||
+      hasPermission(user, "warehouse.scanIn") ||
+      hasPermission(user, "warehouse.scanOut"))
+  ) {
+    return "/dashboard/warehouse";
+  }
   if (
     hasPermission(user, "drivers.manage") ||
     hasPermission(user, "shipment.assignCourier") ||
@@ -262,10 +375,13 @@ export function dashboardPathForUser(user: AuthUser | null | undefined): string 
   ) {
     return "/dashboard/manager";
   }
-  if (user.warehouseId || hasPermission(user, "warehouse.scanIn")) {
+  if (getPrimaryWarehouseId(user) || hasPermission(user, "warehouse.scanIn")) {
     return "/dashboard/warehouse";
   }
-  if (hasPermission(user, "drivers.telemetry") || (user.roleCodes ?? []).includes("driver")) {
+  if (
+    hasPermission(user, "drivers.telemetry") ||
+    (user.roleCodes ?? []).includes("driver")
+  ) {
     return "/dashboard/driver";
   }
   return roleToDashboardPath(user.role);
