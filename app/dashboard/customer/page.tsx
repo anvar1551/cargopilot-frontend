@@ -5,31 +5,38 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
-  ArrowRight,
-  Clock3,
-  FileSpreadsheet,
+  Building2,
+  CreditCard,
   Headphones,
   Mail,
-  MapPinned,
-  Upload,
+  MapPin,
   Package,
   Phone,
+  ReceiptText,
   ShieldCheck,
   Truck,
 } from "lucide-react";
 
-import { getUser } from "@/lib/auth";
-import { getStatusLabel } from "@/lib/i18n/labels";
-import { fetchOrders, type OrderStatus, type OrdersResponse } from "@/lib/orders";
+import { fetchAddresses, formatAddress, type Address } from "@/lib/addresses";
+import { getPrimaryCustomerEntityId, getUser } from "@/lib/auth";
+import { getCustomerById, type CustomerEntity } from "@/lib/customers";
+import {
+  fetchOrders,
+  type OrderStatus,
+  type OrdersResponse,
+} from "@/lib/orders";
+import { READ_ONLY_ORDER_CAPABILITIES } from "@/lib/orders/permissions";
 
-import { useI18n } from "@/components/i18n/I18nProvider";
 import BulkOrderImportDialog from "@/components/orders/BulkOrderImportDialog";
 import CreateOrderDialog from "@/components/orders/CreateOrderDialog";
+import OrdersTable, {
+  type OrderTableRow,
+} from "@/components/orders/OrderTable";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 type InvoiceState = {
   invoiceUrl?: string | null;
@@ -41,8 +48,8 @@ type CustomerOrder = {
   id: string;
   orderNumber?: string | number | null;
   status?: OrderStatus | string | null;
+  paymentState?: string | null;
   createdAt?: string | null;
-  updatedAt?: string | null;
   pickupAddress?: string | null;
   dropoffAddress?: string | null;
   destinationCity?: string | null;
@@ -51,150 +58,15 @@ type CustomerOrder = {
   Invoice?: InvoiceState | null;
 };
 
-const copy = {
-  en: {
-    badge: "Customer Control Center",
-    title: "Customer Dashboard",
-    subtitle:
-      "Create shipments, upload bulk CSVs, track live delivery movement, and reach support from one place.",
-    activeShipments: "Active shipments",
-    activeShipmentsHint: "Not in a final state",
-    delivered: "Delivered",
-    deliveredHint: "Closed successfully",
-    paymentPending: "Payment pending",
-    paymentPendingHint: "Invoice or payment link requires action",
-    exceptions: "Needs attention",
-    exceptionsHint: "Shipment has an issue or return flow",
-    newShipment: "New shipment",
-    bulkImport: "Bulk import",
-    viewOrders: "View all orders",
-    support: "Support",
-    supportTitle: "Customer support",
-    supportSubtitle:
-      "Need help with pickup, invoice, address correction, or delivery timing? Use the fastest channel below.",
-    supportHours: "Support hours",
-    supportHoursValue: "Mon-Fri, 08:00-18:00",
-    callSupport: "Call support",
-    emailSupport: "Email support",
-    recentActivity: "Recent activity",
-    recentActivitySubtitle: "Latest shipment movement and customer-facing events.",
-    noActivity: "No shipment activity yet.",
-    spotlightTitle: "Attention required",
-    spotlightEmpty: "No exception shipments right now.",
-    spotlightHint: "Open the affected order and contact support if a manual decision is needed.",
-    recentOrders: "Recent orders",
-    recentOrdersSubtitle: "Your latest shipments with the most important next actions.",
-    noOrders: "No shipments yet.",
-    noOrdersHint: "Create your first shipment or upload a CSV batch to get started.",
-    openDetails: "Open details",
-    from: "From",
-    to: "To",
-    created: "Created",
-    docsReady: "Docs ready",
-    paymentAction: "Payment action",
-    paymentDone: "Paid",
-    labelReady: "Label ready",
-    activityCreated: "Shipment created",
-    activityStatus: "Status updated to {status}",
-    customerNameFallback: "Customer",
-  },
-  ru: {
-    badge: "Панель клиента",
-    title: "Кабинет клиента",
-    subtitle:
-      "Создавайте отправления, загружайте CSV-пакеты, отслеживайте движение доставки и связывайтесь с поддержкой из одного места.",
-    activeShipments: "Активные отправления",
-    activeShipmentsHint: "Еще не в финальном статусе",
-    delivered: "Доставлено",
-    deliveredHint: "Успешно завершено",
-    paymentPending: "Ожидает оплаты",
-    paymentPendingHint: "Счет или ссылка на оплату требуют действия",
-    exceptions: "Требует внимания",
-    exceptionsHint: "Есть проблема или возвратный сценарий",
-    newShipment: "Новая отправка",
-    bulkImport: "Массовый импорт",
-    viewOrders: "Все заказы",
-    support: "Поддержка",
-    supportTitle: "Поддержка клиентов",
-    supportSubtitle:
-      "Нужна помощь с забором, счетом, корректировкой адреса или сроками доставки? Используйте самый удобный канал ниже.",
-    supportHours: "Часы поддержки",
-    supportHoursValue: "Пн-Пт, 08:00-18:00",
-    callSupport: "Позвонить в поддержку",
-    emailSupport: "Написать в поддержку",
-    recentActivity: "Последняя активность",
-    recentActivitySubtitle: "Последние движения отправлений и клиентские события.",
-    noActivity: "Пока нет активности по отправлениям.",
-    spotlightTitle: "Требует внимания",
-    spotlightEmpty: "Сейчас нет отправлений с проблемами.",
-    spotlightHint: "Откройте проблемный заказ и свяжитесь с поддержкой, если нужно ручное решение.",
-    recentOrders: "Последние заказы",
-    recentOrdersSubtitle: "Ваши последние отправления с самыми важными следующими действиями.",
-    noOrders: "Отправлений пока нет.",
-    noOrdersHint: "Создайте первое отправление или загрузите CSV-пакет, чтобы начать.",
-    openDetails: "Открыть детали",
-    from: "Откуда",
-    to: "Куда",
-    created: "Создан",
-    docsReady: "Документы готовы",
-    paymentAction: "Требуется оплата",
-    paymentDone: "Оплачено",
-    labelReady: "Наклейка готова",
-    activityCreated: "Отправление создано",
-    activityStatus: "Статус изменен на {status}",
-    customerNameFallback: "Клиент",
-  },
-  uz: {
-    badge: "Mijoz boshqaruv markazi",
-    title: "Mijoz dashboardi",
-    subtitle:
-      "Jo'natma yarating, CSV batch yuklang, delivery holatini kuzating va support bilan bir joydan bog'laning.",
-    activeShipments: "Faol jo'natmalar",
-    activeShipmentsHint: "Final statusga yetmagan",
-    delivered: "Yetkazilgan",
-    deliveredHint: "Muvaffaqiyatli yopilgan",
-    paymentPending: "To'lov kutilmoqda",
-    paymentPendingHint: "Invoice yoki payment link bo'yicha amal kerak",
-    exceptions: "E'tibor talab qiladi",
-    exceptionsHint: "Muammo yoki return jarayoni bor",
-    newShipment: "Yangi jo'natma",
-    bulkImport: "Bulk import",
-    viewOrders: "Barcha buyurtmalar",
-    support: "Support",
-    supportTitle: "Mijozlar supporti",
-    supportSubtitle:
-      "Pickup, invoice, manzilni tuzatish yoki delivery vaqti bo'yicha yordam kerakmi? Quyidagi qulay kanalni tanlang.",
-    supportHours: "Support vaqti",
-    supportHoursValue: "Du-Ju, 08:00-18:00",
-    callSupport: "Supportga qo'ng'iroq qilish",
-    emailSupport: "Supportga yozish",
-    recentActivity: "So'nggi faollik",
-    recentActivitySubtitle: "Jo'natma harakati va mijozga ko'rinadigan so'nggi voqealar.",
-    noActivity: "Hozircha jo'natmalar bo'yicha faollik yo'q.",
-    spotlightTitle: "E'tibor talab qiladi",
-    spotlightEmpty: "Hozircha muammoli jo'natmalar yo'q.",
-    spotlightHint: "Muammoli buyurtmani oching va kerak bo'lsa support bilan bog'laning.",
-    recentOrders: "So'nggi buyurtmalar",
-    recentOrdersSubtitle: "Sizning so'nggi jo'natmalaringiz va keyingi muhim amallar.",
-    noOrders: "Hali jo'natmalar yo'q.",
-    noOrdersHint: "Boshlash uchun birinchi jo'natmani yarating yoki CSV batch yuklang.",
-    openDetails: "Tafsilotlarni ochish",
-    from: "Qayerdan",
-    to: "Qayerga",
-    created: "Yaratilgan",
-    docsReady: "Hujjatlar tayyor",
-    paymentAction: "To'lov kerak",
-    paymentDone: "To'langan",
-    labelReady: "Label tayyor",
-    activityCreated: "Jo'natma yaratildi",
-    activityStatus: "Status {status} ga o'zgardi",
-    customerNameFallback: "Mijoz",
-  },
-} as const;
+const FINAL_STATUSES = new Set(["delivered", "returned", "cancelled"]);
+const EXCEPTION_STATUSES = new Set(["exception", "return_in_progress"]);
 
-function hasInvoiceReady(order: CustomerOrder) {
-  const invoice = order.invoice ?? order.Invoice;
-  return Boolean(invoice?.invoiceUrl);
+function isFinalStatus(status?: string | null) {
+  return FINAL_STATUSES.has(String(status ?? ""));
+}
+
+function isExceptionStatus(status?: string | null) {
+  return EXCEPTION_STATUSES.has(String(status ?? ""));
 }
 
 function hasPaymentPending(order: CustomerOrder) {
@@ -204,22 +76,17 @@ function hasPaymentPending(order: CustomerOrder) {
 
 function isPaid(order: CustomerOrder) {
   const invoice = order.invoice ?? order.Invoice;
-  return invoice?.status === "paid";
+  return (
+    invoice?.status === "paid" ||
+    String(order.paymentState ?? "").toLowerCase() === "paid"
+  );
 }
 
-function isFinalStatus(status?: string | null) {
-  return ["delivered", "returned", "cancelled"].includes(String(status ?? ""));
-}
-
-function isExceptionStatus(status?: string | null) {
-  return ["exception", "return_in_progress"].includes(String(status ?? ""));
-}
-
-function formatDate(value: string | null | undefined, locale: string) {
+function formatDate(value?: string | null) {
   if (!value) return "-";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "-";
-  return new Intl.DateTimeFormat(locale, {
+  return new Intl.DateTimeFormat(undefined, {
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -228,462 +95,567 @@ function formatDate(value: string | null | undefined, locale: string) {
   }).format(date);
 }
 
-function DashboardSkeleton() {
+function customerDisplayName(
+  customer: CustomerEntity | null | undefined,
+  fallback: string,
+) {
+  return customer?.companyName || customer?.name || fallback;
+}
+
+function toOrderTableRows(orders: CustomerOrder[]): OrderTableRow[] {
+  return orders.map((order) => ({
+    id: order.id,
+    orderNumber: order.orderNumber,
+    status: order.status ?? null,
+    paymentState: order.paymentState ?? null,
+    pickupAddress: order.pickupAddress ?? null,
+    dropoffAddress: order.dropoffAddress ?? null,
+    createdAt: order.createdAt ?? null,
+    labelUrl: order.labelUrl ?? null,
+    invoice: order.invoice ?? null,
+    Invoice: order.Invoice ?? null,
+  }));
+}
+
+function MetricCard({
+  title,
+  value,
+  hint,
+  icon: Icon,
+  tone,
+}: {
+  title: string;
+  value: string | number;
+  hint: string;
+  icon: typeof Package;
+  tone: string;
+}) {
   return (
-    <div className="p-4 sm:p-6">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <Skeleton className="h-56 w-full rounded-[2rem]" />
-        <div className="grid gap-4 md:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, index) => (
-            <Skeleton key={index} className="h-32 rounded-3xl" />
-          ))}
+    <Card className="rounded-3xl border-slate-200/80 shadow-sm shadow-black/5">
+      <CardContent className="flex items-center gap-4 p-5">
+        <div
+          className={`flex h-12 w-12 items-center justify-center rounded-2xl ${tone}`}
+        >
+          <Icon className="h-5 w-5" />
         </div>
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_360px]">
-          <Skeleton className="h-[420px] rounded-3xl" />
-          <Skeleton className="h-[420px] rounded-3xl" />
+        <div className="min-w-0">
+          <p className="text-sm text-slate-500">{title}</p>
+          <p className="mt-1 text-2xl font-semibold text-slate-950">{value}</p>
+          <p className="mt-1 truncate text-xs text-slate-500">{hint}</p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function AddressCard({ address }: { address: Address }) {
+  const rendered =
+    formatAddress(address) ||
+    [address.street, address.city, address.country]
+      .filter(Boolean)
+      .join(", ") ||
+    "Saved address";
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm shadow-black/5">
+      <div className="flex items-start gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cyan-50 text-cyan-700">
+          <MapPin className="h-4 w-4" />
+        </div>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="font-medium text-slate-950">
+              {address.city || address.country || "Address"}
+            </p>
+            {address.addressType ? (
+              <Badge variant="outline">{address.addressType}</Badge>
+            ) : null}
+          </div>
+          <p className="mt-1 text-sm text-slate-600">{rendered}</p>
+          {address.latitude != null && address.longitude != null ? (
+            <p className="mt-2 text-xs text-slate-400">
+              {address.latitude.toFixed(5)}, {address.longitude.toFixed(5)}
+            </p>
+          ) : null}
         </div>
       </div>
     </div>
   );
 }
 
-export default function CustomerDashboard() {
-  const { locale, t } = useI18n();
-  const text = copy[locale];
-  const user = useMemo(() => getUser(), []);
+function LoadingWorkspace() {
+  return (
+    <div className="w-full space-y-6 p-4 sm:p-6 lg:p-8">
+      <Skeleton className="h-56 rounded-[2rem]" />
+      <div className="grid gap-4 md:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, index) => (
+          <Skeleton key={index} className="h-28 rounded-3xl" />
+        ))}
+      </div>
+      <Skeleton className="h-[480px] rounded-3xl" />
+    </div>
+  );
+}
 
-  const { data, isLoading, error } = useQuery<OrdersResponse>({
-    queryKey: ["orders"],
+export default function CustomerDashboard() {
+  const user = useMemo(() => getUser(), []);
+  const customerEntityId = getPrimaryCustomerEntityId(user);
+
+  const ordersQuery = useQuery<OrdersResponse>({
+    queryKey: ["orders", "customer-workspace"],
     queryFn: () => fetchOrders({ limit: 100, mode: "cursor" }),
   });
 
-  const orderList = useMemo(() => (data?.orders ?? []) as CustomerOrder[], [data]);
+  const customerQuery = useQuery({
+    queryKey: ["customer", customerEntityId],
+    queryFn: () => getCustomerById(customerEntityId!),
+    enabled: Boolean(customerEntityId),
+    staleTime: 60_000,
+  });
 
-  const sortedOrders = useMemo(() => {
-    return [...orderList].sort((left, right) => {
-      const leftDate = left.createdAt ? new Date(left.createdAt).getTime() : 0;
-      const rightDate = right.createdAt ? new Date(right.createdAt).getTime() : 0;
-      return rightDate - leftDate;
-    });
-  }, [orderList]);
+  const addressesQuery = useQuery({
+    queryKey: ["addresses", "customer-workspace", customerEntityId ?? "self"],
+    queryFn: ({ signal }) =>
+      fetchAddresses(
+        customerEntityId ? { customerEntityId, limit: 12 } : { limit: 12 },
+        signal,
+      ),
+    staleTime: 60_000,
+  });
 
-  const activeOrders = orderList.filter((order) => !isFinalStatus(order.status));
-  const deliveredOrders = orderList.filter((order) => order.status === "delivered");
-  const paymentPendingOrders = orderList.filter(hasPaymentPending);
-  const exceptionOrders = orderList.filter((order) => isExceptionStatus(order.status));
-  const recentOrders = sortedOrders.slice(0, 6);
-  const recentActivity = sortedOrders.slice(0, 5);
-  const spotlightOrder = exceptionOrders[0] ?? null;
+  const orders = useMemo(
+    () => (ordersQuery.data?.orders ?? []) as CustomerOrder[],
+    [ordersQuery.data],
+  );
+  const recentOrders = useMemo(() => orders.slice(0, 8), [orders]);
+  const orderRows = useMemo(
+    () => toOrderTableRows(recentOrders),
+    [recentOrders],
+  );
 
-  const supportEmail = process.env.NEXT_PUBLIC_SUPPORT_EMAIL || "support@cargopilot.app";
-  const supportPhone = process.env.NEXT_PUBLIC_SUPPORT_PHONE || "+49 40 0000 0000";
-  const customerLabel = user?.name || user?.email || text.customerNameFallback;
-  const customerEntityId = user?.customerEntityId ?? null;
+  const activeOrders = orders.filter(
+    (order) => !isFinalStatus(order.status),
+  ).length;
+  const deliveredOrders = orders.filter(
+    (order) => order.status === "delivered",
+  ).length;
+  const paymentPending = orders.filter(hasPaymentPending).length;
+  const exceptions = orders.filter((order) =>
+    isExceptionStatus(order.status),
+  ).length;
+  const paidOrders = orders.filter(isPaid).length;
+  const customer = customerQuery.data ?? null;
+  const displayName = customerDisplayName(customer, user?.name || "Customer");
 
-  if (isLoading) {
-    return <DashboardSkeleton />;
-  }
-
-  if (error) {
-    return (
-      <div className="p-4 sm:p-6">
-        <Card className="mx-auto max-w-5xl rounded-3xl border-destructive/30">
-          <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            Failed to load customer dashboard.
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  if (ordersQuery.isLoading) return <LoadingWorkspace />;
 
   return (
-    <div className="p-4 sm:p-6">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <section className="relative overflow-hidden rounded-[2rem] border border-border/60 bg-[linear-gradient(135deg,rgba(15,23,42,0.98),rgba(11,92,122,0.92),rgba(255,255,255,0.98))] text-white">
-          <div className="absolute -right-20 -top-16 h-72 w-72 rounded-full bg-cyan-400/15 blur-3xl" />
-          <div className="absolute -left-20 bottom-0 h-64 w-64 rounded-full bg-sky-300/10 blur-3xl" />
-          <div className="relative grid gap-6 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:p-8">
-            <div className="space-y-5">
-              <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs uppercase tracking-[0.18em] text-white/90">
-                <ShieldCheck className="h-3.5 w-3.5" />
-                {text.badge}
-              </div>
-
-              <div className="space-y-2">
-                <h1 className="text-3xl font-semibold tracking-tight">{text.title}</h1>
-                <p className="max-w-3xl text-sm text-slate-100/85">{text.subtitle}</p>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <div className="rounded-3xl border border-white/15 bg-white/10 p-4 backdrop-blur">
-                  <p className="text-xs uppercase tracking-[0.18em] text-white/70">
-                    {text.activeShipments}
-                  </p>
-                  <p className="mt-3 text-3xl font-semibold">{activeOrders.length}</p>
-                  <p className="mt-2 text-xs text-white/70">{text.activeShipmentsHint}</p>
-                </div>
-                <div className="rounded-3xl border border-white/15 bg-white/10 p-4 backdrop-blur">
-                  <p className="text-xs uppercase tracking-[0.18em] text-white/70">
-                    {text.delivered}
-                  </p>
-                  <p className="mt-3 text-3xl font-semibold">{deliveredOrders.length}</p>
-                  <p className="mt-2 text-xs text-white/70">{text.deliveredHint}</p>
-                </div>
-                <div className="rounded-3xl border border-white/15 bg-white/10 p-4 backdrop-blur">
-                  <p className="text-xs uppercase tracking-[0.18em] text-white/70">
-                    {text.paymentPending}
-                  </p>
-                  <p className="mt-3 text-3xl font-semibold">{paymentPendingOrders.length}</p>
-                  <p className="mt-2 text-xs text-white/70">{text.paymentPendingHint}</p>
-                </div>
-                <div className="rounded-3xl border border-white/15 bg-white/10 p-4 backdrop-blur">
-                  <p className="text-xs uppercase tracking-[0.18em] text-white/70">
-                    {text.exceptions}
-                  </p>
-                  <p className="mt-3 text-3xl font-semibold">{exceptionOrders.length}</p>
-                  <p className="mt-2 text-xs text-white/70">{text.exceptionsHint}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex w-full max-w-sm flex-col gap-3 lg:w-[300px]">
-              <CreateOrderDialog triggerLabel={text.newShipment} />
-              {customerEntityId ? (
-                <BulkOrderImportDialog
-                  customerEntityId={customerEntityId}
-                  customerLabel={customerLabel}
-                  trigger={
-                    <Button variant="secondary" className="rounded-2xl">
-                      <Upload className="h-4 w-4" />
-                      {text.bulkImport}
-                    </Button>
-                  }
-                />
-              ) : null}
-              <Button asChild variant="secondary" className="rounded-2xl">
-                <Link href="/dashboard/customer/orders">
-                  <Package className="h-4 w-4" />
-                  {text.viewOrders}
-                </Link>
-              </Button>
-              <Button asChild variant="secondary" className="rounded-2xl">
-                <a href={`mailto:${supportEmail}`}>
-                  <Headphones className="h-4 w-4" />
-                  {text.support}
-                </a>
-              </Button>
+    <div className="w-full space-y-6 p-4 sm:p-6 lg:p-8">
+      <section className="relative overflow-hidden rounded-[32px] border border-slate-200/70 bg-gradient-to-br from-slate-950 via-slate-900 to-cyan-900 p-6 text-white shadow-sm shadow-black/10 lg:p-8">
+        <div className="absolute inset-y-0 right-0 w-1/2 bg-[radial-gradient(circle_at_top_right,rgba(20,184,166,0.28),transparent_44%),radial-gradient(circle_at_bottom_right,rgba(56,189,248,0.14),transparent_42%)]" />
+        <div className="relative flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
+          <div className="max-w-3xl">
+            <Badge className="mb-4 border-white/20 bg-white/10 text-slate-100 hover:bg-white/15">
+              Customer ERP Workspace
+            </Badge>
+            <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+              {displayName}
+            </h1>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-200/90">
+              Customer profile, shipment pipeline, address book, payment
+              exposure, and support context in one operational workspace.
+            </p>
+            <div className="mt-5 flex flex-wrap gap-2 text-xs text-slate-200/80">
+              <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">
+                {customer?.type ?? "Customer"}
+              </span>
+              <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">
+                {customer?.email || user?.email || "No email"}
+              </span>
+              <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">
+                {customer?.phone || "No phone"}
+              </span>
             </div>
           </div>
-        </section>
 
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_360px]">
-          <div className="space-y-6">
-            <Card className="rounded-3xl border border-border/60">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <CardTitle className="text-xl">{text.recentActivity}</CardTitle>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {text.recentActivitySubtitle}
-                    </p>
-                  </div>
-                  <Badge variant="outline" className="rounded-full">
-                    {recentActivity.length}
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {recentActivity.length === 0 ? (
-                  <div className="rounded-3xl border border-dashed border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">
-                    {text.noActivity}
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {recentActivity.map((order) => (
-                      <div key={order.id} className="flex gap-4">
-                        <div className="flex w-10 flex-col items-center">
-                          <div className="rounded-2xl border border-border/60 bg-background p-2">
-                            <Clock3 className="h-4 w-4 text-muted-foreground" />
-                          </div>
-                          <div className="mt-2 h-full w-px bg-border" />
-                        </div>
-                        <div className="min-w-0 flex-1 rounded-3xl border border-border/60 bg-background/70 p-4">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Badge variant="outline" className="rounded-full">
-                              {order.orderNumber ? `#${order.orderNumber}` : text.activityCreated}
-                            </Badge>
-                            <Badge className="rounded-full" variant="secondary">
-                              {getStatusLabel(String(order.status ?? ""), t)}
-                            </Badge>
-                          </div>
-                          <p className="mt-3 text-sm font-medium">
-                            {t("common.status." + String(order.status ?? "pending")) ===
-                            "common.status." + String(order.status ?? "pending")
-                              ? text.activityStatus.replace(
-                                  "{status}",
-                                  getStatusLabel(String(order.status ?? ""), t),
-                                )
-                              : text.activityStatus.replace(
-                                  "{status}",
-                                  getStatusLabel(String(order.status ?? ""), t),
-                                )}
-                          </p>
-                          <p className="mt-2 text-sm text-muted-foreground">
-                            {order.pickupAddress || "-"} {"->"} {order.dropoffAddress || "-"}
-                          </p>
-                          <p className="mt-2 text-xs text-muted-foreground">
-                            {formatDate(order.updatedAt ?? order.createdAt, locale)}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card className="rounded-3xl border border-border/60">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <CardTitle className="text-xl">{text.recentOrders}</CardTitle>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {text.recentOrdersSubtitle}
-                    </p>
-                  </div>
-                  <Button asChild variant="outline" size="sm" className="rounded-full">
-                    <Link href="/dashboard/customer/orders">{text.viewOrders}</Link>
+          <div className="flex flex-wrap gap-3">
+            <CreateOrderDialog
+              triggerLabel="New shipment"
+              presetCustomerEntityId={customerEntityId}
+              presetCustomerEntityLabel={displayName}
+              lockCustomerEntitySelection
+              triggerClassName="rounded-2xl bg-white px-5 text-slate-950 hover:bg-slate-100"
+            />
+            {customerEntityId ? (
+              <BulkOrderImportDialog
+                customerEntityId={customerEntityId}
+                customerLabel={displayName}
+                trigger={
+                  <Button
+                    variant="outline"
+                    className="rounded-2xl border-white/25 bg-white/10 px-5 text-white hover:bg-white/20 hover:text-white"
+                  >
+                    Bulk import
                   </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {recentOrders.length === 0 ? (
-                  <div className="rounded-3xl border border-dashed border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">
-                    <p className="font-medium text-foreground">{text.noOrders}</p>
-                    <p className="mt-2">{text.noOrdersHint}</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {recentOrders.map((order) => (
-                      <div
-                        key={order.id}
-                        className="rounded-3xl border border-border/60 bg-background/70 p-4 transition hover:bg-muted/20"
-                      >
-                        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                          <div className="min-w-0 space-y-3">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <Badge variant="secondary" className="rounded-full">
-                                {getStatusLabel(String(order.status ?? ""), t)}
-                              </Badge>
-                              <span className="text-xs text-muted-foreground">
-                                {order.orderNumber ? `#${order.orderNumber}` : text.activityCreated}
-                              </span>
-                              {hasInvoiceReady(order) ? (
-                                <Badge variant="outline" className="rounded-full">
-                                  {text.docsReady}
-                                </Badge>
-                              ) : null}
-                              {hasPaymentPending(order) ? (
-                                <Badge variant="outline" className="rounded-full">
-                                  {text.paymentAction}
-                                </Badge>
-                              ) : null}
-                              {isPaid(order) ? (
-                                <Badge variant="outline" className="rounded-full">
-                                  {text.paymentDone}
-                                </Badge>
-                              ) : null}
-                              {order.labelUrl ? (
-                                <Badge variant="outline" className="rounded-full">
-                                  {text.labelReady}
-                                </Badge>
-                              ) : null}
-                            </div>
-
-                            <div className="grid gap-3 md:grid-cols-2">
-                              <div className="flex items-start gap-3">
-                                <div className="rounded-2xl border border-border/60 bg-muted/20 p-2">
-                                  <MapPinned className="h-4 w-4 text-muted-foreground" />
-                                </div>
-                                <div className="min-w-0">
-                                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                                    {text.from}
-                                  </p>
-                                  <p className="mt-1 truncate text-sm font-medium">
-                                    {order.pickupAddress || "-"}
-                                  </p>
-                                </div>
-                              </div>
-
-                              <div className="flex items-start gap-3">
-                                <div className="rounded-2xl border border-border/60 bg-muted/20 p-2">
-                                  <Truck className="h-4 w-4 text-muted-foreground" />
-                                </div>
-                                <div className="min-w-0">
-                                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                                    {text.to}
-                                  </p>
-                                  <p className="mt-1 truncate text-sm font-medium">
-                                    {order.dropoffAddress || order.destinationCity || "-"}
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-
-                            <p className="text-xs text-muted-foreground">
-                              {text.created} {formatDate(order.createdAt, locale)}
-                            </p>
-                          </div>
-
-                          <Button asChild variant="outline" className="rounded-2xl">
-                            <Link href={`/dashboard/customer?order=${order.id}`}>
-                              {text.openDetails}
-                              <ArrowRight className="h-4 w-4" />
-                            </Link>
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="space-y-6">
-            <Card className="rounded-3xl border border-border/60">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-xl">{text.spotlightTitle}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {spotlightOrder ? (
-                  <div className="rounded-3xl border border-amber-300/40 bg-amber-50 p-5 text-amber-950">
-                    <div className="flex items-start gap-3">
-                      <div className="rounded-2xl bg-amber-500/10 p-2">
-                        <AlertTriangle className="h-5 w-5 text-amber-600" />
-                      </div>
-                      <div className="space-y-2">
-                        <p className="font-semibold">
-                          {spotlightOrder.orderNumber
-                            ? `#${spotlightOrder.orderNumber}`
-                            : text.spotlightTitle}
-                        </p>
-                        <p className="text-sm">
-                          {getStatusLabel(String(spotlightOrder.status ?? ""), t)}
-                        </p>
-                        <p className="text-sm opacity-80">
-                          {text.spotlightHint}
-                        </p>
-                        <Button asChild size="sm" variant="outline" className="rounded-full bg-white/80">
-                          <Link href={`/dashboard/customer?order=${spotlightOrder.id}`}>
-                            {text.openDetails}
-                          </Link>
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="rounded-3xl border border-dashed border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">
-                    {text.spotlightEmpty}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card className="rounded-3xl border border-border/60">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-xl">{text.supportTitle}</CardTitle>
-                <p className="text-sm text-muted-foreground">{text.supportSubtitle}</p>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="rounded-3xl border border-border/60 bg-muted/20 p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="rounded-2xl border border-border/60 bg-background p-2">
-                      <Phone className="h-4 w-4 text-muted-foreground" />
-                    </div>
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                        {text.support}
-                      </p>
-                      <p className="mt-1 text-sm font-medium">{supportPhone}</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-3xl border border-border/60 bg-muted/20 p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="rounded-2xl border border-border/60 bg-background p-2">
-                      <Mail className="h-4 w-4 text-muted-foreground" />
-                    </div>
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                        Email
-                      </p>
-                      <p className="mt-1 text-sm font-medium">{supportEmail}</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-3xl border border-border/60 bg-muted/20 p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                    {text.supportHours}
-                  </p>
-                  <p className="mt-2 text-sm font-medium">{text.supportHoursValue}</p>
-                </div>
-
-                <Separator />
-
-                <div className="grid gap-3">
-                  <Button asChild className="rounded-2xl">
-                    <a href={`tel:${supportPhone.replace(/\s+/g, "")}`}>
-                      <Phone className="h-4 w-4" />
-                      {text.callSupport}
-                    </a>
-                  </Button>
-                  <Button asChild variant="outline" className="rounded-2xl">
-                    <a href={`mailto:${supportEmail}`}>
-                      <Mail className="h-4 w-4" />
-                      {text.emailSupport}
-                    </a>
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="rounded-3xl border border-border/60">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-xl">{text.bulkImport}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3 text-sm text-muted-foreground">
-                <p>
-                  {locale === "ru"
-                    ? "Используйте CSV-шаблон, чтобы быстро загрузить несколько отправлений за один раз."
-                    : locale === "uz"
-                      ? "Bir nechta jo'natmalarni bir martada yuklash uchun CSV shablondan foydalaning."
-                      : "Use the CSV template to upload multiple shipments in one go."}
-                </p>
-                <div className="rounded-3xl border border-border/60 bg-muted/20 p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="rounded-2xl border border-border/60 bg-background p-2">
-                      <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium">{text.bulkImport}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {locale === "ru"
-                          ? "Тот же безопасный импорт, что и у менеджера, но привязанный к вашей сущности клиента."
-                          : locale === "uz"
-                            ? "Menejer bilan bir xil xavfsiz import oqimi, lekin sizning customer entity ga bog'langan."
-                            : "The same controlled import flow as manager mode, bound to your customer entity."}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                }
+              />
+            ) : null}
+            <Button
+              asChild
+              variant="outline"
+              className="rounded-2xl border-white/25 bg-white/10 px-5 text-white hover:bg-white/20 hover:text-white"
+            >
+              <Link href="/dashboard/customer/orders">All orders</Link>
+            </Button>
           </div>
         </div>
+      </section>
+
+      {!customerEntityId ? (
+        <Card className="rounded-3xl border-amber-200 bg-amber-50 text-amber-900">
+          <CardContent className="flex items-start gap-3 p-5 text-sm">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+            <div>
+              <p className="font-semibold">Customer entity is not linked</p>
+              <p className="mt-1 text-amber-800/80">
+                This account can open the portal, but address book and bulk
+                import need a customer entity scope or direct customerEntityId.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          title="Active shipments"
+          value={activeOrders}
+          hint="Not in final status"
+          icon={Truck}
+          tone="bg-blue-50 text-blue-700"
+        />
+        <MetricCard
+          title="Delivered"
+          value={deliveredOrders}
+          hint="Closed successfully"
+          icon={ShieldCheck}
+          tone="bg-emerald-50 text-emerald-700"
+        />
+        <MetricCard
+          title="Payment pending"
+          value={paymentPending}
+          hint={`${paidOrders} paid in loaded scope`}
+          icon={CreditCard}
+          tone="bg-amber-50 text-amber-700"
+        />
+        <MetricCard
+          title="Needs attention"
+          value={exceptions}
+          hint="Exception or return flow"
+          icon={AlertTriangle}
+          tone="bg-rose-50 text-rose-700"
+        />
       </div>
+
+      <Tabs defaultValue="shipments" className="space-y-4">
+        <TabsList className="grid h-auto w-full grid-cols-2 rounded-2xl border bg-white p-1 shadow-sm shadow-black/5 md:grid-cols-5">
+          <TabsTrigger
+            value="profile"
+            className="rounded-xl py-2 data-[state=active]:bg-slate-950 data-[state=active]:text-white"
+          >
+            Profile
+          </TabsTrigger>
+          <TabsTrigger
+            value="shipments"
+            className="rounded-xl py-2 data-[state=active]:bg-slate-950 data-[state=active]:text-white"
+          >
+            Shipments
+          </TabsTrigger>
+          <TabsTrigger
+            value="payments"
+            className="rounded-xl py-2 data-[state=active]:bg-slate-950 data-[state=active]:text-white"
+          >
+            Payments
+          </TabsTrigger>
+          <TabsTrigger
+            value="addresses"
+            className="rounded-xl py-2 data-[state=active]:bg-slate-950 data-[state=active]:text-white"
+          >
+            Addresses
+          </TabsTrigger>
+          <TabsTrigger
+            value="support"
+            className="rounded-xl py-2 data-[state=active]:bg-slate-950 data-[state=active]:text-white"
+          >
+            Support
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="profile" className="space-y-4">
+          <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+            <Card className="rounded-3xl border-slate-200/80 shadow-sm shadow-black/5">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Building2 className="h-5 w-5 text-cyan-700" />
+                  Customer profile
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-3 text-sm sm:grid-cols-2">
+                <Info label="Display name" value={displayName} />
+                <Info label="Type" value={customer?.type ?? "-"} />
+                <Info
+                  label="Email"
+                  value={customer?.email || user?.email || "-"}
+                />
+                <Info label="Phone" value={customer?.phone || "-"} />
+                <Info label="Tax ID" value={customer?.taxId || "-"} />
+                <Info label="Created" value={formatDate(customer?.createdAt)} />
+              </CardContent>
+            </Card>
+
+            <Card className="rounded-3xl border-slate-200/80 shadow-sm shadow-black/5">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <ReceiptText className="h-5 w-5 text-cyan-700" />
+                  Commercial context
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm text-slate-600">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="font-medium text-slate-950">
+                    Pricing and tariffs
+                  </p>
+                  <p className="mt-1">
+                    Customer-specific tariff assignment will appear here when
+                    the pricing API exposes customer plan lookup.
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="font-medium text-slate-950">
+                    Account ownership
+                  </p>
+                  <p className="mt-1">
+                    This workspace is scoped by customer entity, not old app
+                    role logic.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="shipments" className="space-y-4">
+          <Card className="rounded-3xl border-slate-200/80 shadow-sm shadow-black/5">
+            <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <CardTitle>Shipment pipeline</CardTitle>
+                <p className="mt-1 text-sm text-slate-500">
+                  Recent customer shipments with read-only ERP-safe actions.
+                </p>
+              </div>
+              <Button asChild variant="outline" className="rounded-2xl">
+                <Link href="/dashboard/customer/orders">
+                  Open full order list
+                </Link>
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {ordersQuery.isError ? (
+                <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+                  Failed to load shipments.
+                </div>
+              ) : (
+                <OrdersTable
+                  data={orderRows}
+                  capabilities={READ_ONLY_ORDER_CAPABILITIES}
+                  detailsBasePath="/dashboard/customer/orders"
+                  hideSearch
+                  hideQuickFilters
+                />
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="payments" className="space-y-4">
+          <div className="grid gap-4 lg:grid-cols-3">
+            <MetricCard
+              title="Payment pending"
+              value={paymentPending}
+              hint="Orders with active payment link"
+              icon={CreditCard}
+              tone="bg-amber-50 text-amber-700"
+            />
+            <MetricCard
+              title="Paid orders"
+              value={paidOrders}
+              hint="Loaded customer scope"
+              icon={ReceiptText}
+              tone="bg-emerald-50 text-emerald-700"
+            />
+            <MetricCard
+              title="Total loaded"
+              value={orders.length}
+              hint="Current dashboard query"
+              icon={Package}
+              tone="bg-slate-100 text-slate-700"
+            />
+          </div>
+          <Card className="rounded-3xl border-slate-200/80 shadow-sm shadow-black/5">
+            <CardHeader>
+              <CardTitle>Payment actions</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {orders
+                .filter(hasPaymentPending)
+                .slice(0, 5)
+                .map((order) => (
+                  <Link
+                    key={order.id}
+                    href={`/dashboard/customer/orders/${order.id}`}
+                    className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 p-4 transition hover:bg-slate-50"
+                  >
+                    <div>
+                      <p className="font-medium text-slate-950">
+                        #{order.orderNumber || order.id.slice(0, 8)}
+                      </p>
+                      <p className="mt-1 text-sm text-slate-500">
+                        {order.pickupAddress || "-"} {"->"}{" "}
+                        {order.dropoffAddress || "-"}
+                      </p>
+                    </div>
+                    <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">
+                      Pay now
+                    </Badge>
+                  </Link>
+                ))}
+              {paymentPending === 0 ? (
+                <p className="rounded-2xl border border-dashed p-6 text-sm text-slate-500">
+                  No pending customer payment actions.
+                </p>
+              ) : null}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="addresses" className="space-y-4">
+          <Card className="rounded-3xl border-slate-200/80 shadow-sm shadow-black/5">
+            <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <CardTitle>Address book</CardTitle>
+                <p className="mt-1 text-sm text-slate-500">
+                  Saved pickup and delivery addresses used during shipment
+                  creation.
+                </p>
+              </div>
+              <CreateOrderDialog
+                triggerLabel="Save through shipment"
+                presetCustomerEntityId={customerEntityId}
+                presetCustomerEntityLabel={displayName}
+                lockCustomerEntitySelection
+                triggerClassName="rounded-2xl"
+              />
+            </CardHeader>
+            <CardContent>
+              {addressesQuery.isLoading ? (
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Skeleton className="h-28 rounded-2xl" />
+                  <Skeleton className="h-28 rounded-2xl" />
+                </div>
+              ) : addressesQuery.data?.length ? (
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  {addressesQuery.data.map((address) => (
+                    <AddressCard key={address.id} address={address} />
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-dashed p-8 text-center text-sm text-slate-500">
+                  No saved addresses yet. Create a shipment and enable address
+                  saving to build the address book.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="support" className="space-y-4">
+          <div className="grid gap-4 lg:grid-cols-[1fr_0.8fr]">
+            <Card className="rounded-3xl border-slate-200/80 shadow-sm shadow-black/5">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Headphones className="h-5 w-5 text-cyan-700" />
+                  Support context
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm text-slate-600">
+                <p>
+                  Use support for pickup problems, delivery timing, payment
+                  questions, invoice requests, and address corrections.
+                </p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <a
+                    href="tel:+998000000000"
+                    className="flex items-center gap-3 rounded-2xl border border-slate-200 p-4 hover:bg-slate-50"
+                  >
+                    <Phone className="h-4 w-4 text-cyan-700" /> Call support
+                  </a>
+                  <a
+                    href="mailto:support@cargopilot.com"
+                    className="flex items-center gap-3 rounded-2xl border border-slate-200 p-4 hover:bg-slate-50"
+                  >
+                    <Mail className="h-4 w-4 text-cyan-700" /> Email support
+                  </a>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="rounded-3xl border-slate-200/80 shadow-sm shadow-black/5">
+              <CardHeader>
+                <CardTitle>Attention queue</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {orders
+                  .filter((order) => isExceptionStatus(order.status))
+                  .slice(0, 4)
+                  .map((order) => (
+                    <Link
+                      key={order.id}
+                      href={`/dashboard/customer/orders/${order.id}`}
+                      className="block rounded-2xl border border-rose-100 bg-rose-50/70 p-4 hover:bg-rose-50"
+                    >
+                      <p className="font-medium text-rose-950">
+                        #{order.orderNumber || order.id.slice(0, 8)}
+                      </p>
+                      <p className="mt-1 text-sm text-rose-800/80">
+                        Status:{" "}
+                        {String(order.status ?? "exception").replaceAll(
+                          "_",
+                          " ",
+                        )}
+                      </p>
+                    </Link>
+                  ))}
+                {exceptions === 0 ? (
+                  <p className="rounded-2xl border border-dashed p-6 text-sm text-slate-500">
+                    No exception shipments in the loaded scope.
+                  </p>
+                ) : null}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+function Info({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+      <p className="text-xs uppercase tracking-[0.18em] text-slate-400">
+        {label}
+      </p>
+      <p className="mt-2 break-words font-medium text-slate-950">{value}</p>
     </div>
   );
 }
