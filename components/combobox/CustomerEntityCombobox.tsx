@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useDebounce } from "@/lib/hooks/useDebounce";
 
-import { fetchCustomers, type CustomerEntity } from "@/lib/customerEntities";
+import { fetchCustomers, getCustomerById, type CustomerEntity } from "@/lib/customerEntities";
 
 import {
   Popover,
@@ -44,6 +44,11 @@ export function CustomerEntityCombobox(props: {
       }),
     enabled: open,
   });
+  const selectedQuery = useQuery({
+    queryKey: ["customer-entity", props.value],
+    queryFn: () => getCustomerById(String(props.value)),
+    enabled: Boolean(props.value),
+  });
 
   const entities = useMemo(() => query.data?.data ?? [], [query.data]);
 
@@ -52,8 +57,8 @@ export function CustomerEntityCombobox(props: {
 
     // try to find in current page
     const inList = entities.find((x) => x.id === props.value);
-    return inList ?? null;
-  }, [entities, props.value]);
+    return inList ?? selectedQuery.data ?? null;
+  }, [entities, props.value, selectedQuery.data]);
 
   const label =
     selected?.companyName ||

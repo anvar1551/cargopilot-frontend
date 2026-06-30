@@ -56,6 +56,22 @@ type CustomerOrder = {
   labelUrl?: string | null;
   invoice?: InvoiceState | null;
   Invoice?: InvoiceState | null;
+  senderName?: string | null;
+  senderPhone?: string | null;
+  receiverName?: string | null;
+  receiverPhone?: string | null;
+  customer?: {
+    name?: string | null;
+    email?: string | null;
+  } | null;
+  customerEntity?: {
+    id?: string | null;
+    name?: string | null;
+    companyName?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    type?: string | null;
+  } | null;
 };
 
 const FINAL_STATUSES = new Set(["delivered", "returned", "cancelled"]);
@@ -114,6 +130,12 @@ function toOrderTableRows(orders: CustomerOrder[]): OrderTableRow[] {
     labelUrl: order.labelUrl ?? null,
     invoice: order.invoice ?? null,
     Invoice: order.Invoice ?? null,
+    senderName: order.senderName ?? null,
+    senderPhone: order.senderPhone ?? null,
+    receiverName: order.receiverName ?? null,
+    receiverPhone: order.receiverPhone ?? null,
+    customer: order.customer ?? null,
+    customerEntity: order.customerEntity ?? null,
   }));
 }
 

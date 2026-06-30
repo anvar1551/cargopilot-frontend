@@ -6,9 +6,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { fetchOrderById, fetchOrders } from "@/lib/orders";
-import { fetchManagerOverview, subscribeManagerAnalyticsStream } from "@/lib/manager";
+import {
+  fetchManagerOverview,
+  subscribeManagerAnalyticsStream,
+} from "@/lib/manager";
 import { getStatusLabel } from "@/lib/i18n/labels";
 import { usePageVisibility } from "@/lib/usePageVisibility";
+import { useRealtimeFallbackInterval } from "@/lib/use-realtime-fallback";
 import { cn } from "@/lib/utils";
 
 import { useI18n } from "@/components/i18n/I18nProvider";
@@ -95,8 +99,7 @@ const copy = {
   en: {
     badge: "Live operations",
     title: "Operations Overview",
-    subtitle:
-      "Real-time command center for operations, dispatch, and support.",
+    subtitle: "Real-time command center for operations, dispatch, and support.",
     openDispatch: "Open Dispatch",
     ordersQueue: "Orders Queue",
     supportDesk: "Support Desk",
@@ -324,7 +327,12 @@ function statusDotClass(status: string | null | undefined) {
   if (s === "at_warehouse") return "bg-cyan-600";
   if (s === "in_transit") return "bg-teal-600";
   if (s === "out_for_delivery") return "bg-emerald-600";
-  if (s === "exception" || s === "return_in_progress" || s === "returned" || s === "cancelled") {
+  if (
+    s === "exception" ||
+    s === "return_in_progress" ||
+    s === "returned" ||
+    s === "cancelled"
+  ) {
     return "bg-red-500";
   }
   return "bg-slate-400";
@@ -381,7 +389,14 @@ function SlaDonut({
   return (
     <div className="relative h-36 w-36">
       <svg viewBox="0 0 120 120" className="h-full w-full -rotate-90">
-        <circle cx="60" cy="60" r={radius} fill="none" stroke="#eef2f7" strokeWidth="12" />
+        <circle
+          cx="60"
+          cy="60"
+          r={radius}
+          fill="none"
+          stroke="#eef2f7"
+          strokeWidth="12"
+        />
         {segments.map((segment) => {
           const pct = (segment.value / total) * 100;
           const dash = Math.max(0, (pct / 100) * circumference - gap);
@@ -417,8 +432,16 @@ export default function ManagerDashboardPage() {
   const text = copy[locale];
   const queryClient = useQueryClient();
   const isPageVisible = usePageVisibility();
-  const dashboardInvalidateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [analyticsStreamConnectedAt, setAnalyticsStreamConnectedAt] = useState<string | null>(null);
+  const dashboardInvalidateTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+  const [analyticsStreamConnectedAt, setAnalyticsStreamConnectedAt] = useState<
+    string | null
+  >(null);
+  const realtimeFallbackInterval = useRealtimeFallbackInterval({
+    isPageVisible,
+    realtimeConnected: Boolean(analyticsStreamConnectedAt),
+  });
 
   const overviewQuery = useQuery<ManagerOverview>({
     queryKey: ["manager-overview"],
@@ -426,7 +449,7 @@ export default function ManagerDashboardPage() {
     staleTime: 30_000,
     placeholderData: (prev) => prev,
     retry: false,
-    refetchInterval: isPageVisible && !analyticsStreamConnectedAt ? 60_000 : false,
+    refetchInterval: realtimeFallbackInterval,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
@@ -439,11 +462,11 @@ export default function ManagerDashboardPage() {
         mode: "cursor",
         scope: "fast",
         limit: 80,
-    }),
+      }),
     staleTime: 20_000,
     placeholderData: (prev) => prev,
     retry: false,
-    refetchInterval: isPageVisible && !analyticsStreamConnectedAt ? 60_000 : false,
+    refetchInterval: realtimeFallbackInterval,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
@@ -562,16 +585,30 @@ export default function ManagerDashboardPage() {
   const staleOpenOrders = Number(overview?.staleOpenOrders ?? 0);
   const overdueOpenOrders = Number(overview?.overdueOpenOrders ?? 0);
   const dueSoonOpenOrders = Number(overview?.dueSoonOpenOrders ?? 0);
-  const exceptionOpenOrders = Number(overview?.exceptionOpenOrders ?? exceptions);
+  const exceptionOpenOrders = Number(
+    overview?.exceptionOpenOrders ?? exceptions,
+  );
   const slaSupportRiskOrders = Number(
-    overview?.slaRiskOrders ?? overdueOpenOrders + staleOpenOrders + exceptionOpenOrders,
+    overview?.slaRiskOrders ??
+      overdueOpenOrders + staleOpenOrders + exceptionOpenOrders,
   );
   const flowHealth = Math.max(
     0,
-    Math.min(100, 100 - exceptionShare * 3 - Math.min(35, pending) - Math.min(25, staleOpenOrders * 4)),
+    Math.min(
+      100,
+      100 -
+        exceptionShare * 3 -
+        Math.min(35, pending) -
+        Math.min(25, staleOpenOrders * 4),
+    ),
   );
   const pipeline = [
-    { key: "pending", label: text.pending, count: pending, tone: "bg-amber-500" },
+    {
+      key: "pending",
+      label: text.pending,
+      count: pending,
+      tone: "bg-amber-500",
+    },
     { key: "assigned", label: "Assigned", count: assigned, tone: "bg-sky-500" },
     {
       key: "pickup_in_progress",
@@ -579,16 +616,36 @@ export default function ManagerDashboardPage() {
       count: statusCounts.get("pickup_in_progress") ?? 0,
       tone: "bg-blue-500",
     },
-    { key: "at_warehouse", label: text.atWarehouse, count: atWarehouse, tone: "bg-cyan-600" },
-    { key: "in_transit", label: text.inTransit, count: inTransit, tone: "bg-teal-600" },
+    {
+      key: "at_warehouse",
+      label: text.atWarehouse,
+      count: atWarehouse,
+      tone: "bg-cyan-600",
+    },
+    {
+      key: "in_transit",
+      label: text.inTransit,
+      count: inTransit,
+      tone: "bg-teal-600",
+    },
     {
       key: "out_for_delivery",
       label: text.outForDelivery,
       count: outForDelivery,
       tone: "bg-emerald-600",
     },
-    { key: "delivered", label: "Delivered", count: delivered, tone: "bg-emerald-500" },
-    { key: "exception", label: text.exceptions, count: exceptions, tone: "bg-red-500" },
+    {
+      key: "delivered",
+      label: "Delivered",
+      count: delivered,
+      tone: "bg-emerald-500",
+    },
+    {
+      key: "exception",
+      label: text.exceptions,
+      count: exceptions,
+      tone: "bg-red-500",
+    },
   ];
   const pipelineMax = Math.max(1, ...pipeline.map((item) => item.count));
   const throughputMax = Math.max(1, ...last7Days.map((item) => item.count));
@@ -621,13 +678,18 @@ export default function ManagerDashboardPage() {
         dashboardInvalidateTimerRef.current = null;
         void Promise.all([
           queryClient.invalidateQueries({ queryKey: ["manager-overview"] }),
-          queryClient.invalidateQueries({ queryKey: ["orders", "manager-dashboard"] }),
+          queryClient.invalidateQueries({
+            queryKey: ["orders", "manager-dashboard"],
+          }),
         ]);
       }, 300);
     };
 
     const unsubscribe = subscribeManagerAnalyticsStream({
-      onReady: (payload) => setAnalyticsStreamConnectedAt(payload.connectedAt ?? new Date().toISOString()),
+      onReady: (payload) =>
+        setAnalyticsStreamConnectedAt(
+          payload.connectedAt ?? new Date().toISOString(),
+        ),
       onRefresh: () => scheduleDashboardRefresh(),
       onError: () => setAnalyticsStreamConnectedAt(null),
     });
@@ -654,16 +716,24 @@ export default function ManagerDashboardPage() {
           </div>
           <div className="flex flex-wrap gap-3">
             <CreateOrderDialog
-              mode="manager"
+              mode="operations"
               triggerClassName="h-10 rounded-md bg-slate-950 px-5 text-white shadow-sm hover:bg-slate-800 focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
             />
-            <Button asChild variant="outline" className="h-10 rounded-md bg-white px-5 shadow-sm hover:border-blue-200 hover:bg-blue-50 hover:text-blue-800 focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2">
+            <Button
+              asChild
+              variant="outline"
+              className="h-10 rounded-md bg-white px-5 shadow-sm hover:border-blue-200 hover:bg-blue-50 hover:text-blue-800 focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2"
+            >
               <Link href="/dashboard/manager/dispatch" className="gap-2">
                 <Send className="h-4 w-4" />
                 {text.openDispatch}
               </Link>
             </Button>
-            <Button asChild variant="outline" className="h-10 rounded-md bg-white px-5 shadow-sm hover:border-teal-200 hover:bg-teal-50 hover:text-teal-800 focus-visible:ring-2 focus-visible:ring-teal-300 focus-visible:ring-offset-2">
+            <Button
+              asChild
+              variant="outline"
+              className="h-10 rounded-md bg-white px-5 shadow-sm hover:border-teal-200 hover:bg-teal-50 hover:text-teal-800 focus-visible:ring-2 focus-visible:ring-teal-300 focus-visible:ring-offset-2"
+            >
               <Link href="/dashboard/manager/support" className="gap-2">
                 <Headset className="h-4 w-4" />
                 {text.supportDesk}
@@ -677,8 +747,16 @@ export default function ManagerDashboardPage() {
             {
               title: text.operationalHealth,
               value: `${flowHealth}%`,
-              sub: flowHealth >= 80 ? "Excellent" : flowHealth >= 60 ? "Stable" : "Needs review",
-              hint: flowHealth >= 80 ? "All systems normal" : text.suggestedNextStep,
+              sub:
+                flowHealth >= 80
+                  ? "Excellent"
+                  : flowHealth >= 60
+                    ? "Stable"
+                    : "Needs review",
+              hint:
+                flowHealth >= 80
+                  ? "All systems normal"
+                  : text.suggestedNextStep,
               icon: ShieldAlert,
               color: "text-emerald-600",
               bg: "bg-emerald-50",
@@ -694,7 +772,9 @@ export default function ManagerDashboardPage() {
             },
             {
               title: text.activeFlows,
-              value: String(Math.max(activePipeline, managerTotalOrders - delivered)),
+              value: String(
+                Math.max(activePipeline, managerTotalOrders - delivered),
+              ),
               sub: "Shipments in progress",
               hint: `${ordersInMotion} moving now`,
               icon: Truck,
@@ -704,11 +784,27 @@ export default function ManagerDashboardPage() {
             {
               title: text.slaSupportRisk,
               value: String(slaSupportRiskOrders),
-              sub: slaSupportRiskOrders > 0 ? `${staleOpenOrders} stale / ${overdueOpenOrders} overdue` : "No open risk",
-              hint: dueSoonOpenOrders > 0 ? `${dueSoonOpenOrders} due soon` : text.exceptions,
+              sub:
+                slaSupportRiskOrders > 0
+                  ? `${staleOpenOrders} stale / ${overdueOpenOrders} overdue`
+                  : "No open risk",
+              hint:
+                dueSoonOpenOrders > 0
+                  ? `${dueSoonOpenOrders} due soon`
+                  : text.exceptions,
               icon: ShieldAlert,
-              color: overdueOpenOrders > 0 || exceptionOpenOrders > 0 ? "text-red-600" : slaSupportRiskOrders > 0 ? "text-orange-600" : "text-emerald-600",
-              bg: overdueOpenOrders > 0 || exceptionOpenOrders > 0 ? "bg-red-50" : slaSupportRiskOrders > 0 ? "bg-orange-50" : "bg-emerald-50",
+              color:
+                overdueOpenOrders > 0 || exceptionOpenOrders > 0
+                  ? "text-red-600"
+                  : slaSupportRiskOrders > 0
+                    ? "text-orange-600"
+                    : "text-emerald-600",
+              bg:
+                overdueOpenOrders > 0 || exceptionOpenOrders > 0
+                  ? "bg-red-50"
+                  : slaSupportRiskOrders > 0
+                    ? "bg-orange-50"
+                    : "bg-emerald-50",
             },
             {
               title: text.todaysCompletion,
@@ -722,20 +818,39 @@ export default function ManagerDashboardPage() {
           ].map((item) => {
             const Icon = item.icon;
             return (
-              <div key={item.title} className="border-b p-4 last:border-b-0 lg:border-b-0 lg:border-r lg:last:border-r-0">
+              <div
+                key={item.title}
+                className="border-b p-4 last:border-b-0 lg:border-b-0 lg:border-r lg:last:border-r-0"
+              >
                 <div className="flex gap-3">
-                  <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-full", item.bg)}>
+                  <div
+                    className={cn(
+                      "flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
+                      item.bg,
+                    )}
+                  >
                     <Icon className={cn("h-4 w-4", item.color)} />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-xs font-medium text-slate-500">{item.title}</p>
+                    <p className="text-xs font-medium text-slate-500">
+                      {item.title}
+                    </p>
                     <div className="mt-2 flex items-end gap-2">
-                      <span className={cn("text-2xl font-semibold tracking-tight", item.color)}>
+                      <span
+                        className={cn(
+                          "text-2xl font-semibold tracking-tight",
+                          item.color,
+                        )}
+                      >
                         {item.value}
                       </span>
-                      <span className="pb-1 text-xs font-medium text-slate-500">{item.sub}</span>
+                      <span className="pb-1 text-xs font-medium text-slate-500">
+                        {item.sub}
+                      </span>
                     </div>
-                    <p className="mt-2 truncate text-xs text-slate-500">{item.hint}</p>
+                    <p className="mt-2 truncate text-xs text-slate-500">
+                      {item.hint}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -749,7 +864,12 @@ export default function ManagerDashboardPage() {
             icon={<Info className="h-3.5 w-3.5 text-slate-400" />}
             tone="teal"
             action={
-              <Button asChild variant="ghost" size="sm" className="h-8 gap-1 text-xs text-blue-700 hover:bg-blue-100/80 hover:text-blue-900 focus-visible:ring-2 focus-visible:ring-blue-300">
+              <Button
+                asChild
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1 text-xs text-blue-700 hover:bg-blue-100/80 hover:text-blue-900 focus-visible:ring-2 focus-visible:ring-blue-300"
+              >
                 <Link href="/dashboard/manager/orders">
                   View full flow <ArrowRight className="h-3.5 w-3.5" />
                 </Link>
@@ -764,28 +884,64 @@ export default function ManagerDashboardPage() {
                   <div
                     className={cn(
                       "relative z-10 mx-auto flex h-10 w-10 items-center justify-center rounded-full border bg-white shadow-[0_0_0_6px_white]",
-                      item.key === "pickup_in_progress" && "border-amber-300 bg-amber-50",
+                      item.key === "pickup_in_progress" &&
+                        "border-amber-300 bg-amber-50",
                       item.key === "in_transit" && "border-teal-200 bg-teal-50",
-                      item.key === "out_for_delivery" && "border-teal-200 bg-teal-50",
-                      item.key === "delivered" && "border-emerald-200 bg-emerald-50",
+                      item.key === "out_for_delivery" &&
+                        "border-teal-200 bg-teal-50",
+                      item.key === "delivered" &&
+                        "border-emerald-200 bg-emerald-50",
                       item.key === "exception" && "border-red-200 bg-red-50",
                     )}
                   >
-                    {item.key === "pending" ? <Folder className="h-4 w-4" /> : null}
-                    {item.key === "assigned" ? <Users className="h-4 w-4" /> : null}
-                    {item.key === "pickup_in_progress" ? <Truck className="h-4 w-4" /> : null}
-                    {item.key === "at_warehouse" ? <Warehouse className="h-4 w-4" /> : null}
-                    {item.key === "in_transit" ? <Truck className="h-4 w-4 text-teal-700" /> : null}
-                    {item.key === "out_for_delivery" ? <Route className="h-4 w-4 text-teal-700" /> : null}
-                    {item.key === "delivered" ? <CheckCircle2 className="h-4 w-4 text-emerald-700" /> : null}
-                    {item.key === "exception" ? <AlertTriangle className="h-4 w-4 text-red-600" /> : null}
+                    {item.key === "pending" ? (
+                      <Folder className="h-4 w-4" />
+                    ) : null}
+                    {item.key === "assigned" ? (
+                      <Users className="h-4 w-4" />
+                    ) : null}
+                    {item.key === "pickup_in_progress" ? (
+                      <Truck className="h-4 w-4" />
+                    ) : null}
+                    {item.key === "at_warehouse" ? (
+                      <Warehouse className="h-4 w-4" />
+                    ) : null}
+                    {item.key === "in_transit" ? (
+                      <Truck className="h-4 w-4 text-teal-700" />
+                    ) : null}
+                    {item.key === "out_for_delivery" ? (
+                      <Route className="h-4 w-4 text-teal-700" />
+                    ) : null}
+                    {item.key === "delivered" ? (
+                      <CheckCircle2 className="h-4 w-4 text-emerald-700" />
+                    ) : null}
+                    {item.key === "exception" ? (
+                      <AlertTriangle className="h-4 w-4 text-red-600" />
+                    ) : null}
                   </div>
                   <div className="mt-3 border-l border-slate-200 px-2 first:border-l-0">
-                    <p className="text-xs font-medium text-slate-600">{item.label}</p>
+                    <p className="text-xs font-medium text-slate-600">
+                      {item.label}
+                    </p>
                     <div className="mt-2 flex items-center justify-center gap-2">
-                      <span className="text-lg font-semibold text-slate-950">{item.count}</span>
-                      <span className={cn("text-xs", item.count > 0 ? "text-orange-600" : "text-emerald-600")}>
-                        {item.count > 0 ? "↗" : "↘"} {Math.max(1, Math.round(item.count / Math.max(1, pipelineMax) * 24))}
+                      <span className="text-lg font-semibold text-slate-950">
+                        {item.count}
+                      </span>
+                      <span
+                        className={cn(
+                          "text-xs",
+                          item.count > 0
+                            ? "text-orange-600"
+                            : "text-emerald-600",
+                        )}
+                      >
+                        {item.count > 0 ? "↗" : "↘"}{" "}
+                        {Math.max(
+                          1,
+                          Math.round(
+                            (item.count / Math.max(1, pipelineMax)) * 24,
+                          ),
+                        )}
                       </span>
                     </div>
                     <p className="mt-1 truncate text-[11px] text-slate-500">
@@ -819,9 +975,15 @@ export default function ManagerDashboardPage() {
                 title={text.recentOrders}
                 tone="blue"
                 action={
-                  <Button asChild variant="ghost" size="sm" className="h-8 gap-1 text-xs text-blue-700 hover:bg-blue-100/80 hover:text-blue-900 focus-visible:ring-2 focus-visible:ring-blue-300">
+                  <Button
+                    asChild
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 gap-1 text-xs text-blue-700 hover:bg-blue-100/80 hover:text-blue-900 focus-visible:ring-2 focus-visible:ring-blue-300"
+                  >
                     <Link href="/dashboard/manager/orders">
-                      {text.viewAllOrders} <ArrowRight className="h-3.5 w-3.5" />
+                      {text.viewAllOrders}{" "}
+                      <ArrowRight className="h-3.5 w-3.5" />
                     </Link>
                   </Button>
                 }
@@ -834,7 +996,9 @@ export default function ManagerDashboardPage() {
                     <Skeleton className="h-10 w-full" />
                   </div>
                 ) : recentOrders.length === 0 ? (
-                  <div className="p-4 text-sm text-muted-foreground">{text.noOrders}</div>
+                  <div className="p-4 text-sm text-muted-foreground">
+                    {text.noOrders}
+                  </div>
                 ) : (
                   <div className="overflow-x-auto">
                     <div className="min-w-[760px]">
@@ -866,10 +1030,21 @@ export default function ManagerDashboardPage() {
                             />
                             {orderRef(order, text.unnumberedOrder)}
                           </span>
-                          <span className="truncate">{order.pickupAddress || "-"} → {order.dropoffAddress || "-"}</span>
-                          <span className="truncate">{order.customer?.email || "-"}</span>
-                          <Badge variant={statusVariant(String(order.status ?? ""))} className="w-fit rounded-md capitalize">
-                            {getStatusLabel(String(order.status ?? "unknown"), t)}
+                          <span className="truncate">
+                            {order.pickupAddress || "-"} →{" "}
+                            {order.dropoffAddress || "-"}
+                          </span>
+                          <span className="truncate">
+                            {order.customer?.email || "-"}
+                          </span>
+                          <Badge
+                            variant={statusVariant(String(order.status ?? ""))}
+                            className="w-fit rounded-md capitalize"
+                          >
+                            {getStatusLabel(
+                              String(order.status ?? "unknown"),
+                              t,
+                            )}
                           </Badge>
                           <span className="w-fit rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700">
                             {hasPaymentPending(order) ? "COD" : "Prepaid"}
@@ -878,7 +1053,11 @@ export default function ManagerDashboardPage() {
                             <FileText className="h-3.5 w-3.5" />
                             {hasInvoiceReady(order) ? text.invoice : "-"}
                           </span>
-                          <span>{order.createdAt ? formatShortDate(order.createdAt, locale) : "-"}</span>
+                          <span>
+                            {order.createdAt
+                              ? formatShortDate(order.createdAt, locale)
+                              : "-"}
+                          </span>
                           <span className="inline-flex items-center gap-1 rounded-md border px-2 py-1 font-medium">
                             View <ExternalLink className="h-3 w-3" />
                           </span>
@@ -899,19 +1078,57 @@ export default function ManagerDashboardPage() {
                 />
                 <CardContent className="p-4">
                   <div className="h-40 border-b border-l">
-                    <svg viewBox="0 0 300 132" role="img" aria-label={text.throughput7Days} className="h-full w-full overflow-visible">
+                    <svg
+                      viewBox="0 0 300 132"
+                      role="img"
+                      aria-label={text.throughput7Days}
+                      className="h-full w-full overflow-visible"
+                    >
                       {[20, 43, 66, 89, 112].map((y) => (
-                        <line key={y} x1="18" x2="282" y1={y} y2={y} stroke="#e5e7eb" strokeWidth="1" />
+                        <line
+                          key={y}
+                          x1="18"
+                          x2="282"
+                          y1={y}
+                          y2={y}
+                          stroke="#e5e7eb"
+                          strokeWidth="1"
+                        />
                       ))}
-                      <polygon points={throughputAreaPoints} fill="#0f766e" opacity="0.06" />
-                      <polyline points={throughputPoints} fill="none" stroke="#0f766e" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                      <polygon
+                        points={throughputAreaPoints}
+                        fill="#0f766e"
+                        opacity="0.06"
+                      />
+                      <polyline
+                        points={throughputPoints}
+                        fill="none"
+                        stroke="#0f766e"
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
                       {last7Days.map((day, index) => {
-                        const x = 18 + index * (264 / Math.max(1, last7Days.length - 1));
+                        const x =
+                          18 +
+                          index * (264 / Math.max(1, last7Days.length - 1));
                         const y = 112 - (day.count / throughputMax) * 92;
                         return (
                           <g key={day.key}>
-                            <circle cx={x} cy={y} r="3.5" fill="#0f766e" stroke="#fff" strokeWidth="2" />
-                            <text x={x} y="129" textAnchor="middle" className="fill-slate-500 text-[9px]">
+                            <circle
+                              cx={x}
+                              cy={y}
+                              r="3.5"
+                              fill="#0f766e"
+                              stroke="#fff"
+                              strokeWidth="2"
+                            />
+                            <text
+                              x={x}
+                              y="129"
+                              textAnchor="middle"
+                              className="fill-slate-500 text-[9px]"
+                            >
                               {day.label}
                             </text>
                           </g>
@@ -922,15 +1139,23 @@ export default function ManagerDashboardPage() {
                   <div className="mt-4 grid grid-cols-3 divide-x text-center">
                     <div>
                       <p className="text-xl font-semibold">{delivered}</p>
-                      <p className="text-[11px] text-muted-foreground">Total Delivered</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        Total Delivered
+                      </p>
                     </div>
                     <div>
-                      <p className="text-xl font-semibold">{Math.round(delivered / 7)}</p>
-                      <p className="text-[11px] text-muted-foreground">Daily Average</p>
+                      <p className="text-xl font-semibold">
+                        {Math.round(delivered / 7)}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        Daily Average
+                      </p>
                     </div>
                     <div>
                       <p className="text-xl font-semibold">{completionRate}%</p>
-                      <p className="text-[11px] text-muted-foreground">On-Time Delivery</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        On-Time Delivery
+                      </p>
                     </div>
                   </div>
                 </CardContent>
@@ -944,12 +1169,24 @@ export default function ManagerDashboardPage() {
                 />
                 <CardContent className="space-y-3 p-4">
                   {pipeline.map((item) => (
-                    <div key={item.key} className="grid grid-cols-[6rem_minmax(0,1fr)_4rem] items-center gap-3 text-xs">
-                      <span className="truncate text-slate-600">{item.label}</span>
+                    <div
+                      key={item.key}
+                      className="grid grid-cols-[6rem_minmax(0,1fr)_4rem] items-center gap-3 text-xs"
+                    >
+                      <span className="truncate text-slate-600">
+                        {item.label}
+                      </span>
                       <div className="h-2 rounded-full bg-slate-100">
-                        <div className={cn("h-2 rounded-full", item.tone)} style={{ width: `${Math.max(3, (item.count / Math.max(1, totalOrders)) * 100)}%` }} />
+                        <div
+                          className={cn("h-2 rounded-full", item.tone)}
+                          style={{
+                            width: `${Math.max(3, (item.count / Math.max(1, totalOrders)) * 100)}%`,
+                          }}
+                        />
                       </div>
-                      <span className="text-right text-slate-500">{item.count}</span>
+                      <span className="text-right text-slate-500">
+                        {item.count}
+                      </span>
                     </div>
                   ))}
                   <div className="border-t pt-3 text-right text-xs text-slate-500">
@@ -966,17 +1203,37 @@ export default function ManagerDashboardPage() {
                 title={
                   <>
                     {text.operationalRadar}
-                    <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] text-white">{alerts.length}</span>
+                    <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] text-white">
+                      {alerts.length}
+                    </span>
                   </>
                 }
                 tone="orange"
-                action={<Button variant="ghost" size="sm" className="h-8 text-xs text-blue-700 hover:bg-orange-100/80 hover:text-orange-900 focus-visible:ring-2 focus-visible:ring-orange-300">View all</Button>}
+                action={
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 text-xs text-blue-700 hover:bg-orange-100/80 hover:text-orange-900 focus-visible:ring-2 focus-visible:ring-orange-300"
+                  >
+                    View all
+                  </Button>
+                }
               />
               <CardContent className="p-0">
                 <div className="divide-y">
                   {alerts.map((alert, index) => (
-                    <div key={alert} className="flex items-start gap-3 px-4 py-3 text-xs">
-                      <div className={cn("mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white", index === 0 && exceptions > 0 ? "bg-red-500" : "bg-orange-500")}>
+                    <div
+                      key={alert}
+                      className="flex items-start gap-3 px-4 py-3 text-xs"
+                    >
+                      <div
+                        className={cn(
+                          "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white",
+                          index === 0 && exceptions > 0
+                            ? "bg-red-500"
+                            : "bg-orange-500",
+                        )}
+                      >
                         <AlertTriangle className="h-4 w-4" />
                       </div>
                       <div className="min-w-0 flex-1">
@@ -988,10 +1245,16 @@ export default function ManagerDashboardPage() {
                   ))}
                 </div>
                 <div className="border-t bg-slate-50 p-3">
-                  <p className="text-xs font-medium text-slate-600">Suggested next step</p>
+                  <p className="text-xs font-medium text-slate-600">
+                    Suggested next step
+                  </p>
                   <div className="mt-2 flex items-center justify-between gap-2 rounded-md border bg-white p-2 text-xs text-slate-500">
                     <span>{text.suggestedNextStep}</span>
-                    <Button variant="outline" size="sm" className="h-7 rounded-md text-xs">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 rounded-md text-xs"
+                    >
                       Review Suggestions
                     </Button>
                   </div>
@@ -1003,23 +1266,46 @@ export default function ManagerDashboardPage() {
               <SectionHeader
                 title={text.slaPerformance}
                 icon={<Info className="h-3.5 w-3.5 text-slate-400" />}
-                tone={slaMissed > 0 ? "red" : slaAtRisk > 0 ? "orange" : "emerald"}
-                action={<Button variant="ghost" size="sm" className="h-8 text-xs text-blue-700 hover:bg-emerald-100/80 hover:text-emerald-900 focus-visible:ring-2 focus-visible:ring-emerald-300">View report</Button>}
+                tone={
+                  slaMissed > 0 ? "red" : slaAtRisk > 0 ? "orange" : "emerald"
+                }
+                action={
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 text-xs text-blue-700 hover:bg-emerald-100/80 hover:text-emerald-900 focus-visible:ring-2 focus-visible:ring-emerald-300"
+                  >
+                    View report
+                  </Button>
+                }
               />
               <CardContent className="p-4">
                 <div className="grid grid-cols-[9.5rem_minmax(0,1fr)] items-center gap-4">
-                  <SlaDonut onTime={delivered} atRisk={slaAtRisk} missed={slaMissed} />
+                  <SlaDonut
+                    onTime={delivered}
+                    atRisk={slaAtRisk}
+                    missed={slaMissed}
+                  />
                   <div className="space-y-3 text-xs">
                     <div className="flex items-center justify-between">
-                      <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-emerald-500" />On Time</span>
+                      <span className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                        On Time
+                      </span>
                       <span>{delivered}</span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-orange-400" />At Risk</span>
+                      <span className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-orange-400" />
+                        At Risk
+                      </span>
                       <span>{slaAtRisk}</span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-red-500" />Missed</span>
+                      <span className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-red-500" />
+                        Missed
+                      </span>
                       <span>{slaMissed}</span>
                     </div>
                     <div className="border-t pt-3 text-[11px] text-slate-500">
@@ -1031,7 +1317,9 @@ export default function ManagerDashboardPage() {
                 </div>
                 <div className="mt-4 flex items-center justify-between border-t pt-3 text-xs">
                   <span>SLA breaches today</span>
-                  <span className="font-semibold text-red-600">{slaMissed}</span>
+                  <span className="font-semibold text-red-600">
+                    {slaMissed}
+                  </span>
                 </div>
               </CardContent>
             </Card>

@@ -59,6 +59,43 @@ function formatMoney(value: number, locale: string) {
   return new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(value || 0);
 }
 
+function normalizeCurrency(currency?: string | null) {
+  const value = String(currency || "UZS").trim().toUpperCase();
+  return value || "UZS";
+}
+
+function formatMoneyWithCurrency(value: number, locale: string, currency?: string | null) {
+  return `${formatMoney(value, locale)} ${normalizeCurrency(currency)}`;
+}
+
+function groupMoneyByCurrency<T extends { amount?: number | null; currency?: string | null }>(
+  items: T[],
+) {
+  const totals = new Map<string, number>();
+  for (const item of items) {
+    const currency = normalizeCurrency(item.currency);
+    totals.set(currency, (totals.get(currency) ?? 0) + Number(item.amount || 0));
+  }
+  return Array.from(totals.entries())
+    .map(([currency, amount]) => ({ currency, amount }))
+    .sort((a, b) => a.currency.localeCompare(b.currency));
+}
+
+function formatMoneyBreakdown<T extends { amount?: number | null; currency?: string | null }>(
+  items: T[],
+  locale: string,
+) {
+  const buckets = groupMoneyByCurrency(items);
+  if (!buckets.length) return formatMoneyWithCurrency(0, locale, "UZS");
+  return buckets.map((bucket) => formatMoneyWithCurrency(bucket.amount, locale, bucket.currency)).join(" + ");
+}
+
+function combineMoneyBuckets(
+  buckets: Array<{ amount?: number | null; currency?: string | null }>,
+) {
+  return groupMoneyByCurrency(buckets.filter((bucket) => Number(bucket.amount || 0) > 0));
+}
+
 function formatPct(value: number) {
   if (!Number.isFinite(value)) return "0%";
   return `${Math.round(value * 100)}%`;
@@ -229,7 +266,6 @@ function FinanceMetricTile({
         <p className="truncate text-[11px] text-slate-500">{label}</p>
         <div className="mt-2 flex items-baseline gap-1">
           <span className="text-xl font-semibold tracking-tight text-slate-950">{value}</span>
-          <span className="text-[10px] font-medium text-slate-500">UZS</span>
         </div>
       </div>
       <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-lg", tone)}>
@@ -593,19 +629,42 @@ export function ManagerAnalyticsV2Page() {
     ]);
   };
 
-  const heldByDriver = queueItems
-    .filter((item) => item.status === "held" && item.holderType === "driver")
-    .reduce((sum, item) => sum + Number(item.amount || 0), 0);
-  const heldByWarehouse = queueItems
-    .filter((item) => item.status === "held" && item.holderType === "warehouse")
-    .reduce((sum, item) => sum + Number(item.amount || 0), 0);
-  const heldByPickup = queueItems
-    .filter((item) => item.status === "held" && item.holderType === "pickup_point")
-    .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const serviceChargeBuckets = data?.finance.serviceChargeExpectedByCurrency?.length
+    ? data.finance.serviceChargeExpectedByCurrency
+    : [{ amount: data?.finance.serviceChargeExpected ?? 0, currency: "UZS" }];
+  const codBuckets = data?.finance.codExpectedByCurrency?.length
+    ? data.finance.codExpectedByCurrency
+    : [{ amount: data?.finance.codExpected ?? 0, currency: "UZS" }];
+  const invoicedPaidBuckets = data?.finance.invoicedPaidAmountByCurrency?.length
+    ? data.finance.invoicedPaidAmountByCurrency
+    : [{ amount: data?.finance.invoicedPaidAmount ?? 0, currency: "UZS" }];
+  const heldDriverItems = queueItems.filter((item) => item.status === "held" && item.holderType === "driver");
+  const heldNetworkItems = queueItems.filter(
+    (item) =>
+      item.status === "held" &&
+      (item.holderType === "warehouse" || item.holderType === "pickup_point"),
+  );
+  const financeExposureBuckets = combineMoneyBuckets([
+    ...serviceChargeBuckets,
+    ...codBuckets,
+    ...heldDriverItems,
+    ...heldNetworkItems,
+  ]);
+  const financeExposureDisplay =
+    financeExposureBuckets.length > 0
+      ? financeExposureBuckets
+          .map((bucket) => formatMoneyWithCurrency(bucket.amount, locale, bucket.currency))
+          .join(" + ")
+      : formatMoneyWithCurrency(0, locale, "UZS");
+  const serviceChargeDisplay = formatMoneyBreakdown(serviceChargeBuckets, locale);
+  const codDisplay = formatMoneyBreakdown(codBuckets, locale);
+  const invoicedPaidDisplay = formatMoneyBreakdown(invoicedPaidBuckets, locale);
+  const heldDriverDisplay = formatMoneyBreakdown(heldDriverItems, locale);
+  const heldNetworkDisplay = formatMoneyBreakdown(heldNetworkItems, locale);
 
-  const selectedTotal = selectedQueueItems.reduce((sum, item) => sum + Number(item.amount || 0), 0);
   const selectedServiceChargeCount = selectedQueueItems.filter((item) => item.kind === "service_charge").length;
   const selectedCodCount = selectedQueueItems.filter((item) => item.kind === "cod").length;
+  const selectedMoneyBreakdown = formatMoneyBreakdown(selectedQueueItems, locale);
 
   const riskScoreForQueueItem = (item: (typeof queueItems)[number]) => {
     const ageScore = Math.min(45, Math.round(Number(item.ageHours || 0) / 6));
@@ -695,9 +754,6 @@ export function ManagerAnalyticsV2Page() {
   const exceptionPolyline = trendChartRows
     .map((row, idx) => `${chartLeft + idx * chartStep},${chartY(row.exceptions)}`)
     .join(" ");
-  const financeExposureTotal = data
-    ? data.finance.codExpected + data.finance.serviceChargeExpected + heldByDriver + heldByWarehouse + heldByPickup
-    : 0;
   const warehousePressure = data
     ? Math.round((data.operations.atWarehouseOrders / Math.max(1, data.overview.openOrders)) * 100)
     : 0;
@@ -706,8 +762,8 @@ export function ManagerAnalyticsV2Page() {
     {
       title: selectedCashItems.length ? "Settlement ready" : "Settlement completed",
       detail: selectedCashItems.length
-        ? `${formatMoney(selectedTotal, locale)} UZS selected for settlement`
-        : `${formatMoney(Math.max(0, data?.finance.serviceChargeExpected ?? 0), locale)} UZS monitored for finance`,
+        ? `${selectedMoneyBreakdown} selected for settlement`
+        : `${serviceChargeDisplay} monitored for finance`,
       time: "5m ago",
       icon: CheckCircle2,
       tone: "bg-emerald-50 text-emerald-700",
@@ -848,7 +904,7 @@ export function ManagerAnalyticsV2Page() {
               <BottleneckCard title="Stale Orders" value={data.operations.staleOpenOrders} icon={AlertTriangle} tone="red" delta="28%" />
               <BottleneckCard title="Overdue Pickups" value={data.sla.overdueOpenOrders} icon={Clock3} tone="orange" delta="17%" />
               <BottleneckCard title="Warehouse Pressure" value={`${warehousePressure}%`} icon={Building2} tone="orange" delta="5pp" />
-              <BottleneckCard title="Unpaid Exposure" value={`${formatMoney(financeExposureTotal, locale)} UZS`} icon={WalletCards} tone="red" delta="12%" />
+              <BottleneckCard title="Unpaid Exposure" value={financeExposureDisplay} icon={WalletCards} tone="red" delta="12%" />
             </section>
 
             <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-8">
@@ -857,9 +913,9 @@ export function ManagerAnalyticsV2Page() {
               <StatCard title="Delivered" value={formatMoney(data.overview.deliveredInRange, locale)} icon={CheckCircle2} tone="bg-emerald-50 text-emerald-700" delta="18.3% vs prior 7d" trend="down" />
               <StatCard title="Exceptions" value={formatMoney(data.overview.exceptionOpenOrders, locale)} icon={AlertTriangle} tone="bg-red-50 text-red-700" delta="8.1% vs prior 7d" />
               <StatCard title="Pending invoices" value={formatMoney(data.finance.pendingInvoicesCount, locale)} icon={ClipboardList} tone="bg-orange-50 text-orange-700" delta="6.7% vs prior 7d" />
-              <StatCard title="Unpaid COD" value={formatMoney(data.finance.codExpected, locale)} icon={Wallet} tone="bg-cyan-50 text-cyan-700" delta="9.2% vs prior 7d" />
-              <StatCard title="Unpaid service" value={formatMoney(data.finance.serviceChargeExpected, locale)} icon={WalletCards} tone="bg-cyan-50 text-cyan-700" delta="11.4% vs prior 7d" />
-              <StatCard title="Paid invoiced" value={formatMoney(data.finance.invoicedPaidAmount, locale)} icon={CircleDollarSign} tone="bg-emerald-50 text-emerald-700" delta="14.5% vs prior 7d" trend="down" />
+              <StatCard title="Unpaid COD" value={codDisplay} icon={Wallet} tone="bg-cyan-50 text-cyan-700" delta="9.2% vs prior 7d" />
+              <StatCard title="Unpaid service" value={serviceChargeDisplay} icon={WalletCards} tone="bg-cyan-50 text-cyan-700" delta="11.4% vs prior 7d" />
+              <StatCard title="Paid invoiced" value={invoicedPaidDisplay} icon={CircleDollarSign} tone="bg-emerald-50 text-emerald-700" delta="14.5% vs prior 7d" trend="down" />
             </section>
 
             <section className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(24rem,0.75fr)]">
@@ -908,7 +964,7 @@ export function ManagerAnalyticsV2Page() {
                           <p className="mt-2 flex justify-between gap-10"><span className="text-blue-700">Created</span><span>{latestCreated}</span></p>
                           <p className="flex justify-between gap-10"><span className="text-emerald-700">Delivered</span><span>{latestDelivered}</span></p>
                           <p className="flex justify-between gap-10"><span className="text-red-700">Exceptions</span><span>{data.overview.exceptionOpenOrders}</span></p>
-                          <p className="mt-2 flex justify-between gap-10 font-medium"><span>COD exposure</span><span>{formatMoney(data.finance.codExpected, locale)} UZS</span></p>
+                          <p className="mt-2 flex justify-between gap-10 font-medium"><span>COD exposure</span><span>{codDisplay}</span></p>
                         </div>
                         <svg viewBox="0 0 780 292" className="min-h-[292px] min-w-[760px]">
                           {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
@@ -1032,10 +1088,10 @@ export function ManagerAnalyticsV2Page() {
               <SectionCard title="Finance Exposure">
                 <CardContent className="space-y-4 p-4">
                   <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                    <FinanceMetricTile label={t("managerAnalytics.finance.serviceChargeExpected")} value={formatMoney(data.finance.serviceChargeExpected, locale)} icon={WalletCards} tone="bg-blue-50 text-blue-700" />
-                    <FinanceMetricTile label={t("managerAnalytics.finance.codExpected")} value={formatMoney(data.finance.codExpected, locale)} icon={Wallet} tone="bg-teal-50 text-teal-700" />
-                    <FinanceMetricTile label={t("managerAnalytics.finance.driverHeld")} value={formatMoney(heldByDriver, locale)} icon={Route} tone="bg-violet-50 text-violet-700" />
-                    <FinanceMetricTile label={t("managerAnalytics.finance.warehouseHeld")} value={formatMoney(heldByWarehouse + heldByPickup, locale)} icon={Building2} tone="bg-sky-50 text-sky-700" />
+                    <FinanceMetricTile label={t("managerAnalytics.finance.serviceChargeExpected")} value={serviceChargeDisplay} icon={WalletCards} tone="bg-blue-50 text-blue-700" />
+                    <FinanceMetricTile label={t("managerAnalytics.finance.codExpected")} value={codDisplay} icon={Wallet} tone="bg-teal-50 text-teal-700" />
+                    <FinanceMetricTile label={t("managerAnalytics.finance.driverHeld")} value={heldDriverDisplay} icon={Route} tone="bg-violet-50 text-violet-700" />
+                    <FinanceMetricTile label={t("managerAnalytics.finance.warehouseHeld")} value={heldNetworkDisplay} icon={Building2} tone="bg-sky-50 text-sky-700" />
                   </div>
 
                   {showQueue ? (
@@ -1092,7 +1148,7 @@ export function ManagerAnalyticsV2Page() {
                             <p className="text-xs text-slate-500">Settle collected funds or hand off custody for selected cash items.</p>
                           </div>
                           <div className="rounded-md border bg-white px-3 py-2 text-right text-xs">
-                            <div className="font-semibold">{formatMoney(selectedTotal, locale)} UZS</div>
+                            <div className="font-semibold">{selectedMoneyBreakdown}</div>
                             <div className="text-slate-500">{selectedServiceChargeCount} service charge · {selectedCodCount} COD</div>
                           </div>
                         </div>
@@ -1147,12 +1203,12 @@ export function ManagerAnalyticsV2Page() {
                       ) : (
                         <div className="space-y-4">
                           {queueGroups.map((group) => {
-                            const total = group.items.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+                            const total = formatMoneyBreakdown(group.items, locale);
                             return (
                               <div key={group.key} className="space-y-2">
                                 <div className="flex items-center justify-between border-b pb-2 text-sm">
                                   <span className="font-semibold">{group.title}</span>
-                                  <span className="text-slate-500">{group.items.length} items · {formatMoney(total, locale)} UZS</span>
+                                  <span className="text-slate-500">{group.items.length} items - {total}</span>
                                 </div>
                                 {group.items.length === 0 ? (
                                   <div className="rounded-md border border-dashed px-3 py-3 text-sm text-slate-500">No items in this group.</div>
@@ -1191,8 +1247,8 @@ export function ManagerAnalyticsV2Page() {
                                           <div className="text-xs text-slate-500">{t("managerAnalytics.finance.ageHours", { count: item.ageHours })}</div>
                                         </div>
                                         <div className="text-right">
-                                          <div className="font-semibold">{formatMoney(item.amount, locale)}</div>
-                                          <div className="text-xs text-slate-500">{item.currency || "UZS"}</div>
+                                          <div className="font-semibold">{formatMoneyWithCurrency(item.amount, locale, item.currency)}</div>
+                                          <div className="text-xs text-slate-500">{prettyCashKind(item.kind, t)}</div>
                                         </div>
                                         <Button asChild size="sm" variant="outline" className="self-center">
                                           <Link href={`/dashboard/manager/orders/${item.orderId}`}>{t("managerAnalytics.finance.openOrder")}</Link>

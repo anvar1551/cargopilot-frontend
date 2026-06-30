@@ -8,6 +8,8 @@ import { Loader2, Plus, UserPlus } from "lucide-react";
 import { createUser, type MembershipScopeType } from "@/lib/users";
 import { fetchRoles } from "@/lib/iam";
 import { fetchWarehouses, type Warehouse } from "@/lib/warehouses";
+import { fetchOrganizations, type Organization } from "@/lib/organizations";
+import { CustomerEntityCombobox } from "@/components/combobox/CustomerEntityCombobox";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -46,6 +48,15 @@ function generatePassword(len = 14) {
   return output;
 }
 
+function getOrganizationLabel(item: Organization) {
+  return item.code ? `${item.name} (${item.code})` : item.name;
+}
+
+function getWarehouseLabel(item: Warehouse) {
+  const type = item.type === "pickup_point" ? "Pickup point" : "Warehouse";
+  return `${item.name} · ${type}`;
+}
+
 export default function CreateUserDialog() {
   const [open, setOpen] = React.useState(false);
   const [name, setName] = React.useState("");
@@ -69,6 +80,54 @@ export default function CreateUserDialog() {
     queryFn: fetchWarehouses,
     enabled: open,
   });
+  const organizationsQuery = useQuery({
+    queryKey: ["organizations", "rbac-user-dialog"],
+    queryFn: ({ signal }) => fetchOrganizations({ isActive: true, page: 1, limit: 100 }, signal),
+    enabled: open,
+  });
+
+  const organizations = React.useMemo(
+    () => organizationsQuery.data?.data ?? [],
+    [organizationsQuery.data?.data],
+  );
+  const warehouses = React.useMemo(() => warehousesQuery.data ?? [], [warehousesQuery.data]);
+  const scopeOptions = React.useMemo(() => {
+    const byType = new Map<MembershipScopeType, Array<{ id: string; label: string }>>();
+    const set = (type: MembershipScopeType, options: Array<{ id: string; label: string }>) => {
+      byType.set(type, options);
+    };
+
+    set(
+      "company",
+      organizations.filter((item) => item.type === "company").map((item) => ({ id: item.id, label: getOrganizationLabel(item) })),
+    );
+    set(
+      "branch",
+      organizations.filter((item) => item.type === "branch").map((item) => ({ id: item.id, label: getOrganizationLabel(item) })),
+    );
+    set(
+      "agent",
+      organizations.filter((item) => item.type === "agent").map((item) => ({ id: item.id, label: getOrganizationLabel(item) })),
+    );
+    set(
+      "carrier",
+      organizations.filter((item) => item.type === "carrier").map((item) => ({ id: item.id, label: getOrganizationLabel(item) })),
+    );
+    set(
+      "client",
+      organizations.filter((item) => item.type === "client").map((item) => ({ id: item.id, label: getOrganizationLabel(item) })),
+    );
+    set(
+      "warehouse",
+      warehouses.filter((item) => item.type !== "pickup_point").map((item) => ({ id: item.id, label: getWarehouseLabel(item) })),
+    );
+    set(
+      "pickup_point",
+      warehouses.filter((item) => item.type === "pickup_point").map((item) => ({ id: item.id, label: getWarehouseLabel(item) })),
+    );
+
+    return byType;
+  }, [organizations, warehouses]);
 
   const mutation = useMutation({
     mutationFn: createUser,
@@ -147,7 +206,7 @@ export default function CreateUserDialog() {
           Create User
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-4xl">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-5xl">
         <DialogHeader>
           <DialogTitle>Create User (RBAC)</DialogTitle>
           <DialogDescription>
@@ -198,10 +257,22 @@ export default function CreateUserDialog() {
             </div>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div className="space-y-2">
-              <Label>Branch ID (optional)</Label>
-              <Input value={branchId} onChange={(e) => setBranchId(e.target.value)} placeholder="UUID" />
+              <Label>Branch (optional)</Label>
+              <Select value={branchId || "none"} onValueChange={(value) => setBranchId(value === "none" ? "" : value)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select branch" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {(scopeOptions.get("branch") ?? []).map((item) => (
+                    <SelectItem key={item.id} value={item.id}>
+                      {item.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label>Warehouse (optional)</Label>
@@ -211,9 +282,9 @@ export default function CreateUserDialog() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">None</SelectItem>
-                  {(warehousesQuery.data ?? []).map((item) => (
+                  {warehouses.map((item) => (
                     <SelectItem key={item.id} value={item.id}>
-                      {item.name}
+                      {getWarehouseLabel(item)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -233,8 +304,13 @@ export default function CreateUserDialog() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Customer Entity ID (optional)</Label>
-              <Input value={customerEntityId} onChange={(e) => setCustomerEntityId(e.target.value)} placeholder="UUID" />
+              <Label>Customer entity (optional)</Label>
+              <CustomerEntityCombobox
+                value={customerEntityId || null}
+                onChange={(id) => setCustomerEntityId(id ?? "")}
+                buttonClassName="w-full justify-between"
+                placeholder="Select customer"
+              />
             </div>
           </div>
 
@@ -257,7 +333,9 @@ export default function CreateUserDialog() {
                       onValueChange={(value) =>
                         setScopes((prev) =>
                           prev.map((item, itemIndex) =>
-                            itemIndex === index ? { ...item, scopeType: value as MembershipScopeType } : item,
+                            itemIndex === index
+                              ? { ...item, scopeType: value as MembershipScopeType, scopeRefId: "" }
+                              : item,
                           ),
                         )
                       }
@@ -273,17 +351,28 @@ export default function CreateUserDialog() {
                         ))}
                       </SelectContent>
                     </Select>
-                    <Input
-                      value={row.scopeRefId}
-                      onChange={(e) =>
+                    <Select
+                      value={row.scopeRefId || "none"}
+                      onValueChange={(value) =>
                         setScopes((prev) =>
                           prev.map((item, itemIndex) =>
-                            itemIndex === index ? { ...item, scopeRefId: e.target.value } : item,
+                            itemIndex === index ? { ...item, scopeRefId: value === "none" ? "" : value } : item,
                           ),
                         )
                       }
-                      placeholder="scope_ref_id"
-                    />
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select scope target" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Select {row.scopeType}</SelectItem>
+                        {(scopeOptions.get(row.scopeType) ?? []).map((item) => (
+                          <SelectItem key={item.id} value={item.id}>
+                            {item.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <Button
                       type="button"
                       variant="ghost"

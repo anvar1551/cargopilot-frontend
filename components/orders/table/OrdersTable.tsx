@@ -164,7 +164,20 @@ export default function OrdersTable({
       if (!q) return true;
 
       const o = row.original;
-      const customerText = `${o.customer?.name ?? ""} ${o.customer?.email ?? ""}`
+      const customerText = [
+        o.customerEntity?.companyName,
+        o.customerEntity?.name,
+        o.customerEntity?.email,
+        o.customerEntity?.phone,
+        o.senderName,
+        o.senderPhone,
+        o.receiverName,
+        o.receiverPhone,
+        o.customer?.name,
+        o.customer?.email,
+      ]
+        .filter(Boolean)
+        .join(" ")
         .toLowerCase()
         .trim();
 

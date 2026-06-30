@@ -33,22 +33,38 @@ import {
 import { getMapboxToken } from "@/lib/mapbox";
 import { getStatusLabel } from "@/lib/i18n/labels";
 import { usePageVisibility } from "@/lib/usePageVisibility";
+import { useRealtimeFallbackInterval } from "@/lib/use-realtime-fallback";
 import { cn } from "@/lib/utils";
 
 import PageShell from "@/components/layout/PageShell";
 import { useI18n } from "@/components/i18n/I18nProvider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 
 type MapboxMapLike = {
-  on: (event: string, handler: (event?: { error?: Error; id?: string }) => void) => void;
+  on: (
+    event: string,
+    handler: (event?: { error?: Error; id?: string }) => void,
+  ) => void;
   addSource: (id: string, source: unknown) => void;
   addLayer: (layer: unknown) => void;
   hasImage: (id: string) => boolean;
@@ -69,7 +85,11 @@ type MapboxMapLike = {
     bounds: [[number, number], [number, number]],
     options?: { padding?: number; duration?: number },
   ) => void;
-  flyTo: (options: { center: [number, number]; zoom?: number; duration?: number }) => void;
+  flyTo: (options: {
+    center: [number, number];
+    zoom?: number;
+    duration?: number;
+  }) => void;
   getBounds: () => {
     getWest: () => number;
     getSouth: () => number;
@@ -253,32 +273,40 @@ function statusClass(status: LiveMapDriverStatus) {
 function statusAccent(status: LiveMapDriverStatus) {
   if (status === "online") {
     return {
-      selectedRow: "border-teal-300 bg-gradient-to-r from-cyan-50 via-teal-50 to-sky-50 shadow-sm",
+      selectedRow:
+        "border-teal-300 bg-gradient-to-r from-cyan-50 via-teal-50 to-sky-50 shadow-sm",
       avatar: "bg-teal-100 text-teal-700",
-      panel: "border-teal-200 bg-gradient-to-br from-cyan-50/95 via-teal-50/95 to-sky-50/95",
+      panel:
+        "border-teal-200 bg-gradient-to-br from-cyan-50/95 via-teal-50/95 to-sky-50/95",
       badge: "border-teal-300 bg-teal-100 text-teal-800",
     };
   }
   if (status === "idle") {
     return {
-      selectedRow: "border-indigo-300 bg-gradient-to-r from-indigo-50 via-blue-50 to-cyan-50 shadow-sm",
+      selectedRow:
+        "border-indigo-300 bg-gradient-to-r from-indigo-50 via-blue-50 to-cyan-50 shadow-sm",
       avatar: "bg-indigo-100 text-indigo-700",
-      panel: "border-indigo-200 bg-gradient-to-br from-indigo-50/95 via-blue-50/95 to-cyan-50/95",
+      panel:
+        "border-indigo-200 bg-gradient-to-br from-indigo-50/95 via-blue-50/95 to-cyan-50/95",
       badge: "border-indigo-300 bg-indigo-100 text-indigo-800",
     };
   }
   if (status === "stale") {
     return {
-      selectedRow: "border-amber-300 bg-gradient-to-r from-amber-50 via-orange-50 to-yellow-50 shadow-sm",
+      selectedRow:
+        "border-amber-300 bg-gradient-to-r from-amber-50 via-orange-50 to-yellow-50 shadow-sm",
       avatar: "bg-amber-100 text-amber-700",
-      panel: "border-amber-200 bg-gradient-to-br from-amber-50/95 via-orange-50/95 to-yellow-50/95",
+      panel:
+        "border-amber-200 bg-gradient-to-br from-amber-50/95 via-orange-50/95 to-yellow-50/95",
       badge: "border-amber-300 bg-amber-100 text-amber-800",
     };
   }
   return {
-    selectedRow: "border-slate-300 bg-gradient-to-r from-slate-50 via-slate-100 to-zinc-100 shadow-sm",
+    selectedRow:
+      "border-slate-300 bg-gradient-to-r from-slate-50 via-slate-100 to-zinc-100 shadow-sm",
     avatar: "bg-slate-200 text-slate-700",
-    panel: "border-slate-300 bg-gradient-to-br from-slate-50/95 via-slate-100/95 to-zinc-100/95",
+    panel:
+      "border-slate-300 bg-gradient-to-br from-slate-50/95 via-slate-100/95 to-zinc-100/95",
     badge: "border-slate-300 bg-slate-100 text-slate-700",
   };
 }
@@ -445,7 +473,9 @@ function registerLiveMapIcons(map: MapboxMapLike) {
   }
 }
 
-function normalizeViewport(next: LiveMapViewport | null): LiveMapViewport | null {
+function normalizeViewport(
+  next: LiveMapViewport | null,
+): LiveMapViewport | null {
   if (!next) return null;
   const minLat = Number(next.minLat.toFixed(4));
   const minLng = Number(next.minLng.toFixed(4));
@@ -494,7 +524,8 @@ function hasMeaningfulViewportChange(
   // Reduce stream reconnect churn by ignoring tiny viewport drifts.
   const minCenterDeltaLat = Math.max(0.004, currSpanLat * 0.08);
   const minCenterDeltaLng = Math.max(0.004, currSpanLng * 0.08);
-  const centerChanged = centerDeltaLat >= minCenterDeltaLat || centerDeltaLng >= minCenterDeltaLng;
+  const centerChanged =
+    centerDeltaLat >= minCenterDeltaLat || centerDeltaLng >= minCenterDeltaLng;
   const spanChanged = spanDeltaLat >= 0.18 || spanDeltaLng >= 0.18;
 
   return centerChanged || spanChanged;
@@ -515,31 +546,49 @@ export default function ManagerLiveMapPage() {
   const [showHeatmap, setShowHeatmap] = React.useState(false);
   const [showWarehouses, setShowWarehouses] = React.useState(true);
   const [driverQuery, setDriverQuery] = React.useState("");
-  const [selectedDriverId, setSelectedDriverId] = React.useState<string | null>(null);
-  const [expandedDriverId, setExpandedDriverId] = React.useState<string | null>(null);
+  const [selectedDriverId, setSelectedDriverId] = React.useState<string | null>(
+    null,
+  );
+  const [expandedDriverId, setExpandedDriverId] = React.useState<string | null>(
+    null,
+  );
   const [tick, setTick] = React.useState(0);
-  const [streamViewport, setStreamViewport] = React.useState<LiveMapViewport | null>(null);
+  const [streamViewport, setStreamViewport] =
+    React.useState<LiveMapViewport | null>(null);
   const [streamHealthy, setStreamHealthy] = React.useState(false);
+  const realtimeFallbackInterval = useRealtimeFallbackInterval({
+    isPageVisible,
+    realtimeConnected: streamHealthy,
+  });
 
   const [mapError, setMapError] = React.useState<string | null>(null);
-  const [mapContainerEl, setMapContainerEl] = React.useState<HTMLDivElement | null>(null);
+  const [mapContainerEl, setMapContainerEl] =
+    React.useState<HTMLDivElement | null>(null);
   const [mapReadyTick, setMapReadyTick] = React.useState(0);
   const activeSnapshotViewport = streamViewport ?? INITIAL_SNAPSHOT_VIEWPORT;
   const liveMapSnapshotQueryKey = React.useMemo(
-    () => ["manager-live-map-snapshot", liveMapViewportKey(activeSnapshotViewport)] as const,
+    () =>
+      [
+        "manager-live-map-snapshot",
+        liveMapViewportKey(activeSnapshotViewport),
+      ] as const,
     [activeSnapshotViewport],
   );
   const mapRef = React.useRef<MapboxMapLike | null>(null);
   const isMapReadyRef = React.useRef(false);
   const fittedInitiallyRef = React.useRef(false);
   const lastAutoFocusedDriverIdRef = React.useRef<string | null>(null);
-  const viewportDebounceTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const viewportDebounceTimerRef = React.useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
   const streamHealthyRef = React.useRef(false);
   const lastStreamViewportUpdateAtRef = React.useRef(0);
-  const driverAnimationTargetsRef = React.useRef<globalThis.Map<string, PointFeature<DriverFeatureProps>>>(
-    new globalThis.Map(),
-  );
-  const driverAnimationStatesRef = React.useRef<globalThis.Map<string, DriverAnimationState>>(new globalThis.Map());
+  const driverAnimationTargetsRef = React.useRef<
+    globalThis.Map<string, PointFeature<DriverFeatureProps>>
+  >(new globalThis.Map());
+  const driverAnimationStatesRef = React.useRef<
+    globalThis.Map<string, DriverAnimationState>
+  >(new globalThis.Map());
   const driverAnimationFrameRef = React.useRef<number | null>(null);
 
   React.useEffect(() => {
@@ -568,7 +617,10 @@ export default function ManagerLiveMapPage() {
         // Avoid excessive SSE reconnect churn while users pan/zoom continuously.
         if (current && streamHealthyRef.current) {
           const now = Date.now();
-          if (now - lastStreamViewportUpdateAtRef.current < STREAM_VIEWPORT_UPDATE_MIN_GAP_MS) {
+          if (
+            now - lastStreamViewportUpdateAtRef.current <
+            STREAM_VIEWPORT_UPDATE_MIN_GAP_MS
+          ) {
             return current;
           }
           lastStreamViewportUpdateAtRef.current = now;
@@ -584,7 +636,7 @@ export default function ManagerLiveMapPage() {
   const snapshotQuery = useQuery({
     queryKey: liveMapSnapshotQueryKey,
     queryFn: () => fetchManagerLiveMapSnapshot(activeSnapshotViewport),
-    refetchInterval: isPageVisible && !streamHealthy ? 180_000 : false,
+    refetchInterval: realtimeFallbackInterval,
     staleTime: 45_000,
     placeholderData: (prev) => prev,
     refetchOnWindowFocus: false,
@@ -599,16 +651,21 @@ export default function ManagerLiveMapPage() {
       },
       onEvent: (event: LiveMapEvent) => {
         setStreamHealthy(true);
-        queryClient.setQueryData<ManagerLiveMapSnapshot>(liveMapSnapshotQueryKey, (current) => {
-          if (event.type === "driver_location_upsert") {
-            const payload = event.payload;
-            if (!isFiniteCoord(payload.lat) || !isFiniteCoord(payload.lng)) return current;
-            const nextLiveEnabled = payload.liveEnabled ?? true;
-            const nextStatus =
-              payload.status ??
-              deriveLiveMapDriverStatus(payload.heartbeatAt ?? payload.recordedAt, nextLiveEnabled);
-            const baseSnapshot: ManagerLiveMapSnapshot =
-              current ?? {
+        queryClient.setQueryData<ManagerLiveMapSnapshot>(
+          liveMapSnapshotQueryKey,
+          (current) => {
+            if (event.type === "driver_location_upsert") {
+              const payload = event.payload;
+              if (!isFiniteCoord(payload.lat) || !isFiniteCoord(payload.lng))
+                return current;
+              const nextLiveEnabled = payload.liveEnabled ?? true;
+              const nextStatus =
+                payload.status ??
+                deriveLiveMapDriverStatus(
+                  payload.heartbeatAt ?? payload.recordedAt,
+                  nextLiveEnabled,
+                );
+              const baseSnapshot: ManagerLiveMapSnapshot = current ?? {
                 generatedAt: event.at,
                 isMock: false,
                 drivers: [],
@@ -616,100 +673,109 @@ export default function ManagerLiveMapPage() {
                 warehouses: [],
               };
 
-            let changed = false;
-            const nextDrivers = baseSnapshot.drivers.map((driver) => {
-              if (driver.id !== payload.driverId) return driver;
-              changed = true;
-              return {
-                ...driver,
-                liveEnabled: nextLiveEnabled,
-                lat: payload.lat,
-                lng: payload.lng,
-                speedKmh: payload.speedKmh,
-                headingDeg: payload.headingDeg,
-                lastSeenAt: payload.heartbeatAt ?? payload.recordedAt,
-                status: nextStatus,
-                warehouseId: payload.warehouseId ?? driver.warehouseId,
-                activeOrderId: payload.orderId ?? null,
-              };
-            });
-
-            if (!changed) {
-              nextDrivers.push({
-                id: payload.driverId,
-                name: `Driver ${payload.driverId.slice(0, 6)}`,
-                email: "",
-                warehouseId: payload.warehouseId ?? null,
-                warehouseIds: payload.warehouseId ? [payload.warehouseId] : [],
-                driverType: "local",
-                liveEnabled: nextLiveEnabled,
-                lat: payload.lat,
-                lng: payload.lng,
-                speedKmh: payload.speedKmh,
-                headingDeg: payload.headingDeg,
-                lastSeenAt: payload.heartbeatAt ?? payload.recordedAt,
-                status: nextStatus,
-                region: null,
-                activeOrderId: payload.orderId ?? null,
-                seed: stableSeed(payload.driverId),
+              let changed = false;
+              const nextDrivers = baseSnapshot.drivers.map((driver) => {
+                if (driver.id !== payload.driverId) return driver;
+                changed = true;
+                return {
+                  ...driver,
+                  liveEnabled: nextLiveEnabled,
+                  lat: payload.lat,
+                  lng: payload.lng,
+                  speedKmh: payload.speedKmh,
+                  headingDeg: payload.headingDeg,
+                  lastSeenAt: payload.heartbeatAt ?? payload.recordedAt,
+                  status: nextStatus,
+                  warehouseId: payload.warehouseId ?? driver.warehouseId,
+                  activeOrderId: payload.orderId ?? null,
+                };
               });
+
+              if (!changed) {
+                nextDrivers.push({
+                  id: payload.driverId,
+                  name: `Driver ${payload.driverId.slice(0, 6)}`,
+                  email: "",
+                  warehouseId: payload.warehouseId ?? null,
+                  warehouseIds: payload.warehouseId
+                    ? [payload.warehouseId]
+                    : [],
+                  driverType: "local",
+                  liveEnabled: nextLiveEnabled,
+                  lat: payload.lat,
+                  lng: payload.lng,
+                  speedKmh: payload.speedKmh,
+                  headingDeg: payload.headingDeg,
+                  lastSeenAt: payload.heartbeatAt ?? payload.recordedAt,
+                  status: nextStatus,
+                  region: null,
+                  activeOrderId: payload.orderId ?? null,
+                  seed: stableSeed(payload.driverId),
+                });
+              }
+              return {
+                ...baseSnapshot,
+                generatedAt: event.at,
+                isMock: false,
+                drivers: nextDrivers,
+              };
             }
-            return {
-              ...baseSnapshot,
-              generatedAt: event.at,
-              isMock: false,
-              drivers: nextDrivers,
-            };
-          }
 
-          if (!current) return current;
+            if (!current) return current;
 
-          if (event.type === "driver_presence_update") {
-            const payload = event.payload;
-            let changed = false;
-            const nextDrivers = current.drivers.map((driver) => {
-              if (driver.id !== payload.driverId) return driver;
-              changed = true;
+            if (event.type === "driver_presence_update") {
+              const payload = event.payload;
+              let changed = false;
+              const nextDrivers = current.drivers.map((driver) => {
+                if (driver.id !== payload.driverId) return driver;
+                changed = true;
+                return {
+                  ...driver,
+                  liveEnabled: payload.enabled,
+                  lastSeenAt: payload.heartbeatAt ?? driver.lastSeenAt,
+                  status: deriveLiveMapDriverStatus(
+                    payload.heartbeatAt ?? driver.lastSeenAt,
+                    payload.enabled,
+                  ),
+                };
+              });
+              if (!changed) return current;
               return {
-                ...driver,
-                liveEnabled: payload.enabled,
-                lastSeenAt: payload.heartbeatAt ?? driver.lastSeenAt,
-                status: deriveLiveMapDriverStatus(payload.heartbeatAt ?? driver.lastSeenAt, payload.enabled),
+                ...current,
+                generatedAt: event.at,
+                isMock: false,
+                drivers: nextDrivers,
               };
-            });
-            if (!changed) return current;
-            return {
-              ...current,
-              generatedAt: event.at,
-              isMock: false,
-              drivers: nextDrivers,
-            };
-          }
+            }
 
-          if (event.type === "driver_presence_heartbeat") {
-            const payload = event.payload;
-            let changed = false;
-            const nextDrivers = current.drivers.map((driver) => {
-              if (driver.id !== payload.driverId) return driver;
-              changed = true;
-              const nextLiveEnabled = driver.liveEnabled ?? true;
+            if (event.type === "driver_presence_heartbeat") {
+              const payload = event.payload;
+              let changed = false;
+              const nextDrivers = current.drivers.map((driver) => {
+                if (driver.id !== payload.driverId) return driver;
+                changed = true;
+                const nextLiveEnabled = driver.liveEnabled ?? true;
+                return {
+                  ...driver,
+                  lastSeenAt: payload.heartbeatAt,
+                  status: deriveLiveMapDriverStatus(
+                    payload.heartbeatAt,
+                    nextLiveEnabled,
+                  ),
+                };
+              });
+              if (!changed) return current;
               return {
-                ...driver,
-                lastSeenAt: payload.heartbeatAt,
-                status: deriveLiveMapDriverStatus(payload.heartbeatAt, nextLiveEnabled),
+                ...current,
+                generatedAt: event.at,
+                isMock: false,
+                drivers: nextDrivers,
               };
-            });
-            if (!changed) return current;
-            return {
-              ...current,
-              generatedAt: event.at,
-              isMock: false,
-              drivers: nextDrivers,
-            };
-          }
+            }
 
-          return current;
-        });
+            return current;
+          },
+        );
       },
       onError: () => {
         setStreamHealthy(false);
@@ -720,7 +786,13 @@ export default function ManagerLiveMapPage() {
       unsubscribe();
       setStreamHealthy(false);
     };
-  }, [isPageVisible, liveMapSnapshotQueryKey, mapReadyTick, queryClient, streamViewport]);
+  }, [
+    isPageVisible,
+    liveMapSnapshotQueryKey,
+    mapReadyTick,
+    queryClient,
+    streamViewport,
+  ]);
 
   React.useEffect(() => {
     if (!isPageVisible || !snapshotQuery.data?.isMock) return;
@@ -737,7 +809,10 @@ export default function ManagerLiveMapPage() {
     };
   }, []);
 
-  const warehouses = React.useMemo(() => snapshotQuery.data?.warehouses ?? [], [snapshotQuery.data?.warehouses]);
+  const warehouses = React.useMemo(
+    () => snapshotQuery.data?.warehouses ?? [],
+    [snapshotQuery.data?.warehouses],
+  );
   const regions = React.useMemo(() => {
     const unique = new Set<string>();
     for (const warehouse of warehouses) {
@@ -756,7 +831,8 @@ export default function ManagerLiveMapPage() {
   const filteredOrders = React.useMemo(() => {
     const source = snapshotQuery.data?.orders ?? [];
     return source.filter((order) => {
-      if (warehouseFilter !== "all" && order.warehouseId !== warehouseFilter) return false;
+      if (warehouseFilter !== "all" && order.warehouseId !== warehouseFilter)
+        return false;
       if (regionFilter !== "all" && order.region !== regionFilter) return false;
       if (statusFilter !== "all" && order.status !== statusFilter) return false;
       return true;
@@ -772,23 +848,33 @@ export default function ManagerLiveMapPage() {
           if (driver.driverType !== "linehaul") {
             const attachedWarehouses = new Set([
               driver.warehouseId,
-              ...(Array.isArray(driver.warehouseIds) ? driver.warehouseIds : []),
+              ...(Array.isArray(driver.warehouseIds)
+                ? driver.warehouseIds
+                : []),
             ]);
             if (!attachedWarehouses.has(warehouseFilter)) return false;
           }
         }
-        if (regionFilter !== "all" && driver.region !== regionFilter) return false;
+        if (regionFilter !== "all" && driver.region !== regionFilter)
+          return false;
         return true;
       })
       .map((driver) => (isMock ? driverDisplay(driver, tick) : driver))
       .sort((a, b) => statusRank(b.status) - statusRank(a.status));
-  }, [regionFilter, snapshotQuery.data?.drivers, snapshotQuery.data?.isMock, tick, warehouseFilter]);
+  }, [
+    regionFilter,
+    snapshotQuery.data?.drivers,
+    snapshotQuery.data?.isMock,
+    tick,
+    warehouseFilter,
+  ]);
 
   const visibleDrivers = React.useMemo(() => {
     const q = driverQuery.trim().toLowerCase();
     if (!q) return filteredDrivers;
     return filteredDrivers.filter((driver) => {
-      const haystack = `${driver.name ?? ""} ${driver.email ?? ""} ${driver.id}`.toLowerCase();
+      const haystack =
+        `${driver.name ?? ""} ${driver.email ?? ""} ${driver.id}`.toLowerCase();
       return haystack.includes(q);
     });
   }, [driverQuery, filteredDrivers]);
@@ -811,11 +897,14 @@ export default function ManagerLiveMapPage() {
   }, [expandedDriverId, selectedDriverId, visibleDrivers]);
 
   const selectedDriver = React.useMemo(
-    () => visibleDrivers.find((driver) => driver.id === selectedDriverId) ?? null,
+    () =>
+      visibleDrivers.find((driver) => driver.id === selectedDriverId) ?? null,
     [selectedDriverId, visibleDrivers],
   );
 
-  const driverFeatures = React.useMemo<FeatureCollection<PointFeature<DriverFeatureProps>>>(() => {
+  const driverFeatures = React.useMemo<
+    FeatureCollection<PointFeature<DriverFeatureProps>>
+  >(() => {
     return {
       type: "FeatureCollection",
       features: filteredDrivers.map((driver) =>
@@ -830,7 +919,9 @@ export default function ManagerLiveMapPage() {
     };
   }, [filteredDrivers]);
 
-  const selectedDriverFeature = React.useMemo<FeatureCollection<PointFeature<Record<string, unknown>>>>(() => {
+  const selectedDriverFeature = React.useMemo<
+    FeatureCollection<PointFeature<Record<string, unknown>>>
+  >(() => {
     if (!selectedDriver) return EMPTY_POINTS;
     return {
       type: "FeatureCollection",
@@ -851,7 +942,9 @@ export default function ManagerLiveMapPage() {
     };
   }, [selectedDriver]);
 
-  const pickupFeatures = React.useMemo<FeatureCollection<PointFeature<Record<string, unknown>>>>(() => {
+  const pickupFeatures = React.useMemo<
+    FeatureCollection<PointFeature<Record<string, unknown>>>
+  >(() => {
     return {
       type: "FeatureCollection",
       features: filteredOrders
@@ -871,7 +964,9 @@ export default function ManagerLiveMapPage() {
     };
   }, [filteredOrders]);
 
-  const dropoffFeatures = React.useMemo<FeatureCollection<PointFeature<Record<string, unknown>>>>(() => {
+  const dropoffFeatures = React.useMemo<
+    FeatureCollection<PointFeature<Record<string, unknown>>>
+  >(() => {
     return {
       type: "FeatureCollection",
       features: filteredOrders
@@ -880,7 +975,10 @@ export default function ManagerLiveMapPage() {
           type: "Feature",
           geometry: {
             type: "Point",
-            coordinates: [order.dropoffLng as number, order.dropoffLat as number],
+            coordinates: [
+              order.dropoffLng as number,
+              order.dropoffLat as number,
+            ],
           },
           properties: {
             orderId: order.id,
@@ -891,7 +989,9 @@ export default function ManagerLiveMapPage() {
     };
   }, [filteredOrders]);
 
-  const routeFeatures = React.useMemo<FeatureCollection<LineFeature<Record<string, unknown>>>>(() => {
+  const routeFeatures = React.useMemo<
+    FeatureCollection<LineFeature<Record<string, unknown>>>
+  >(() => {
     return {
       type: "FeatureCollection",
       features: filteredOrders
@@ -918,27 +1018,35 @@ export default function ManagerLiveMapPage() {
     };
   }, [filteredOrders]);
 
-  const heatmapFeatures = React.useMemo<FeatureCollection<PointFeature<Record<string, unknown>>>>(() => {
+  const heatmapFeatures = React.useMemo<
+    FeatureCollection<PointFeature<Record<string, unknown>>>
+  >(() => {
     return {
       type: "FeatureCollection",
-      features: [...pickupFeatures.features, ...dropoffFeatures.features].map((feature) => ({
-        ...feature,
-        properties: {
-          ...(feature.properties ?? {}),
-          weight: 1,
-        },
-      })),
+      features: [...pickupFeatures.features, ...dropoffFeatures.features].map(
+        (feature) => ({
+          ...feature,
+          properties: {
+            ...(feature.properties ?? {}),
+            weight: 1,
+          },
+        }),
+      ),
     };
   }, [dropoffFeatures.features, pickupFeatures.features]);
 
-  const warehouseFeatures = React.useMemo<FeatureCollection<PointFeature<Record<string, unknown>>>>(() => {
+  const warehouseFeatures = React.useMemo<
+    FeatureCollection<PointFeature<Record<string, unknown>>>
+  >(() => {
     return {
       type: "FeatureCollection",
       features: warehouses
         .filter((warehouse) => {
           if (warehouse.lat == null || warehouse.lng == null) return false;
-          if (warehouseFilter !== "all" && warehouse.id !== warehouseFilter) return false;
-          if (regionFilter !== "all" && warehouse.region !== regionFilter) return false;
+          if (warehouseFilter !== "all" && warehouse.id !== warehouseFilter)
+            return false;
+          if (regionFilter !== "all" && warehouse.region !== regionFilter)
+            return false;
           return true;
         })
         .map((warehouse) => ({
@@ -1017,12 +1125,19 @@ export default function ManagerLiveMapPage() {
       return;
     }
 
-    map.fitBounds(boundsFromCoords(allVisibleCoords), { padding: 86, duration: 260 });
+    map.fitBounds(boundsFromCoords(allVisibleCoords), {
+      padding: 86,
+      duration: 260,
+    });
   }, [allVisibleCoords]);
 
   const centerOnSelectedDriver = React.useCallback(() => {
     if (!selectedDriver || !mapRef.current || !isMapReadyRef.current) return;
-    mapRef.current.flyTo({ center: [selectedDriver.lng, selectedDriver.lat], zoom: 13.2, duration: 240 });
+    mapRef.current.flyTo({
+      center: [selectedDriver.lng, selectedDriver.lat],
+      zoom: 13.2,
+      duration: 240,
+    });
   }, [selectedDriver]);
 
   React.useEffect(() => {
@@ -1056,13 +1171,34 @@ export default function ManagerLiveMapPage() {
           setMapReadyTick((value) => value + 1);
           queueViewportUpdate();
 
-          map.addSource("cp-live-heat", { type: "geojson", data: EMPTY_POINTS });
-          map.addSource("cp-live-routes", { type: "geojson", data: EMPTY_LINES });
-          map.addSource("cp-live-pickups", { type: "geojson", data: EMPTY_POINTS });
-          map.addSource("cp-live-dropoffs", { type: "geojson", data: EMPTY_POINTS });
-          map.addSource("cp-live-warehouses", { type: "geojson", data: EMPTY_POINTS });
-          map.addSource("cp-live-drivers", { type: "geojson", data: EMPTY_POINTS });
-          map.addSource("cp-live-driver-selected", { type: "geojson", data: EMPTY_POINTS });
+          map.addSource("cp-live-heat", {
+            type: "geojson",
+            data: EMPTY_POINTS,
+          });
+          map.addSource("cp-live-routes", {
+            type: "geojson",
+            data: EMPTY_LINES,
+          });
+          map.addSource("cp-live-pickups", {
+            type: "geojson",
+            data: EMPTY_POINTS,
+          });
+          map.addSource("cp-live-dropoffs", {
+            type: "geojson",
+            data: EMPTY_POINTS,
+          });
+          map.addSource("cp-live-warehouses", {
+            type: "geojson",
+            data: EMPTY_POINTS,
+          });
+          map.addSource("cp-live-drivers", {
+            type: "geojson",
+            data: EMPTY_POINTS,
+          });
+          map.addSource("cp-live-driver-selected", {
+            type: "geojson",
+            data: EMPTY_POINTS,
+          });
           registerLiveMapIcons(map);
 
           map.addLayer({
@@ -1072,8 +1208,24 @@ export default function ManagerLiveMapPage() {
             maxzoom: 16,
             paint: {
               "heatmap-weight": ["coalesce", ["get", "weight"], 1],
-              "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 0, 0.3, 16, 1.4],
-              "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 3, 10, 16, 40],
+              "heatmap-intensity": [
+                "interpolate",
+                ["linear"],
+                ["zoom"],
+                0,
+                0.3,
+                16,
+                1.4,
+              ],
+              "heatmap-radius": [
+                "interpolate",
+                ["linear"],
+                ["zoom"],
+                3,
+                10,
+                16,
+                40,
+              ],
               "heatmap-opacity": 0.7,
               "heatmap-color": [
                 "interpolate",
@@ -1254,12 +1406,16 @@ export default function ManagerLiveMapPage() {
 
         map.on("error", (event) => {
           if (disposed) return;
-          const message = event?.error?.message ?? t("managerLiveMap.mapLoadFailed");
+          const message =
+            event?.error?.message ?? t("managerLiveMap.mapLoadFailed");
           setMapError(message);
         });
       } catch (error) {
         if (disposed) return;
-        const message = error instanceof Error ? error.message : t("managerLiveMap.mapLoadFailed");
+        const message =
+          error instanceof Error
+            ? error.message
+            : t("managerLiveMap.mapLoadFailed");
         setMapError(message);
       }
     };
@@ -1355,14 +1511,19 @@ export default function ManagerLiveMapPage() {
       }
       driverAnimationTargetsRef.current.clear();
       driverAnimationStatesRef.current.clear();
-      updateDriverMapSources(EMPTY_POINTS as FeatureCollection<PointFeature<DriverFeatureProps>>);
+      updateDriverMapSources(
+        EMPTY_POINTS as FeatureCollection<PointFeature<DriverFeatureProps>>,
+      );
       return;
     }
 
     const now = performance.now();
     const previousTargets = driverAnimationTargetsRef.current;
     const previousAnimations = driverAnimationStatesRef.current;
-    const nextTargets = new globalThis.Map<string, PointFeature<DriverFeatureProps>>();
+    const nextTargets = new globalThis.Map<
+      string,
+      PointFeature<DriverFeatureProps>
+    >();
     const nextAnimations = new globalThis.Map<string, DriverAnimationState>();
 
     const currentFeatureFor = (id: string) => {
@@ -1370,7 +1531,13 @@ export default function ManagerLiveMapPage() {
       const previousTarget = previousTargets.get(id);
       if (!previousAnimation) return previousTarget;
 
-      const progress = Math.min(1, Math.max(0, (now - previousAnimation.startedAt) / previousAnimation.durationMs));
+      const progress = Math.min(
+        1,
+        Math.max(
+          0,
+          (now - previousAnimation.startedAt) / previousAnimation.durationMs,
+        ),
+      );
       const eased = easeOutCubic(progress);
       const fromLng = previousAnimation.from[0];
       const fromLat = previousAnimation.from[1];
@@ -1378,7 +1545,11 @@ export default function ManagerLiveMapPage() {
       const toLat = previousAnimation.to[1];
       const heading =
         previousAnimation.fromHeading +
-        shortestHeadingDelta(previousAnimation.fromHeading, previousAnimation.toHeading) * eased;
+        shortestHeadingDelta(
+          previousAnimation.fromHeading,
+          previousAnimation.toHeading,
+        ) *
+          eased;
 
       return makeDriverFeature({
         id,
@@ -1395,13 +1566,20 @@ export default function ManagerLiveMapPage() {
     for (const feature of driverFeatures.features) {
       const id = feature.properties.id;
       const currentFeature = currentFeatureFor(id);
-      const from = currentFeature?.geometry.coordinates ?? feature.geometry.coordinates;
+      const from =
+        currentFeature?.geometry.coordinates ?? feature.geometry.coordinates;
       const to = feature.geometry.coordinates;
-      const fromHeading = Number(currentFeature?.properties.headingDeg ?? feature.properties.headingDeg ?? 0);
+      const fromHeading = Number(
+        currentFeature?.properties.headingDeg ??
+          feature.properties.headingDeg ??
+          0,
+      );
       const toHeading = Number(feature.properties.headingDeg ?? fromHeading);
       const hasPositionChange =
-        Math.abs(from[0] - to[0]) > 0.000001 || Math.abs(from[1] - to[1]) > 0.000001;
-      const hasHeadingChange = Math.abs(shortestHeadingDelta(fromHeading, toHeading)) > 2;
+        Math.abs(from[0] - to[0]) > 0.000001 ||
+        Math.abs(from[1] - to[1]) > 0.000001;
+      const hasHeadingChange =
+        Math.abs(shortestHeadingDelta(fromHeading, toHeading)) > 2;
 
       nextTargets.set(id, feature);
 
@@ -1434,13 +1612,17 @@ export default function ManagerLiveMapPage() {
           continue;
         }
 
-        const progress = Math.min(1, Math.max(0, (frameNow - animation.startedAt) / animation.durationMs));
+        const progress = Math.min(
+          1,
+          Math.max(0, (frameNow - animation.startedAt) / animation.durationMs),
+        );
         const eased = easeOutCubic(progress);
         const [fromLng, fromLat] = animation.from;
         const [toLng, toLat] = animation.to;
         const heading =
           animation.fromHeading +
-          shortestHeadingDelta(animation.fromHeading, animation.toHeading) * eased;
+          shortestHeadingDelta(animation.fromHeading, animation.toHeading) *
+            eased;
 
         animatedFeatures.push(
           makeDriverFeature({
@@ -1466,7 +1648,8 @@ export default function ManagerLiveMapPage() {
       });
 
       if (states.size > 0) {
-        driverAnimationFrameRef.current = window.requestAnimationFrame(renderFrame);
+        driverAnimationFrameRef.current =
+          window.requestAnimationFrame(renderFrame);
       } else {
         driverAnimationFrameRef.current = null;
       }
@@ -1491,11 +1674,21 @@ export default function ManagerLiveMapPage() {
     const map = mapRef.current;
     if (!map || !isMapReadyRef.current) return;
 
-    map.getSource("cp-live-heat")?.setData(showHeatmap ? heatmapFeatures : EMPTY_POINTS);
-    map.getSource("cp-live-routes")?.setData(showRoutes ? routeFeatures : EMPTY_LINES);
-    map.getSource("cp-live-pickups")?.setData(showOrders ? pickupFeatures : EMPTY_POINTS);
-    map.getSource("cp-live-dropoffs")?.setData(showOrders ? dropoffFeatures : EMPTY_POINTS);
-    map.getSource("cp-live-warehouses")?.setData(showWarehouses ? warehouseFeatures : EMPTY_POINTS);
+    map
+      .getSource("cp-live-heat")
+      ?.setData(showHeatmap ? heatmapFeatures : EMPTY_POINTS);
+    map
+      .getSource("cp-live-routes")
+      ?.setData(showRoutes ? routeFeatures : EMPTY_LINES);
+    map
+      .getSource("cp-live-pickups")
+      ?.setData(showOrders ? pickupFeatures : EMPTY_POINTS);
+    map
+      .getSource("cp-live-dropoffs")
+      ?.setData(showOrders ? dropoffFeatures : EMPTY_POINTS);
+    map
+      .getSource("cp-live-warehouses")
+      ?.setData(showWarehouses ? warehouseFeatures : EMPTY_POINTS);
 
     if (!fittedInitiallyRef.current && allVisibleCoords.length) {
       fittedInitiallyRef.current = true;
@@ -1525,15 +1718,25 @@ export default function ManagerLiveMapPage() {
 
     if (lastAutoFocusedDriverIdRef.current === selectedDriverId) return;
 
-    const target = filteredDrivers.find((driver) => driver.id === selectedDriverId);
+    const target = filteredDrivers.find(
+      (driver) => driver.id === selectedDriverId,
+    );
     if (!target) return;
 
     lastAutoFocusedDriverIdRef.current = selectedDriverId;
-    mapRef.current.flyTo({ center: [target.lng, target.lat], zoom: 12.2, duration: 260 });
+    mapRef.current.flyTo({
+      center: [target.lng, target.lat],
+      zoom: 12.2,
+      duration: 260,
+    });
   }, [filteredDrivers, selectedDriverId, showDrivers]);
 
-  const onlineDrivers = filteredDrivers.filter((driver) => driver.status === "online").length;
-  const staleDrivers = filteredDrivers.filter((driver) => driver.status === "stale").length;
+  const onlineDrivers = filteredDrivers.filter(
+    (driver) => driver.status === "online",
+  ).length;
+  const staleDrivers = filteredDrivers.filter(
+    (driver) => driver.status === "stale",
+  ).length;
   const ordersWithCoords = filteredOrders.filter(
     (order) =>
       (order.pickupLat != null && order.pickupLng != null) ||
@@ -1558,8 +1761,12 @@ export default function ManagerLiveMapPage() {
                     </Badge>
                   ) : null}
                 </div>
-                <CardTitle className="text-xl leading-tight">{t("managerLiveMap.title")}</CardTitle>
-                <CardDescription className="max-w-2xl text-xs">{t("managerLiveMap.subtitle")}</CardDescription>
+                <CardTitle className="text-xl leading-tight">
+                  {t("managerLiveMap.title")}
+                </CardTitle>
+                <CardDescription className="max-w-2xl text-xs">
+                  {t("managerLiveMap.subtitle")}
+                </CardDescription>
               </div>
               <Button
                 type="button"
@@ -1581,13 +1788,22 @@ export default function ManagerLiveMapPage() {
           <CardContent className="space-y-2">
             <div className="grid gap-2 lg:grid-cols-[minmax(150px,1fr)_minmax(150px,1fr)_minmax(150px,1fr)_minmax(280px,1.4fr)]">
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">{t("managerLiveMap.controls.warehouse")}</Label>
-                <Select value={warehouseFilter} onValueChange={setWarehouseFilter}>
+                <Label className="text-xs text-muted-foreground">
+                  {t("managerLiveMap.controls.warehouse")}
+                </Label>
+                <Select
+                  value={warehouseFilter}
+                  onValueChange={setWarehouseFilter}
+                >
                   <SelectTrigger className="h-9">
-                    <SelectValue placeholder={t("managerLiveMap.controls.allWarehouses")} />
+                    <SelectValue
+                      placeholder={t("managerLiveMap.controls.allWarehouses")}
+                    />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">{t("managerLiveMap.controls.allWarehouses")}</SelectItem>
+                    <SelectItem value="all">
+                      {t("managerLiveMap.controls.allWarehouses")}
+                    </SelectItem>
                     {warehouses.map((warehouse) => (
                       <SelectItem key={warehouse.id} value={warehouse.id}>
                         {warehouse.name}
@@ -1597,13 +1813,19 @@ export default function ManagerLiveMapPage() {
                 </Select>
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">{t("managerLiveMap.controls.region")}</Label>
+                <Label className="text-xs text-muted-foreground">
+                  {t("managerLiveMap.controls.region")}
+                </Label>
                 <Select value={regionFilter} onValueChange={setRegionFilter}>
                   <SelectTrigger className="h-9">
-                    <SelectValue placeholder={t("managerLiveMap.controls.allRegions")} />
+                    <SelectValue
+                      placeholder={t("managerLiveMap.controls.allRegions")}
+                    />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">{t("managerLiveMap.controls.allRegions")}</SelectItem>
+                    <SelectItem value="all">
+                      {t("managerLiveMap.controls.allRegions")}
+                    </SelectItem>
                     {regions.map((region) => (
                       <SelectItem key={region} value={region}>
                         {region}
@@ -1613,13 +1835,19 @@ export default function ManagerLiveMapPage() {
                 </Select>
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">{t("managerLiveMap.controls.status")}</Label>
+                <Label className="text-xs text-muted-foreground">
+                  {t("managerLiveMap.controls.status")}
+                </Label>
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
                   <SelectTrigger className="h-9">
-                    <SelectValue placeholder={t("managerLiveMap.controls.allStatuses")} />
+                    <SelectValue
+                      placeholder={t("managerLiveMap.controls.allStatuses")}
+                    />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">{t("managerLiveMap.controls.allStatuses")}</SelectItem>
+                    <SelectItem value="all">
+                      {t("managerLiveMap.controls.allStatuses")}
+                    </SelectItem>
                     {orderStatuses.map((status) => (
                       <SelectItem key={status} value={status}>
                         {getStatusLabel(status, t)}
@@ -1630,28 +1858,47 @@ export default function ManagerLiveMapPage() {
               </div>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-border/60 px-3 py-2 text-xs">
                 <label className="inline-flex items-center gap-2">
-                  <Checkbox checked={showDrivers} onCheckedChange={(checked) => setShowDrivers(checked === true)} />
+                  <Checkbox
+                    checked={showDrivers}
+                    onCheckedChange={(checked) =>
+                      setShowDrivers(checked === true)
+                    }
+                  />
                   <span>{t("managerLiveMap.controls.showDrivers")}</span>
                 </label>
                 <label className="inline-flex items-center gap-2">
-                  <Checkbox checked={showOrders} onCheckedChange={(checked) => setShowOrders(checked === true)} />
+                  <Checkbox
+                    checked={showOrders}
+                    onCheckedChange={(checked) =>
+                      setShowOrders(checked === true)
+                    }
+                  />
                   <span>{t("managerLiveMap.controls.showOrders")}</span>
                 </label>
                 <label className="inline-flex items-center gap-2">
-                  <Checkbox checked={showRoutes} onCheckedChange={(checked) => setShowRoutes(checked === true)} />
+                  <Checkbox
+                    checked={showRoutes}
+                    onCheckedChange={(checked) =>
+                      setShowRoutes(checked === true)
+                    }
+                  />
                   <span>{t("managerLiveMap.controls.showRoutes")}</span>
                 </label>
                 <label className="inline-flex items-center gap-2">
                   <Checkbox
                     checked={showHeatmap}
-                    onCheckedChange={(checked) => setShowHeatmap(checked === true)}
+                    onCheckedChange={(checked) =>
+                      setShowHeatmap(checked === true)
+                    }
                   />
                   <span>{t("managerLiveMap.controls.showHeatmap")}</span>
                 </label>
                 <label className="inline-flex items-center gap-2">
                   <Checkbox
                     checked={showWarehouses}
-                    onCheckedChange={(checked) => setShowWarehouses(checked === true)}
+                    onCheckedChange={(checked) =>
+                      setShowWarehouses(checked === true)
+                    }
                   />
                   <span>{t("managerLiveMap.controls.showWarehouses")}</span>
                 </label>
@@ -1661,7 +1908,10 @@ export default function ManagerLiveMapPage() {
               <Badge variant="outline" className="bg-white/85">
                 {t("managerLiveMap.stats.drivers")}: {filteredDrivers.length}
               </Badge>
-              <Badge variant="outline" className="border-teal-200 bg-teal-50 text-teal-700">
+              <Badge
+                variant="outline"
+                className="border-teal-200 bg-teal-50 text-teal-700"
+              >
                 {t("managerLiveMap.stats.online")}: {onlineDrivers}
               </Badge>
               <Badge variant="outline" className="bg-white/85">
@@ -1676,7 +1926,9 @@ export default function ManagerLiveMapPage() {
             <div className="grid h-[78vh] min-h-[620px] grid-rows-[320px_minmax(0,1fr)] lg:grid-cols-[360px_minmax(0,1fr)] lg:grid-rows-1">
               <div className="border-b border-border/60 bg-gradient-to-b from-cyan-50/40 via-background to-indigo-50/40 lg:border-b-0 lg:border-r">
                 <div className="border-b border-border/60 px-4 py-3">
-                  <p className="text-sm font-semibold">{t("managerLiveMap.panel.title")}</p>
+                  <p className="text-sm font-semibold">
+                    {t("managerLiveMap.panel.title")}
+                  </p>
                   <div className="relative mt-2">
                     <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input
@@ -1725,43 +1977,57 @@ export default function ManagerLiveMapPage() {
                             type="button"
                             onClick={() => {
                               setSelectedDriverId(driver.id);
-                              setExpandedDriverId((current) => (current === driver.id ? null : driver.id));
+                              setExpandedDriverId((current) =>
+                                current === driver.id ? null : driver.id,
+                              );
                             }}
                             className="w-full text-left"
                           >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="flex min-w-0 items-center gap-2.5">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex min-w-0 items-center gap-2.5">
+                                <span
+                                  className={cn(
+                                    "flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold",
+                                    isSelected
+                                      ? accent.avatar
+                                      : "bg-slate-100 text-slate-700",
+                                  )}
+                                >
+                                  {driverInitials(driver)}
+                                </span>
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-semibold text-foreground">
+                                    {driver.name || driver.email || driver.id}
+                                  </p>
+                                  <p className="truncate text-xs text-muted-foreground">
+                                    {driver.email || driver.id}
+                                  </p>
+                                </div>
+                              </div>
                               <span
                                 className={cn(
-                                  "flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold",
-                                  isSelected ? accent.avatar : "bg-slate-100 text-slate-700",
+                                  "mt-1 h-2.5 w-2.5 rounded-full",
+                                  statusClass(driver.status),
                                 )}
-                              >
-                                {driverInitials(driver)}
-                              </span>
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-semibold text-foreground">
-                                  {driver.name || driver.email || driver.id}
-                                </p>
-                                <p className="truncate text-xs text-muted-foreground">{driver.email || driver.id}</p>
-                              </div>
+                              />
                             </div>
-                            <span className={cn("mt-1 h-2.5 w-2.5 rounded-full", statusClass(driver.status))} />
-                          </div>
-                          <div className="mt-2 grid grid-cols-2 gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
-                            <p className="inline-flex items-center gap-1">
-                              <Gauge className="h-3 w-3" />
-                              {t("managerLiveMap.panel.speed")}: {driver.speedKmh} km/h
-                            </p>
-                            <p className="inline-flex items-center gap-1">
-                              <Clock3 className="h-3 w-3" />
-                              {t("managerLiveMap.panel.lastSeen")}: {formatLastSeen(driver.lastSeenAt)}
-                            </p>
-                            <p className="col-span-2 inline-flex items-center gap-1 truncate">
-                              <Building2 className="h-3 w-3" />
-                              {t("managerLiveMap.panel.warehouse")}: {driver.warehouseId || "-"}
-                            </p>
-                          </div>
+                            <div className="mt-2 grid grid-cols-2 gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+                              <p className="inline-flex items-center gap-1">
+                                <Gauge className="h-3 w-3" />
+                                {t("managerLiveMap.panel.speed")}:{" "}
+                                {driver.speedKmh} km/h
+                              </p>
+                              <p className="inline-flex items-center gap-1">
+                                <Clock3 className="h-3 w-3" />
+                                {t("managerLiveMap.panel.lastSeen")}:{" "}
+                                {formatLastSeen(driver.lastSeenAt)}
+                              </p>
+                              <p className="col-span-2 inline-flex items-center gap-1 truncate">
+                                <Building2 className="h-3 w-3" />
+                                {t("managerLiveMap.panel.warehouse")}:{" "}
+                                {driver.warehouseId || "-"}
+                              </p>
+                            </div>
                           </button>
                           {isExpanded ? (
                             <div className="mt-2 border-t border-border/60 pt-2">
@@ -1772,7 +2038,8 @@ export default function ManagerLiveMapPage() {
                                     {t("managerLiveMap.panel.coordinates")}
                                   </p>
                                   <p className="mt-1 font-medium text-foreground">
-                                    {driver.lat.toFixed(5)}, {driver.lng.toFixed(5)}
+                                    {driver.lat.toFixed(5)},{" "}
+                                    {driver.lng.toFixed(5)}
                                   </p>
                                 </div>
                                 <div className="rounded-lg border border-border/60 bg-white/75 px-2.5 py-2">
@@ -1780,7 +2047,9 @@ export default function ManagerLiveMapPage() {
                                     <Truck className="h-3 w-3" />
                                     {t("managerLiveMap.controls.status")}
                                   </p>
-                                  <p className="mt-1 font-medium text-foreground">{formatDriverStatus(driver.status)}</p>
+                                  <p className="mt-1 font-medium text-foreground">
+                                    {formatDriverStatus(driver.status)}
+                                  </p>
                                 </div>
                               </div>
                               <div className="mt-2 flex justify-end">
@@ -1805,7 +2074,10 @@ export default function ManagerLiveMapPage() {
               </div>
 
               <div className="relative h-full w-full">
-                <div ref={setMapContainerEl} className="h-full w-full bg-slate-100" />
+                <div
+                  ref={setMapContainerEl}
+                  className="h-full w-full bg-slate-100"
+                />
 
                 {snapshotQuery.isLoading ? (
                   <div className="absolute inset-0 flex items-center justify-center bg-background/60 backdrop-blur-[1px]">
@@ -1822,7 +2094,9 @@ export default function ManagerLiveMapPage() {
                   </div>
                 ) : null}
 
-                {!snapshotQuery.isLoading && !mapError && allVisibleCoords.length === 0 ? (
+                {!snapshotQuery.isLoading &&
+                !mapError &&
+                allVisibleCoords.length === 0 ? (
                   <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
                     {t("managerLiveMap.noData")}
                   </div>

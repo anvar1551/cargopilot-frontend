@@ -26,6 +26,11 @@ export type SupportTicket = {
   warehouseLabel: string | null;
   ownerId: string | null;
   ownerName: string | null;
+  ownerOrgId: string | null;
+  assignedOrgId: string | null;
+  queueId: string | null;
+  queueCode: string | null;
+  queueName: string | null;
   lastMessage: string | null;
   lastReplyBy: SupportTicketAuthorType | null;
   slaPercent: number;
@@ -100,6 +105,7 @@ export type CreateSupportTicketPayload = {
   status?: SupportTicketStatus;
   ownerId?: string | null;
   sourceKey?: string | null;
+  companyId?: string | null;
 };
 
 export type SupportAssignee = {
@@ -107,6 +113,40 @@ export type SupportAssignee = {
   name: string;
   email: string;
   role: "manager";
+};
+
+export type SupportQueue = {
+  id: string;
+  companyId: string;
+  code: string;
+  name: string;
+  description: string | null;
+  defaultOrgId: string | null;
+  defaultOrgName: string | null;
+  defaultOwnerId: string | null;
+  isDefault: boolean;
+  isActive: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+export type SupportAssignmentRule = {
+  id: string;
+  companyId: string;
+  queueId: string | null;
+  queueCode: string | null;
+  queueName: string | null;
+  name: string;
+  code: string;
+  source: SupportTicketSource | null;
+  priority: SupportTicketPriority | null;
+  routeContains: string | null;
+  defaultOwnerId: string | null;
+  conditionsJson: unknown;
+  sortOrder: number;
+  isActive: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
 };
 
 export async function fetchSupportTickets(params: SupportTicketFilters = {}) {
@@ -131,6 +171,56 @@ export async function fetchSupportTicket(id: string) {
 export async function fetchSupportAssignees() {
   const res = await api.get<{ items: SupportAssignee[] }>("/api/support/assignees");
   return res.data.items;
+}
+
+export async function fetchSupportQueues(companyId?: string | null) {
+  const res = await api.get<{ items: SupportQueue[] }>("/api/support/queues", {
+    params: { companyId: companyId || undefined },
+  });
+  return res.data.items;
+}
+
+export async function createSupportQueue(payload: Partial<SupportQueue> & {
+  companyId?: string | null;
+  name: string;
+}) {
+  const res = await api.post<SupportQueue>("/api/support/queues", payload);
+  return res.data;
+}
+
+export async function updateSupportQueue(id: string, payload: Partial<SupportQueue>) {
+  const res = await api.patch<SupportQueue>(`/api/support/queues/${id}`, payload);
+  return res.data;
+}
+
+export async function deleteSupportQueue(id: string) {
+  const res = await api.delete<{ success: boolean }>(`/api/support/queues/${id}`);
+  return res.data;
+}
+
+export async function fetchSupportAssignmentRules(companyId?: string | null) {
+  const res = await api.get<{ items: SupportAssignmentRule[] }>("/api/support/assignment-rules", {
+    params: { companyId: companyId || undefined },
+  });
+  return res.data.items;
+}
+
+export async function createSupportAssignmentRule(payload: Partial<SupportAssignmentRule> & {
+  companyId?: string | null;
+  name: string;
+}) {
+  const res = await api.post<SupportAssignmentRule>("/api/support/assignment-rules", payload);
+  return res.data;
+}
+
+export async function updateSupportAssignmentRule(id: string, payload: Partial<SupportAssignmentRule>) {
+  const res = await api.patch<SupportAssignmentRule>(`/api/support/assignment-rules/${id}`, payload);
+  return res.data;
+}
+
+export async function deleteSupportAssignmentRule(id: string) {
+  const res = await api.delete<{ success: boolean }>(`/api/support/assignment-rules/${id}`);
+  return res.data;
 }
 
 export async function updateSupportTicketStatus(id: string, status: SupportTicketStatus) {

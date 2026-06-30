@@ -6,8 +6,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { useI18n } from "@/components/i18n/I18nProvider";
-import { getUser } from "@/lib/auth";
+import { getPrimaryWarehouseId, getUser } from "@/lib/auth";
 import { getMapboxToken } from "@/lib/mapbox";
+import {
+  READ_ONLY_ORDER_CAPABILITIES,
+  type OrderActionCapabilities,
+} from "@/lib/orders/permissions";
 import {
   bookCarrierForOrderLeg,
   cancelCarrierForOrderLeg,
@@ -69,7 +73,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 
-import AssignDriverDialog from "@/components/manager/orders/AssignDriverDialog";
+import AssignDriverDialog from "@/components/orders/AssignDriverDialog";
 
 import {
   ArrowLeft,
@@ -823,19 +827,30 @@ export default function OrderDetailsView({
   orderId,
   backHref,
   title = "Order Details",
-  showManagerActions = false,
+  capabilities,
   hideBackButton = false,
 }: {
   orderId: string;
   backHref: string;
   title?: string;
-  showManagerActions?: boolean;
+  capabilities?: Partial<OrderActionCapabilities>;
   hideBackButton?: boolean;
 }) {
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const currentUser = getUser();
   const actorCompanyId = getActorCompanyId(currentUser);
+  const primaryWarehouseId = getPrimaryWarehouseId(currentUser);
+  const orderCapabilities = React.useMemo(
+    () => ({ ...READ_ONLY_ORDER_CAPABILITIES, ...capabilities }),
+    [capabilities],
+  );
+  const canAssignDriver = orderCapabilities.canAssignDriver;
+  const canManageCarrier = orderCapabilities.canBookCarrier;
+  const canReadPayments = orderCapabilities.canReadPayments;
+  const canRetryPayment = orderCapabilities.canRetryPayment;
+  const canSettleCash = orderCapabilities.canSettleCash;
+  const canHandleWarehouseCash = orderCapabilities.canHandleWarehouseCash;
 
   const {
     data: order,
@@ -945,7 +960,7 @@ export default function OrderDetailsView({
   } = useQuery<OrderLeg[]>({
     queryKey: ["order-legs", orderId],
     queryFn: () => fetchOrderLegs(orderId),
-    enabled: Boolean(orderId) && showManagerActions,
+    enabled: Boolean(orderId) && canManageCarrier,
     staleTime: 30_000,
   });
 
@@ -960,7 +975,7 @@ export default function OrderDetailsView({
         domain: "carrier",
         status: "active",
       }),
-    enabled: showManagerActions,
+    enabled: canManageCarrier,
     staleTime: 60_000,
   });
 
@@ -970,7 +985,7 @@ export default function OrderDetailsView({
   } = useQuery<PaymentIntentSummary[]>({
     queryKey: ["order-payment-intents", orderId],
     queryFn: () => listOrderPaymentIntents(orderId),
-    enabled: Boolean(orderId) && showManagerActions,
+    enabled: Boolean(orderId) && canReadPayments,
     staleTime: 30_000,
   });
 
@@ -1533,7 +1548,7 @@ export default function OrderDetailsView({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {showManagerActions ? (
+            {canAssignDriver ? (
               <>
                 <Button
                   className="gap-2"
@@ -1964,7 +1979,7 @@ export default function OrderDetailsView({
 
                 <Separator />
 
-                {showManagerActions ? (
+                {canManageCarrier ? (
                   <div className="rounded-2xl border border-border/70 bg-linear-to-br from-slate-50 via-white to-cyan-50/70 p-4">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
@@ -2207,7 +2222,7 @@ export default function OrderDetailsView({
                   </div>
                 ) : null}
 
-                {showManagerActions ? <Separator /> : null}
+                {canManageCarrier ? <Separator /> : null}
 
                 {parcels.length ? (
                   <div className="grid gap-3 xl:grid-cols-2">
@@ -2346,7 +2361,7 @@ export default function OrderDetailsView({
                     </div>
                   </div>
 
-                  {showManagerActions ? (
+                  {canReadPayments || canRetryPayment ? (
                     <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
@@ -2404,38 +2419,42 @@ export default function OrderDetailsView({
                                 Open checkout
                               </Button>
                             ) : null}
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="h-9 gap-2 rounded-xl"
-                              onClick={() => syncPaymentMutation.mutate(latestPaymentIntent.id)}
-                              disabled={syncPaymentMutation.isPending}
-                            >
-                              {syncPaymentMutation.isPending ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <RefreshCw className="h-4 w-4" />
-                              )}
-                              Sync status
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              className="h-9 gap-2 rounded-xl"
-                              onClick={() => retryPaymentMutation.mutate()}
-                              disabled={
-                                retryPaymentMutation.isPending ||
-                                !canRetryPaymentIntent(latestPaymentIntent)
-                              }
-                            >
-                              {retryPaymentMutation.isPending ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <CreditCard className="h-4 w-4" />
-                              )}
-                              Retry payment
-                            </Button>
+                            {canReadPayments ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-9 gap-2 rounded-xl"
+                                onClick={() => syncPaymentMutation.mutate(latestPaymentIntent.id)}
+                                disabled={syncPaymentMutation.isPending}
+                              >
+                                {syncPaymentMutation.isPending ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <RefreshCw className="h-4 w-4" />
+                                )}
+                                Sync status
+                              </Button>
+                            ) : null}
+                            {canRetryPayment ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                className="h-9 gap-2 rounded-xl"
+                                onClick={() => retryPaymentMutation.mutate()}
+                                disabled={
+                                  retryPaymentMutation.isPending ||
+                                  !canRetryPaymentIntent(latestPaymentIntent)
+                                }
+                              >
+                                {retryPaymentMutation.isPending ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <CreditCard className="h-4 w-4" />
+                                )}
+                                Retry payment
+                              </Button>
+                            ) : null}
                           </div>
                         ) : null}
                       </div>
@@ -2500,16 +2519,16 @@ export default function OrderDetailsView({
                       <div className="mt-3 space-y-3">
                         {cashCollections.map((collection) => {
                           const latestEvent = collection.events?.[collection.events.length - 1] ?? null;
-                          const isWarehouseUser =
-                            currentUser?.role === "warehouse" &&
-                            Boolean(currentUser.warehouseId) &&
-                            order?.currentWarehouse?.id === currentUser.warehouseId;
+                          const isScopedWarehouseUser =
+                            canHandleWarehouseCash &&
+                            Boolean(primaryWarehouseId) &&
+                            order?.currentWarehouse?.id === primaryWarehouseId;
                           const canAcceptToWarehouse =
-                            isWarehouseUser &&
+                            isScopedWarehouseUser &&
                             (collection.status === "expected" ||
                               collection.currentHolderType === "driver");
                           const canSettleToFinance =
-                            currentUser?.role === "manager" &&
+                            canSettleCash &&
                             collection.status === "held";
                           return (
                             <div
@@ -2594,7 +2613,7 @@ export default function OrderDetailsView({
                                                 orderId,
                                                 kind: (collection.kind as "cod" | "service_charge") ?? "cod",
                                                 toHolderType: "warehouse",
-                                                toWarehouseId: currentUser?.warehouseId ?? null,
+                                                toWarehouseId: primaryWarehouseId ?? null,
                                               }),
                                             t("orderDetails.cash.actions.accept"),
                                             t("orderDetails.cash.errors.accept"),

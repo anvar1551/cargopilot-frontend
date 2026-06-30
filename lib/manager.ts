@@ -45,9 +45,12 @@ export type ManagerAnalyticsV2Summary = {
   };
   finance: {
     invoicedPaidAmount: number;
+    invoicedPaidAmountByCurrency?: Array<{ currency: string; amount: number }>;
     pendingInvoicesCount: number;
     serviceChargeExpected: number;
+    serviceChargeExpectedByCurrency?: Array<{ currency: string; amount: number }>;
     codExpected: number;
+    codExpectedByCurrency?: Array<{ currency: string; amount: number }>;
     unpaidServiceCount: number;
     unpaidCodCount: number;
   };
@@ -265,9 +268,27 @@ export async function fetchManagerAnalyticsSummaryV2(params?: {
     },
     finance: {
       invoicedPaidAmount: Number(raw.finance?.invoicedPaidAmount ?? 0),
+      invoicedPaidAmountByCurrency: Array.isArray(raw.finance?.invoicedPaidAmountByCurrency)
+        ? raw.finance!.invoicedPaidAmountByCurrency.map((item) => ({
+            currency: String(item.currency || "UZS").toUpperCase(),
+            amount: Number(item.amount || 0),
+          }))
+        : [],
       pendingInvoicesCount: Number(raw.finance?.pendingInvoicesCount ?? 0),
       serviceChargeExpected: Number(raw.finance?.serviceChargeExpected ?? 0),
+      serviceChargeExpectedByCurrency: Array.isArray(raw.finance?.serviceChargeExpectedByCurrency)
+        ? raw.finance!.serviceChargeExpectedByCurrency.map((item) => ({
+            currency: String(item.currency || "UZS").toUpperCase(),
+            amount: Number(item.amount || 0),
+          }))
+        : [],
       codExpected: Number(raw.finance?.codExpected ?? 0),
+      codExpectedByCurrency: Array.isArray(raw.finance?.codExpectedByCurrency)
+        ? raw.finance!.codExpectedByCurrency.map((item) => ({
+            currency: String(item.currency || "UZS").toUpperCase(),
+            amount: Number(item.amount || 0),
+          }))
+        : [],
       unpaidServiceCount: Number(raw.finance?.unpaidServiceCount ?? 0),
       unpaidCodCount: Number(raw.finance?.unpaidCodCount ?? 0),
     },

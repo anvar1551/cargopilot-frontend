@@ -1,6 +1,5 @@
 import { api } from "@/lib/api";
 
-export type UserRole = "customer" | "manager" | "warehouse" | "driver";
 export type MembershipScopeType =
   | "company"
   | "branch"
@@ -57,9 +56,7 @@ export async function fetchUsers(
   return res.data;
 }
 
-export type AppRole = "customer" | "manager" | "warehouse" | "driver";
-
-export type CreateUserAsManagerInput = {
+export type CreateUserInput = {
   name: string;
   email: string;
   password: string;
@@ -74,7 +71,7 @@ export type CreateUserAsManagerInput = {
   }>;
 };
 
-export async function createUser(input: CreateUserAsManagerInput) {
+export async function createUser(input: CreateUserInput) {
   const res = await api.post("/api/auth", input);
   return res.data;
 }

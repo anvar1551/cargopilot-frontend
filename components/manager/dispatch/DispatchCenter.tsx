@@ -7,7 +7,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-import AssignDriverDialog from "@/components/manager/orders/AssignDriverDialog";
+import AssignDriverDialog from "@/components/orders/AssignDriverDialog";
 import { useI18n } from "@/components/i18n/I18nProvider";
 
 import {
@@ -19,7 +19,7 @@ import {
   type Warehouse as WarehouseLite,
   type WarehouseType,
 } from "@/lib/warehouses";
-import { getUser, type Role } from "@/lib/auth";
+import { getPrimaryWarehouseId, getUser } from "@/lib/auth";
 import { getReasonCodeLabel, getStatusLabel } from "@/lib/i18n/labels";
 
 import { Button } from "@/components/ui/button";
@@ -92,7 +92,7 @@ type OrderItem = {
 type Props = {
   orders: OrderItem[];
   onRefresh?: () => void;
-  role?: Role;
+  scope?: "erp" | "warehouse";
   detailsBasePath?: string;
   externalScanRequest?: {
     id: number;
@@ -212,7 +212,8 @@ type ScanMatch = {
 export default function DispatchCenter({
   orders,
   onRefresh,
-  role = "manager",
+  scope = "erp",
+  detailsBasePath,
   externalScanRequest,
   onExternalScanProcessedAction,
 }: Props) {
@@ -221,9 +222,9 @@ export default function DispatchCenter({
   const searchParams = useSearchParams();
   const { t } = useI18n();
 
-  const canOperateTasks = role === "manager" || role === "warehouse";
+  const canOperateTasks = scope === "erp" || scope === "warehouse";
   const authUser = useMemo(() => getUser(), []);
-  const attachedWarehouseId = authUser?.warehouseId ?? null;
+  const attachedWarehouseId = getPrimaryWarehouseId(authUser);
 
   const [activeStatusTab, setActiveStatusTab] = useState<"all" | OrderStatus>("all");
 
@@ -248,7 +249,7 @@ export default function DispatchCenter({
   const reasonRequired =
     statusTarget !== "" && REASON_REQUIRED_STATUSES.has(statusTarget);
   const needsWarehouseSelection =
-    role === "manager" &&
+    scope === "erp" &&
     (statusTarget === "at_warehouse" ||
       statusTarget === "in_transit" ||
       statusTarget === "out_for_delivery");
@@ -259,16 +260,16 @@ export default function DispatchCenter({
     enabled:
       canOperateTasks &&
       operationMode === "status" &&
-      (needsWarehouseSelection || role === "warehouse"),
+      (needsWarehouseSelection || scope === "warehouse"),
   });
 
   const attachedWarehouseType = useMemo<WarehouseType>(() => {
-    if (role !== "warehouse") return "warehouse";
+    if (scope !== "warehouse") return "warehouse";
     const attached = (warehousesQuery.data ?? []).find(
       (item) => item.id === attachedWarehouseId,
     );
     return normalizeWarehouseType(attached?.type);
-  }, [attachedWarehouseId, role, warehousesQuery.data]);
+  }, [attachedWarehouseId, scope, warehousesQuery.data]);
 
   const attachedWarehouseName = useMemo(() => {
     if (!attachedWarehouseId) return null;
@@ -279,9 +280,9 @@ export default function DispatchCenter({
   }, [attachedWarehouseId, warehousesQuery.data]);
 
   const warehouseStatusOptions = useMemo<OrderStatus[]>(() => {
-    if (role === "manager") return ORDER_STATUSES;
+    if (scope === "erp") return ORDER_STATUSES;
     return LOCATION_STATUS_OPTIONS[attachedWarehouseType];
-  }, [attachedWarehouseType, role]);
+  }, [attachedWarehouseType, scope]);
 
   React.useEffect(() => {
     if (!statusTarget) return;
@@ -292,7 +293,7 @@ export default function DispatchCenter({
 
   const statusMutation = useMutation({
     mutationFn: async () => {
-      if (!canOperateTasks) throw new Error("Your role cannot update status");
+      if (!canOperateTasks) throw new Error("You do not have access to update status");
       if (batchIds.length === 0) throw new Error("Add at least one order to batch");
       if (batchIds.length > MAX_BATCH_SIZE) {
         throw new Error(`Maximum ${MAX_BATCH_SIZE} orders are allowed in one operation`);
@@ -304,7 +305,7 @@ export default function DispatchCenter({
         throw new Error("Reason code is required for this status");
       }
 
-      if (role === "warehouse" && !attachedWarehouseId) {
+      if (scope === "warehouse" && !attachedWarehouseId) {
         throw new Error("Warehouse user has no attached warehouse");
       }
 
@@ -316,7 +317,7 @@ export default function DispatchCenter({
         orderIds: batchIds,
         status: statusTarget,
         warehouseId:
-          role === "warehouse"
+          scope === "warehouse"
             ? attachedWarehouseId
             : needsWarehouseSelection
               ? statusWarehouseId
@@ -431,6 +432,10 @@ export default function DispatchCenter({
   };
 
   const goDetails = (id: string) => {
+    if (detailsBasePath) {
+      router.push(`${detailsBasePath}?order=${id}`);
+      return;
+    }
     const params = new URLSearchParams(searchParams.toString());
     params.set("order", id);
     const query = params.toString();
@@ -596,7 +601,7 @@ export default function DispatchCenter({
 
     const reasons: string[] = [];
     if (!canOperateTasks) {
-      reasons.push("Your role cannot update statuses.");
+      reasons.push("You do not have access to update statuses.");
     }
     if (batchIds.length === 0) {
       reasons.push("Add at least one order to the batch.");
@@ -604,7 +609,7 @@ export default function DispatchCenter({
     if (batchIds.length > MAX_BATCH_SIZE) {
       reasons.push(`Maximum ${MAX_BATCH_SIZE} orders are allowed.`);
     }
-    if (role === "warehouse" && !attachedWarehouseId) {
+    if (scope === "warehouse" && !attachedWarehouseId) {
       reasons.push("No warehouse is attached to your account.");
     }
     if (!statusTarget) {
@@ -622,7 +627,7 @@ export default function DispatchCenter({
     operationMode,
     canOperateTasks,
     batchIds.length,
-    role,
+    scope,
     attachedWarehouseId,
     statusTarget,
     reasonRequired,
@@ -842,7 +847,7 @@ export default function DispatchCenter({
               </div>
             ) : null}
 
-            {role === "warehouse" ? (
+            {scope === "warehouse" ? (
               <div className="rounded-xl border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
                 {t("dispatch.warehouseFromProfile")}
                 <span className="ml-1 font-medium">{attachedWarehouseName ?? "not set"}</span>

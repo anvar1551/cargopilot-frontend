@@ -5,11 +5,13 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { useI18n } from "@/components/i18n/I18nProvider";
-import OrdersTable from "@/components/manager/orders/OrdersTable";
+import OrdersTable from "@/components/orders/OrderTable";
 import PageShell from "@/components/layout/PageShell";
-import type { ManagerOrderRow } from "@/components/manager/orders/columns";
+import type { OrderTableRow } from "@/components/orders/OrderTable";
 
 import { deleteOrder, exportOrdersCsv, fetchOrders } from "@/lib/orders";
+import { getErpOrderCapabilities } from "@/lib/orders/permissions";
+import { getUser } from "@/lib/auth";
 import { getStatusLabel } from "@/lib/i18n/labels";
 import { fetchDrivers } from "@/lib/manager";
 import { fetchWarehouses } from "@/lib/warehouses";
@@ -45,7 +47,7 @@ import {
 } from "lucide-react";
 
 type OrdersResponseLike = {
-  orders: ManagerOrderRow[];
+  orders: OrderTableRow[];
   total: number;
   page: number;
   limit: number;
@@ -149,6 +151,8 @@ function triggerCsvDownload(blob: Blob, fileName: string) {
 
 export default function ManagerOrdersPage() {
   const { t } = useI18n();
+  const actor = useMemo(() => getUser(), []);
+  const orderCapabilities = useMemo(() => getErpOrderCapabilities(actor), [actor]);
 
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [presetName, setPresetName] = useState("");
@@ -167,7 +171,7 @@ export default function ManagerOrdersPage() {
   const [cursorIndex, setCursorIndex] = useState(0);
   const [isFiltersOpen, setFiltersOpen] = useState(false);
   const [orderPendingDelete, setOrderPendingDelete] =
-    useState<ManagerOrderRow | null>(null);
+    useState<OrderTableRow | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -180,7 +184,7 @@ export default function ManagerOrdersPage() {
   const filterSignature = JSON.stringify(filters);
 
   const driversQuery = useQuery({
-    queryKey: ["manager-drivers", "orders-filters"],
+    queryKey: ["operations-drivers", "orders-filters"],
     queryFn: fetchDrivers,
   });
 
@@ -189,7 +193,7 @@ export default function ManagerOrdersPage() {
     queryFn: fetchWarehouses,
   });
 
-  const ordersQuery = useQuery<OrdersResponseLike | ManagerOrderRow[]>({
+  const ordersQuery = useQuery<OrdersResponseLike | OrderTableRow[]>({
     queryKey: [
       "orders-cursor",
       cursorStack[cursorIndex] ?? null,
@@ -388,7 +392,7 @@ export default function ManagerOrdersPage() {
                   onClick={() => {
                     void exportMutation.mutateAsync();
                   }}
-                  disabled={exportMutation.isPending}
+                  disabled={!orderCapabilities.canExport || exportMutation.isPending}
                 >
                   <Download className="h-4 w-4" />
                   {exportMutation.isPending
@@ -435,8 +439,10 @@ export default function ManagerOrdersPage() {
             ) : (
               <OrdersTable
                 data={orders}
+                capabilities={orderCapabilities}
+                detailsBasePath="/dashboard/manager/orders"
                 hideQuickFilters
-                onDeleteOrder={setOrderPendingDelete}
+                onDeleteOrder={orderCapabilities.canDelete ? setOrderPendingDelete : undefined}
                 onRefresh={() => {
                   void handleRefresh();
                 }}

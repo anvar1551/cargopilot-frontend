@@ -1588,7 +1588,7 @@ export function CarrierRoutingStudio({
               Delete {deleteTarget?.type === "route" ? "route template" : "carrier rule"}?
             </DialogTitle>
             <DialogDescription>
-              This removes "{deleteTarget?.name}". Existing orders are not deleted, but future matching and auto-booking will no longer use this record.
+              This removes &quot;{deleteTarget?.name}&quot;. Existing orders are not deleted, but future matching and auto-booking will no longer use this record.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

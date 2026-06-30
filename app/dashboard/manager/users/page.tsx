@@ -18,6 +18,7 @@ import {
 import { useI18n } from "@/components/i18n/I18nProvider";
 import { getUser } from "@/lib/auth";
 import { createRole, fetchPermissions, fetchRoles } from "@/lib/iam";
+import { fetchOrganizations, type Organization } from "@/lib/organizations";
 import {
   deleteUser,
   fetchUsers,
@@ -25,6 +26,7 @@ import {
   type User,
   updateUserAccess,
 } from "@/lib/users";
+import { fetchWarehouses, type Warehouse } from "@/lib/warehouses";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -52,6 +54,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { CustomerEntityCombobox } from "@/components/combobox/CustomerEntityCombobox";
 
 const PAGE_SIZE = 10;
 
@@ -81,6 +84,15 @@ function formatDate(value?: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "-";
   return date.toLocaleString();
+}
+
+function getOrganizationLabel(item: Organization) {
+  return item.code ? `${item.name} (${item.code})` : item.name;
+}
+
+function getWarehouseLabel(item: Warehouse) {
+  const type = item.type === "pickup_point" ? "Pickup point" : "Warehouse";
+  return `${item.name} · ${type}`;
 }
 
 export default function UsersPage() {
@@ -129,6 +141,16 @@ export default function UsersPage() {
     queryFn: ({ signal }) => fetchPermissions(signal),
   });
 
+  const warehousesQuery = useQuery({
+    queryKey: ["warehouses", "users-page"],
+    queryFn: fetchWarehouses,
+  });
+
+  const organizationsQuery = useQuery({
+    queryKey: ["organizations", "users-page"],
+    queryFn: ({ signal }) => fetchOrganizations({ isActive: true, page: 1, limit: 100 }, signal),
+  });
+
   const deleteMutation = useMutation({
     mutationFn: deleteUser,
     onSuccess: async (data) => {
@@ -173,6 +195,41 @@ export default function UsersPage() {
 
   const roles = rolesQuery.data ?? [];
   const permissions = permissionsQuery.data ?? [];
+  const warehouses = warehousesQuery.data ?? [];
+  const organizations = organizationsQuery.data?.data ?? [];
+
+  const scopeOptions = useMemo(() => {
+    const byType = new Map<MembershipScopeType, Array<{ id: string; label: string }>>();
+    byType.set(
+      "company",
+      organizations.filter((item) => item.type === "company").map((item) => ({ id: item.id, label: getOrganizationLabel(item) })),
+    );
+    byType.set(
+      "branch",
+      organizations.filter((item) => item.type === "branch").map((item) => ({ id: item.id, label: getOrganizationLabel(item) })),
+    );
+    byType.set(
+      "agent",
+      organizations.filter((item) => item.type === "agent").map((item) => ({ id: item.id, label: getOrganizationLabel(item) })),
+    );
+    byType.set(
+      "carrier",
+      organizations.filter((item) => item.type === "carrier").map((item) => ({ id: item.id, label: getOrganizationLabel(item) })),
+    );
+    byType.set(
+      "client",
+      organizations.filter((item) => item.type === "client").map((item) => ({ id: item.id, label: getOrganizationLabel(item) })),
+    );
+    byType.set(
+      "warehouse",
+      warehouses.filter((item) => item.type !== "pickup_point").map((item) => ({ id: item.id, label: getWarehouseLabel(item) })),
+    );
+    byType.set(
+      "pickup_point",
+      warehouses.filter((item) => item.type === "pickup_point").map((item) => ({ id: item.id, label: getWarehouseLabel(item) })),
+    );
+    return byType;
+  }, [organizations, warehouses]);
 
   const permissionsByResource = useMemo(() => {
     const map = new Map<string, typeof permissions>();
@@ -399,7 +456,12 @@ export default function UsersPage() {
                                         deleteMutation.mutate(user.id);
                                       }
                                     }}
-                                    title={isCurrentUser ? t("managerUsers.selfDeleteBlocked") : undefined}
+                                    title={
+                                      isCurrentUser
+                                        ? t("managerUsers.selfDeleteBlocked")
+                                        : t("managerUsers.delete")
+                                    }
+                                    aria-label={t("managerUsers.delete")}
                                   >
                                     <Trash2 className="h-4 w-4" />
                                   </Button>
@@ -555,7 +617,7 @@ export default function UsersPage() {
       </div>
 
       <Dialog open={Boolean(editingUser)} onOpenChange={(open) => !open && setEditingUser(null)}>
-        <DialogContent className="sm:max-w-4xl">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-5xl">
           <DialogHeader>
             <DialogTitle>Edit User Access</DialogTitle>
             <DialogDescription>
@@ -596,18 +658,47 @@ export default function UsersPage() {
               </div>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-4">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div className="space-y-2">
-                <Label>Branch ID</Label>
-                <Input value={editBranchId} onChange={(event) => setEditBranchId(event.target.value)} placeholder="UUID or empty" />
+                <Label>Branch</Label>
+                <Select value={editBranchId || "none"} onValueChange={(value) => setEditBranchId(value === "none" ? "" : value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select branch" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {(scopeOptions.get("branch") ?? []).map((item) => (
+                      <SelectItem key={item.id} value={item.id}>
+                        {item.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
-                <Label>Warehouse ID</Label>
-                <Input value={editWarehouseId} onChange={(event) => setEditWarehouseId(event.target.value)} placeholder="UUID or empty" />
+                <Label>Warehouse</Label>
+                <Select value={editWarehouseId || "none"} onValueChange={(value) => setEditWarehouseId(value === "none" ? "" : value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select warehouse" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {warehouses.map((item) => (
+                      <SelectItem key={item.id} value={item.id}>
+                        {getWarehouseLabel(item)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
-                <Label>Customer Entity ID</Label>
-                <Input value={editCustomerEntityId} onChange={(event) => setEditCustomerEntityId(event.target.value)} placeholder="UUID or empty" />
+                <Label>Customer entity</Label>
+                <CustomerEntityCombobox
+                  value={editCustomerEntityId || null}
+                  onChange={(id) => setEditCustomerEntityId(id ?? "")}
+                  buttonClassName="w-full justify-between"
+                  placeholder="Select customer"
+                />
               </div>
               <div className="space-y-2">
                 <Label>Driver Type</Label>
@@ -651,7 +742,9 @@ export default function UsersPage() {
                         onValueChange={(value) =>
                           setEditScopes((prev) =>
                             prev.map((item, itemIndex) =>
-                              itemIndex === index ? { ...item, scopeType: value as MembershipScopeType } : item,
+                              itemIndex === index
+                                ? { ...item, scopeType: value as MembershipScopeType, scopeRefId: "" }
+                                : item,
                             ),
                           )
                         }
@@ -667,17 +760,28 @@ export default function UsersPage() {
                           ))}
                         </SelectContent>
                       </Select>
-                      <Input
-                        value={row.scopeRefId}
-                        onChange={(event) =>
+                      <Select
+                        value={row.scopeRefId || "none"}
+                        onValueChange={(value) =>
                           setEditScopes((prev) =>
                             prev.map((item, itemIndex) =>
-                              itemIndex === index ? { ...item, scopeRefId: event.target.value } : item,
+                              itemIndex === index ? { ...item, scopeRefId: value === "none" ? "" : value } : item,
                             ),
                           )
                         }
-                        placeholder="scope_ref_id"
-                      />
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select scope target" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Select {row.scopeType}</SelectItem>
+                          {(scopeOptions.get(row.scopeType) ?? []).map((item) => (
+                            <SelectItem key={item.id} value={item.id}>
+                              {item.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       <Button
                         type="button"
                         variant="ghost"

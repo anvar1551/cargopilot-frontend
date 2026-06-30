@@ -12,7 +12,11 @@ import {
   type CreateOrderFormValues,
   type CreateOrderPayload,
 } from "@/lib/validators/order";
-import type { CreateOrderParcelsFieldArray } from "./create-order-form.types";
+import {
+  normalizeOrderCreationMode,
+  type CreateOrderParcelsFieldArray,
+  type OrderCreationModeInput,
+} from "./create-order-form.types";
 import { createOrder, type Order, type OrdersResponse } from "@/lib/orders";
 import {
   fetchPricingQuote,
@@ -57,7 +61,7 @@ const TAB_STEPS: Array<{ key: TabKey; labelKey: string }> = [
 ];
 
 type CreateOrderDialogProps = {
-  mode?: "customer" | "manager";
+  mode?: OrderCreationModeInput;
   presetCustomerEntityId?: string | null;
   presetCustomerEntityLabel?: string | null;
   lockCustomerEntitySelection?: boolean;
@@ -121,12 +125,12 @@ function resolveFriendlyCreateOrderError(
 function buildOptimisticOrder(
   values: CreateOrderPayload,
   user: AuthUser | null,
-  isManager: boolean,
+  isOperationsMode: boolean,
   presetCustomerEntityId: string | null,
 ): Order {
   const now = new Date().toISOString();
   const optimisticId = `optimistic-order-${Date.now()}`;
-  const customerEntityId = isManager
+  const customerEntityId = isOperationsMode
     ? values.customerEntityId ?? presetCustomerEntityId ?? null
     : user?.customerEntityId ?? null;
 
@@ -238,7 +242,8 @@ export default function CreateOrderDialog({
 
   const qc = useQueryClient();
   const user = useMemo(() => getUser(), []);
-  const isManager = mode === "manager";
+  const creationMode = normalizeOrderCreationMode(mode);
+  const isOperationsMode = creationMode === "operations";
   const paymentAttemptKeyRef = useRef<string | null>(null);
 
   const form = useForm<CreateOrderFormValues, unknown, CreateOrderPayload>({
@@ -247,7 +252,7 @@ export default function CreateOrderDialog({
     shouldFocusError: true,
     shouldUnregister: false,
     defaultValues: {
-      customerEntityId: isManager
+      customerEntityId: isOperationsMode
         ? (presetCustomerEntityId ?? undefined)
         : (user?.customerEntityId ?? undefined),
       sender: { name: null, phone: null, phone2: null, phone3: null },
@@ -345,10 +350,10 @@ export default function CreateOrderDialog({
     name: "shipment.weightKg",
   });
 
-  const canSaveAddresses = isManager
+  const canSaveAddresses = isOperationsMode
     ? Boolean(selectedCustomerEntityId)
     : Boolean(user?.customerEntityId);
-  const pricingCustomerEntityId = isManager
+  const pricingCustomerEntityId = isOperationsMode
     ? (selectedCustomerEntityId ?? null)
     : (user?.customerEntityId ?? null);
   const pricingOriginQuery = senderRegionQuery?.trim() || null;
@@ -444,12 +449,12 @@ export default function CreateOrderDialog({
   ]);
 
   useEffect(() => {
-    if (!isManager || !presetCustomerEntityId) return;
+    if (!isOperationsMode || !presetCustomerEntityId) return;
     form.setValue("customerEntityId", presetCustomerEntityId, {
       shouldDirty: false,
       shouldValidate: false,
     });
-  }, [form, isManager, presetCustomerEntityId]);
+  }, [form, isOperationsMode, presetCustomerEntityId]);
 
   useEffect(() => {
     if (!open) return;
@@ -535,7 +540,7 @@ export default function CreateOrderDialog({
         },
       };
 
-      if (!isManager) {
+      if (!isOperationsMode) {
         normalized.customerEntityId = user?.customerEntityId ?? undefined;
       }
 
@@ -578,7 +583,7 @@ export default function CreateOrderDialog({
       const optimisticOrder = buildOptimisticOrder(
         variables,
         user,
-        isManager,
+        isOperationsMode,
         presetCustomerEntityId,
       );
 
@@ -595,7 +600,7 @@ export default function CreateOrderDialog({
     },
     onSuccess: (data, variables, context) => {
       const affectedCustomerEntityId =
-        (isManager
+        (isOperationsMode
           ? variables.customerEntityId ?? presetCustomerEntityId
           : user?.customerEntityId) ?? null;
 
@@ -776,7 +781,7 @@ export default function CreateOrderDialog({
                 <TabsContent value="customer" className="mt-0 data-[state=inactive]:hidden" forceMount>
                   <CustomerStep
                     form={form}
-                    mode={mode}
+                    mode={creationMode}
                     canSaveAddresses={canSaveAddresses}
                     lockCustomerEntitySelection={lockCustomerEntitySelection}
                     lockedCustomerEntityLabel={presetCustomerEntityLabel}

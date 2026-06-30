@@ -36,17 +36,28 @@ import {
   addSupportTicketNote,
   addSupportTicketMessage,
   assignSupportTicket,
+  createSupportAssignmentRule,
+  createSupportQueue,
   createSupportTicket,
+  deleteSupportAssignmentRule,
+  deleteSupportQueue,
   escalateSupportTicket,
+  fetchSupportAssignmentRules,
   fetchSupportAssignees,
+  fetchSupportQueues,
   fetchSupportTicket,
   fetchSupportTickets,
   subscribeSupportStream,
+  updateSupportAssignmentRule,
+  updateSupportQueue,
   updateSupportTicketStatus,
+  type SupportAssignmentRule,
+  type SupportQueue,
   type SupportTicket as ApiSupportTicket,
   type SupportTicketPriority,
+  type SupportTicketSource,
 } from "@/lib/support";
-import { getUser } from "@/lib/auth";
+import { getUser, hasPermission } from "@/lib/auth";
 import { useDebounce } from "@/lib/hooks/useDebounce";
 import { cn } from "@/lib/utils";
 import {
@@ -63,6 +74,31 @@ type TicketSource = "customer_chat" | "driver_app" | "system_alert" | "manager";
 type LastReplyBy = "customer" | "driver" | "support" | "system";
 type ScopeFilter = "mine" | "unassigned" | "all";
 type TicketOwner = "mine" | "unassigned" | "team";
+type SupportView = "tickets" | "queues" | "rules";
+type SlaFilter = "all" | "risk" | "overdue" | "healthy";
+
+type QueueForm = {
+  id?: string;
+  name: string;
+  code: string;
+  description: string;
+  defaultOwnerId: string;
+  isDefault: boolean;
+  isActive: boolean;
+};
+
+type RuleForm = {
+  id?: string;
+  name: string;
+  code: string;
+  queueId: string;
+  source: "any" | SupportTicketSource;
+  priority: "any" | SupportTicketPriority;
+  routeContains: string;
+  defaultOwnerId: string;
+  sortOrder: string;
+  isActive: boolean;
+};
 
 type Ticket = {
   id: string;
@@ -78,9 +114,11 @@ type Ticket = {
   owner: TicketOwner;
   ownerId: string | null;
   ownerName: string;
+  queueName: string;
   lastReplyBy: LastReplyBy;
   age: string;
   sla: number;
+  slaDueAt: string | null;
   route: string;
   driver: string;
   driverPhone: string;
@@ -107,6 +145,28 @@ const scopeFilters: Array<{ value: ScopeFilter; label: string }> = [
   { value: "all", label: "All tickets" },
 ];
 
+const priorityFilters: Array<{ value: "all" | Priority; label: string }> = [
+  { value: "all", label: "All priority" },
+  { value: "urgent", label: "Urgent" },
+  { value: "high", label: "High" },
+  { value: "normal", label: "Normal" },
+];
+
+const sourceFilters: Array<{ value: "all" | TicketSource; label: string }> = [
+  { value: "all", label: "All sources" },
+  { value: "system_alert", label: "System" },
+  { value: "customer_chat", label: "Customer" },
+  { value: "driver_app", label: "Driver" },
+  { value: "manager", label: "Manager" },
+];
+
+const slaFilters: Array<{ value: SlaFilter; label: string }> = [
+  { value: "all", label: "All SLA" },
+  { value: "risk", label: "At risk" },
+  { value: "overdue", label: "Overdue" },
+  { value: "healthy", label: "Healthy" },
+];
+
 const statusLabels: Record<"all" | TicketStatus, string> = {
   all: "All",
   open: "Open",
@@ -121,6 +181,27 @@ const sourceLabels: Record<TicketSource, string> = {
   driver_app: "Driver app",
   system_alert: "System alert",
   manager: "Manager",
+};
+
+const emptyQueueForm: QueueForm = {
+  name: "",
+  code: "",
+  description: "",
+  defaultOwnerId: "__none",
+  isDefault: false,
+  isActive: true,
+};
+
+const emptyRuleForm: RuleForm = {
+  name: "",
+  code: "",
+  queueId: "__none",
+  source: "any",
+  priority: "any",
+  routeContains: "",
+  defaultOwnerId: "__none",
+  sortOrder: "100",
+  isActive: true,
 };
 
 const lastReplyLabels: Record<LastReplyBy, string> = {
@@ -143,7 +224,90 @@ function formatAge(value?: string | null) {
   return `${Math.floor(hours / 24)}d`;
 }
 
+function formatDateTime(value?: string | null) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function formatDurationFromMinutes(minutes: number) {
+  const abs = Math.abs(Math.round(minutes));
+  if (abs < 60) return `${abs}m`;
+  const hours = Math.floor(abs / 60);
+  const mins = abs % 60;
+  if (hours < 24) return mins ? `${hours}h ${mins}m` : `${hours}h`;
+  const days = Math.floor(hours / 24);
+  const restHours = hours % 24;
+  return restHours ? `${days}d ${restHours}h` : `${days}d`;
+}
+
+function resolveSlaView(ticket: Pick<Ticket, "sla" | "slaDueAt" | "status">) {
+  if (ticket.status === "resolved") {
+    return {
+      label: "Completed",
+      detail: ticket.slaDueAt ? `Due ${formatDateTime(ticket.slaDueAt)}` : "SLA closed",
+      tone: "good" as const,
+    };
+  }
+
+  if (!ticket.slaDueAt) {
+    return {
+      label: "No SLA",
+      detail: "No due date assigned",
+      tone: "muted" as const,
+    };
+  }
+
+  const dueAt = new Date(ticket.slaDueAt).getTime();
+  if (!Number.isFinite(dueAt)) {
+    return {
+      label: "No SLA",
+      detail: "Invalid due date",
+      tone: "muted" as const,
+    };
+  }
+
+  const remainingMinutes = Math.ceil((dueAt - Date.now()) / 60_000);
+  if (remainingMinutes <= 0 || ticket.sla <= 0) {
+    return {
+      label: "Overdue",
+      detail: `Overdue by ${formatDurationFromMinutes(remainingMinutes)}`,
+      tone: "bad" as const,
+    };
+  }
+
+  if (ticket.sla < 25 || remainingMinutes <= 60) {
+    return {
+      label: "Due soon",
+      detail: `${formatDurationFromMinutes(remainingMinutes)} remaining`,
+      tone: "bad" as const,
+    };
+  }
+
+  if (ticket.sla < 55) {
+    return {
+      label: "Watch",
+      detail: `${formatDurationFromMinutes(remainingMinutes)} remaining`,
+      tone: "warn" as const,
+    };
+  }
+
+  return {
+    label: "Healthy",
+    detail: `${formatDurationFromMinutes(remainingMinutes)} remaining`,
+    tone: "good" as const,
+  };
+}
+
 function mapApiTicket(ticket: ApiSupportTicket): Ticket {
+  const slaPercent = Math.max(0, Math.min(100, Number(ticket.slaPercent || 0)));
+  const slaDueLabel = ticket.slaDueAt ? formatDateTime(ticket.slaDueAt) : "-";
   return {
     id: ticket.id,
     orderId: ticket.orderId,
@@ -158,9 +322,11 @@ function mapApiTicket(ticket: ApiSupportTicket): Ticket {
     owner: ticket.ownerId ? "mine" : "unassigned",
     ownerId: ticket.ownerId,
     ownerName: ticket.ownerName || "Unassigned",
+    queueName: ticket.queueName || "General queue",
     lastReplyBy: ticket.lastReplyBy || "system",
     age: formatAge(ticket.lastActivityAt || ticket.createdAt),
-    sla: Math.max(0, Math.min(100, Number(ticket.slaPercent || 0))),
+    sla: slaPercent,
+    slaDueAt: ticket.slaDueAt,
     route: ticket.route || "-",
     driver: ticket.driverName || "Not assigned",
     driverPhone: ticket.driverPhone || "-",
@@ -170,7 +336,9 @@ function mapApiTicket(ticket: ApiSupportTicket): Ticket {
       { label: "Ticket", value: ticket.ticketNumber },
       { label: "Order", value: ticket.orderNumber || "-" },
       { label: "Source", value: sourceLabels[ticket.source] },
-      { label: "SLA", value: `${ticket.slaPercent}% left` },
+      { label: "Queue", value: ticket.queueName || "General queue" },
+      { label: "SLA", value: `${slaPercent}% left` },
+      { label: "SLA due", value: slaDueLabel },
     ],
     timeline: (ticket.events?.length ? ticket.events : []).map((event) => ({
       time: event.createdAt
@@ -217,9 +385,10 @@ function sourceClasses(source: TicketSource) {
   return "border-slate-200 bg-slate-50 text-slate-700";
 }
 
-function slaToneClasses(sla: number) {
-  if (sla < 25) return "border-red-200 bg-red-50 text-red-700";
-  if (sla < 55) return "border-amber-200 bg-amber-50 text-amber-700";
+function slaViewClasses(tone: ReturnType<typeof resolveSlaView>["tone"]) {
+  if (tone === "bad") return "border-red-200 bg-red-50 text-red-700";
+  if (tone === "warn") return "border-amber-200 bg-amber-50 text-amber-700";
+  if (tone === "muted") return "border-slate-200 bg-slate-50 text-slate-600";
   return "border-emerald-200 bg-emerald-50 text-emerald-700";
 }
 
@@ -271,9 +440,15 @@ function Metric({
 export default function SupportDashboard() {
   const queryClient = useQueryClient();
   const currentUser = useMemo(() => getUser(), []);
+  const canConfigureSupport = hasPermission(currentUser, "support.configure");
+  const companyId = currentUser?.companyId ?? null;
+  const [supportView, setSupportView] = useState<SupportView>("tickets");
   const [activeId, setActiveId] = useState("");
   const [statusFilter, setStatusFilter] = useState<(typeof statusFilters)[number]>("all");
   const [scopeFilter, setScopeFilter] = useState<ScopeFilter>("mine");
+  const [priorityFilter, setPriorityFilter] = useState<"all" | Priority>("all");
+  const [sourceFilter, setSourceFilter] = useState<"all" | TicketSource>("all");
+  const [slaFilter, setSlaFilter] = useState<SlaFilter>("all");
   const [query, setQuery] = useState("");
   const [note, setNote] = useState("");
   const [reply, setReply] = useState("");
@@ -285,6 +460,8 @@ export default function SupportDashboard() {
     priority: "normal" as SupportTicketPriority,
     ownerId: "",
   });
+  const [queueForm, setQueueForm] = useState<QueueForm>(emptyQueueForm);
+  const [ruleForm, setRuleForm] = useState<RuleForm>(emptyRuleForm);
   const [localNotes, setLocalNotes] = useState<Record<string, string[]>>({});
   const [localStatuses, setLocalStatuses] = useState<Partial<Record<string, TicketStatus>>>({});
   const [localAssignees, setLocalAssignees] = useState<Record<string, { ownerId: string | null; ownerName: string }>>({});
@@ -302,11 +479,31 @@ export default function SupportDashboard() {
     refetchOnMount: false,
   });
 
+  const queuesQuery = useQuery({
+    queryKey: ["manager-support-queues", companyId],
+    queryFn: () => fetchSupportQueues(companyId),
+    enabled: canConfigureSupport && Boolean(companyId),
+    staleTime: 30_000,
+    placeholderData: (prev) => prev,
+    refetchOnWindowFocus: false,
+  });
+
+  const rulesQuery = useQuery({
+    queryKey: ["manager-support-assignment-rules", companyId],
+    queryFn: () => fetchSupportAssignmentRules(companyId),
+    enabled: canConfigureSupport && Boolean(companyId),
+    staleTime: 30_000,
+    placeholderData: (prev) => prev,
+    refetchOnWindowFocus: false,
+  });
+
   const supportTicketsQuery = useInfiniteQuery({
-    queryKey: ["manager-support-tickets", statusFilter, scopeFilter, debouncedQuery],
+    queryKey: ["manager-support-tickets", statusFilter, scopeFilter, priorityFilter, sourceFilter, debouncedQuery],
     queryFn: ({ pageParam }) =>
       fetchSupportTickets({
         status: statusFilter,
+        priority: priorityFilter,
+        source: sourceFilter,
         owner: scopeFilter,
         q: debouncedQuery,
         cursor: pageParam,
@@ -340,6 +537,12 @@ export default function SupportDashboard() {
         : "unassigned";
       const matchesStatus = statusFilter === "all" || currentStatus === statusFilter;
       const matchesScope = scopeFilter === "all" || ownerScope === scopeFilter;
+      const slaView = resolveSlaView({ ...ticket, status: currentStatus });
+      const matchesSla =
+        slaFilter === "all" ||
+        (slaFilter === "risk" && (slaView.tone === "bad" || slaView.tone === "warn")) ||
+        (slaFilter === "overdue" && slaView.label === "Overdue") ||
+        (slaFilter === "healthy" && slaView.tone === "good");
       const matchesQuery =
         !normalized ||
         [
@@ -357,9 +560,9 @@ export default function SupportDashboard() {
           .join(" ")
           .toLowerCase()
           .includes(normalized);
-      return matchesStatus && matchesScope && matchesQuery;
+      return matchesStatus && matchesScope && matchesSla && matchesQuery;
     });
-  }, [apiTickets, currentUser?.id, localAssignees, localStatuses, query, scopeFilter, statusFilter]);
+  }, [apiTickets, currentUser?.id, localAssignees, localStatuses, query, scopeFilter, slaFilter, statusFilter]);
 
   useEffect(() => {
     if (!activeId && filteredTickets[0]?.id) {
@@ -395,9 +598,11 @@ export default function SupportDashboard() {
     owner: "unassigned",
     ownerId: null,
     ownerName: "Unassigned",
+    queueName: "General queue",
     lastReplyBy: "system",
     age: "-",
     sla: 100,
+    slaDueAt: null,
     route: "-",
     driver: "-",
     driverPhone: "-",
@@ -423,6 +628,7 @@ export default function SupportDashboard() {
     ownerName: localAssignees[activeTicketBase.id]?.ownerName ?? activeTicketBase.ownerName,
     timeline: [...(localTimeline[activeTicketBase.id] ?? []), ...activeTicketBase.timeline],
   };
+  const activeSla = resolveSlaView(activeTicket);
   const summary = supportTicketsQuery.data?.pages[0]?.summary;
   const apiOpenCount = summary?.open ?? 0;
   const apiSlaRiskCount = summary?.slaRisk ?? 0;
@@ -567,6 +773,62 @@ export default function SupportDashboard() {
     },
   });
 
+  const queueMutation = useMutation({
+    mutationFn: (form: QueueForm) => {
+      const payload = {
+        companyId: companyId || undefined,
+        name: form.name.trim(),
+        code: form.code.trim() || undefined,
+        description: form.description.trim() || null,
+        defaultOwnerId: form.defaultOwnerId === "__none" ? null : form.defaultOwnerId,
+        isDefault: form.isDefault,
+        isActive: form.isActive,
+      };
+      return form.id ? updateSupportQueue(form.id, payload) : createSupportQueue(payload);
+    },
+    onSuccess: () => {
+      setQueueForm(emptyQueueForm);
+      void queryClient.invalidateQueries({ queryKey: ["manager-support-queues"] });
+    },
+  });
+
+  const deleteQueueMutation = useMutation({
+    mutationFn: (id: string) => deleteSupportQueue(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["manager-support-queues"] });
+      void queryClient.invalidateQueries({ queryKey: ["manager-support-assignment-rules"] });
+    },
+  });
+
+  const ruleMutation = useMutation({
+    mutationFn: (form: RuleForm) => {
+      const payload = {
+        companyId: companyId || undefined,
+        name: form.name.trim(),
+        code: form.code.trim() || undefined,
+        queueId: form.queueId === "__none" ? null : form.queueId,
+        source: form.source === "any" ? null : form.source,
+        priority: form.priority === "any" ? null : form.priority,
+        routeContains: form.routeContains.trim() || null,
+        defaultOwnerId: form.defaultOwnerId === "__none" ? null : form.defaultOwnerId,
+        sortOrder: Number(form.sortOrder) || 100,
+        isActive: form.isActive,
+      };
+      return form.id ? updateSupportAssignmentRule(form.id, payload) : createSupportAssignmentRule(payload);
+    },
+    onSuccess: () => {
+      setRuleForm(emptyRuleForm);
+      void queryClient.invalidateQueries({ queryKey: ["manager-support-assignment-rules"] });
+    },
+  });
+
+  const deleteRuleMutation = useMutation({
+    mutationFn: (id: string) => deleteSupportAssignmentRule(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["manager-support-assignment-rules"] });
+    },
+  });
+
   useEffect(() => {
     return subscribeSupportStream({
       onRefresh: (event) => {
@@ -582,6 +844,13 @@ export default function SupportDashboard() {
   const slaRiskCount = String(apiSlaRiskCount);
   const waitingCount = String(apiWaitingCount);
   const resolvedTodayCount = String(apiResolvedTodayCount);
+  const hasActiveQueueFilters =
+    statusFilter !== "all" ||
+    scopeFilter !== "mine" ||
+    priorityFilter !== "all" ||
+    sourceFilter !== "all" ||
+    slaFilter !== "all" ||
+    Boolean(query.trim());
 
   const submitNote = () => {
     const trimmed = note.trim();
@@ -623,9 +892,11 @@ export default function SupportDashboard() {
       owner: ownerId ? (ownerId === currentUser?.id ? "mine" : "team") : "unassigned",
       ownerId,
       ownerName: owner?.name || owner?.email || (ownerId === currentUser?.id ? currentUser?.name || currentUser.email : "Unassigned"),
+      queueName: "Routing queue",
       lastReplyBy: "support",
       age: "now",
       sla: 100,
+      slaDueAt: null,
       route: "Loading linked order...",
       driver: "Not assigned",
       driverPhone: "-",
@@ -635,6 +906,7 @@ export default function SupportDashboard() {
         { label: "Ticket", value: "Creating..." },
         { label: "Order", value: newTicket.orderNumber.trim() || "-" },
         { label: "Source", value: "Manager" },
+        { label: "Queue", value: "Routing queue" },
         { label: "SLA", value: "100% left" },
       ],
       timeline: [{ time: "now", title: "Ticket is being created", tone: "good", pending: true }],
@@ -689,12 +961,13 @@ export default function SupportDashboard() {
                 size="sm"
                 className="h-9 rounded-lg gap-2"
                 onClick={() => {
-                  setStatusFilter("escalated");
+                  setStatusFilter("all");
                   setScopeFilter("all");
+                  setSlaFilter("risk");
                 }}
               >
                 <Bot className="h-4 w-4" />
-                Auto triage
+                SLA risk
               </Button>
               <Button
                 type="button"
@@ -726,6 +999,36 @@ export default function SupportDashboard() {
           </div>
         </header>
 
+        <nav className="border-b bg-white px-3 py-2">
+          <div className="grid gap-2 rounded-lg border bg-slate-50 p-1 md:grid-cols-3">
+            {[
+              { value: "tickets", label: "Tickets", hint: "Live support desk" },
+              { value: "queues", label: "Queues", hint: "Team inboxes" },
+              { value: "rules", label: "Assignment rules", hint: "Auto routing" },
+            ].map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                disabled={item.value !== "tickets" && !canConfigureSupport}
+                onClick={() => setSupportView(item.value as SupportView)}
+                className={cn(
+                  "rounded-md px-3 py-2 text-left transition disabled:cursor-not-allowed disabled:opacity-50",
+                  supportView === item.value
+                    ? "bg-slate-950 text-white shadow-sm"
+                    : "bg-white text-slate-600 hover:bg-slate-100",
+                )}
+              >
+                <span className="block text-sm font-semibold">{item.label}</span>
+                <span className={cn("block text-xs", supportView === item.value ? "text-white/70" : "text-slate-400")}>
+                  {item.value !== "tickets" && !canConfigureSupport ? "Requires support.configure" : item.hint}
+                </span>
+              </button>
+            ))}
+          </div>
+        </nav>
+
+        {supportView === "tickets" ? (
+          <>
         {newTicketOpen ? (
           <section className="border-b bg-white px-4 py-3">
             <div className="rounded-xl border border-teal-100 bg-gradient-to-br from-teal-50 via-white to-sky-50 p-4 shadow-sm">
@@ -824,7 +1127,9 @@ export default function SupportDashboard() {
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Ticket queue</p>
                   <p className="mt-1 text-xs text-slate-500">{filteredTickets.length} visible cases</p>
                 </div>
-                <SupportChip className={slaToneClasses(activeTicket.sla)}>SLA {activeTicket.sla}%</SupportChip>
+                <SupportChip className={slaViewClasses(activeSla.tone)}>
+                  {activeSla.label} · {activeTicket.sla}%
+                </SupportChip>
               </div>
 
               <div className="mt-3 grid grid-cols-3 gap-1 rounded-lg border bg-slate-50 p-1">
@@ -872,6 +1177,63 @@ export default function SupportDashboard() {
                   </button>
                 ))}
               </div>
+
+              <div className="mt-3 grid gap-2 sm:grid-cols-3 lg:grid-cols-1 2xl:grid-cols-3">
+                <Select value={priorityFilter} onValueChange={(value) => setPriorityFilter(value as typeof priorityFilter)}>
+                  <SelectTrigger className="h-9 rounded-lg bg-white text-xs">
+                    <SelectValue placeholder="Priority" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {priorityFilters.map((filter) => (
+                      <SelectItem key={filter.value} value={filter.value}>
+                        {filter.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={sourceFilter} onValueChange={(value) => setSourceFilter(value as typeof sourceFilter)}>
+                  <SelectTrigger className="h-9 rounded-lg bg-white text-xs">
+                    <SelectValue placeholder="Source" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {sourceFilters.map((filter) => (
+                      <SelectItem key={filter.value} value={filter.value}>
+                        {filter.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={slaFilter} onValueChange={(value) => setSlaFilter(value as SlaFilter)}>
+                  <SelectTrigger className="h-9 rounded-lg bg-white text-xs">
+                    <SelectValue placeholder="SLA" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {slaFilters.map((filter) => (
+                      <SelectItem key={filter.value} value={filter.value}>
+                        {filter.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {hasActiveQueueFilters ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="mt-2 h-8 w-full rounded-lg text-xs text-slate-500 hover:text-slate-950"
+                  onClick={() => {
+                    setStatusFilter("all");
+                    setScopeFilter("mine");
+                    setPriorityFilter("all");
+                    setSourceFilter("all");
+                    setSlaFilter("all");
+                    setQuery("");
+                  }}
+                >
+                  Clear filters
+                </Button>
+              ) : null}
             </div>
 
             <div className="max-h-[34rem] overflow-y-auto xl:max-h-none">
@@ -888,6 +1250,7 @@ export default function SupportDashboard() {
               ) : (
                 filteredTickets.map((ticket) => {
                   const visibleStatus = localStatuses[ticket.id] ?? ticket.status;
+                  const slaView = resolveSlaView({ ...ticket, status: visibleStatus });
                   return (
                 <button
                   key={ticket.id}
@@ -914,11 +1277,12 @@ export default function SupportDashboard() {
                   <div className="mt-3 flex flex-wrap items-center gap-1.5">
                     <SupportChip className={statusClasses(visibleStatus)}>{statusLabels[visibleStatus]}</SupportChip>
                     <SupportChip className={sourceClasses(ticket.source)}>{sourceLabels[ticket.source]}</SupportChip>
-                    <SupportChip className={slaToneClasses(ticket.sla)}>SLA {ticket.sla}%</SupportChip>
+                    <SupportChip className={slaViewClasses(slaView.tone)}>{slaView.label}</SupportChip>
                   </div>
                   <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-slate-500">
                     <span className="truncate">Owner: {ticket.ownerName}</span>
                     <span className="truncate text-right">Last: {lastReplyLabels[ticket.lastReplyBy]}</span>
+                    <span className="col-span-2 truncate">SLA: {slaView.detail}</span>
                     <span className="col-span-2 truncate">{ticket.route}</span>
                   </div>
                 </button>
@@ -964,7 +1328,9 @@ export default function SupportDashboard() {
                     <SupportChip className="border-slate-200 bg-slate-50 text-slate-700">
                       Last reply: {lastReplyLabels[activeTicket.lastReplyBy]}
                     </SupportChip>
-                    <SupportChip className={slaToneClasses(activeTicket.sla)}>SLA {activeTicket.sla}% left</SupportChip>
+                    <SupportChip className={slaViewClasses(activeSla.tone)}>
+                      {activeSla.label}: {activeTicket.sla}% left
+                    </SupportChip>
                   </div>
                 </div>
 
@@ -1191,7 +1557,17 @@ export default function SupportDashboard() {
                 <div className="rounded-lg border bg-white p-4">
                   <div className="flex items-center justify-between gap-3">
                     <h3 className="text-sm font-semibold">SLA risk</h3>
-                    <span className="text-sm font-semibold text-red-600">{activeTicket.sla}% left</span>
+                    <span
+                      className={cn(
+                        "text-sm font-semibold",
+                        activeSla.tone === "bad" && "text-red-600",
+                        activeSla.tone === "warn" && "text-amber-600",
+                        activeSla.tone === "good" && "text-emerald-600",
+                        activeSla.tone === "muted" && "text-slate-500",
+                      )}
+                    >
+                      {activeSla.label}
+                    </span>
                   </div>
                   <div className="mt-3 h-2 rounded-full bg-slate-100">
                     <div
@@ -1203,7 +1579,7 @@ export default function SupportDashboard() {
                     />
                   </div>
                   <p className="mt-2 text-xs text-slate-500">
-                    Escalate under 25% remaining or if the customer has reopened the same case twice.
+                    {activeSla.detail}. The SLA monitor escalates overdue open tickets automatically.
                   </p>
                 </div>
               </div>
@@ -1310,6 +1686,366 @@ export default function SupportDashboard() {
             </div>
           </aside>
         </main>
+          </>
+        ) : supportView === "queues" ? (
+          <section className="grid gap-4 bg-slate-50 p-4 xl:grid-cols-[24rem_minmax(0,1fr)]">
+            <div className="rounded-lg border bg-white p-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                  Support queue
+                </p>
+                <h2 className="mt-1 text-lg font-semibold">
+                  {queueForm.id ? "Edit queue" : "Create queue"}
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Queues are the operational inboxes tickets route into before an operator owns them.
+                </p>
+              </div>
+              <div className="mt-4 space-y-3">
+                <Input
+                  value={queueForm.name}
+                  onChange={(event) => setQueueForm((current) => ({ ...current, name: event.target.value }))}
+                  placeholder="General Support"
+                  className="h-10 rounded-lg"
+                />
+                <Input
+                  value={queueForm.code}
+                  onChange={(event) => setQueueForm((current) => ({ ...current, code: event.target.value }))}
+                  placeholder="general_support"
+                  className="h-10 rounded-lg"
+                />
+                <Textarea
+                  value={queueForm.description}
+                  onChange={(event) => setQueueForm((current) => ({ ...current, description: event.target.value }))}
+                  placeholder="What kind of tickets should land here?"
+                  className="min-h-20 rounded-lg"
+                />
+                <Select
+                  value={queueForm.defaultOwnerId}
+                  onValueChange={(value) => setQueueForm((current) => ({ ...current, defaultOwnerId: value }))}
+                >
+                  <SelectTrigger className="h-10 rounded-lg">
+                    <SelectValue placeholder="Default owner" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none">No default owner</SelectItem>
+                    {assigneesQuery.data?.map((assignee) => (
+                      <SelectItem key={assignee.id} value={assignee.id}>
+                        {assignee.name || assignee.email}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <label className="flex items-center justify-between rounded-lg border bg-slate-50 px-3 py-2 text-sm">
+                  <span>Default fallback queue</span>
+                  <input
+                    type="checkbox"
+                    checked={queueForm.isDefault}
+                    onChange={(event) => setQueueForm((current) => ({ ...current, isDefault: event.target.checked }))}
+                  />
+                </label>
+                <label className="flex items-center justify-between rounded-lg border bg-slate-50 px-3 py-2 text-sm">
+                  <span>Active</span>
+                  <input
+                    type="checkbox"
+                    checked={queueForm.isActive}
+                    onChange={(event) => setQueueForm((current) => ({ ...current, isActive: event.target.checked }))}
+                  />
+                </label>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    className="h-10 flex-1 rounded-lg bg-slate-950 hover:bg-slate-800"
+                    disabled={!queueForm.name.trim() || queueMutation.isPending}
+                    onClick={() => queueMutation.mutate(queueForm)}
+                  >
+                    {queueMutation.isPending ? "Saving..." : queueForm.id ? "Update queue" : "Create queue"}
+                  </Button>
+                  {queueForm.id ? (
+                    <Button type="button" variant="outline" className="h-10 rounded-lg" onClick={() => setQueueForm(emptyQueueForm)}>
+                      Cancel
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-lg border bg-white p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold">Configured queues</h2>
+                  <p className="text-sm text-slate-500">Loaded {queuesQuery.data?.length ?? 0} support queues.</p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-9 rounded-lg"
+                  onClick={() => void queuesQuery.refetch()}
+                  disabled={queuesQuery.isFetching}
+                >
+                  Refresh
+                </Button>
+              </div>
+              <div className="mt-4 overflow-hidden rounded-xl border">
+                <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_8rem_9rem] bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <span>Queue</span>
+                  <span>Owner</span>
+                  <span>Status</span>
+                  <span className="text-right">Actions</span>
+                </div>
+                <div className="max-h-[30rem] overflow-y-auto">
+                  {(queuesQuery.data ?? []).length === 0 ? (
+                    <div className="p-6 text-center text-sm text-slate-500">No queues configured yet.</div>
+                  ) : (
+                    (queuesQuery.data ?? []).map((queue: SupportQueue) => (
+                      <div key={queue.id} className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_8rem_9rem] items-center gap-3 border-t px-3 py-3 text-sm">
+                        <div className="min-w-0">
+                          <div className="truncate font-semibold">{queue.name}</div>
+                          <div className="truncate text-xs text-slate-500">{queue.code}</div>
+                        </div>
+                        <div className="truncate text-slate-600">{queue.defaultOwnerId || "No default owner"}</div>
+                        <div className="flex flex-wrap gap-1">
+                          <SupportChip className={queue.isActive ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-50 text-slate-500"}>
+                            {queue.isActive ? "Active" : "Paused"}
+                          </SupportChip>
+                          {queue.isDefault ? <SupportChip className="border-blue-200 bg-blue-50 text-blue-700">Default</SupportChip> : null}
+                        </div>
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 rounded-lg"
+                            onClick={() =>
+                              setQueueForm({
+                                id: queue.id,
+                                name: queue.name,
+                                code: queue.code,
+                                description: queue.description ?? "",
+                                defaultOwnerId: queue.defaultOwnerId ?? "__none",
+                                isDefault: queue.isDefault,
+                                isActive: queue.isActive,
+                              })
+                            }
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 rounded-lg border-red-200 text-red-600 hover:bg-red-50"
+                            disabled={deleteQueueMutation.isPending}
+                            onClick={() => deleteQueueMutation.mutate(queue.id)}
+                          >
+                            Delete
+                          </Button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
+        ) : (
+          <section className="grid gap-4 bg-slate-50 p-4 xl:grid-cols-[24rem_minmax(0,1fr)]">
+            <div className="rounded-lg border bg-white p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                Assignment rule
+              </p>
+              <h2 className="mt-1 text-lg font-semibold">{ruleForm.id ? "Edit rule" : "Create rule"}</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Rules are evaluated in sort order. First match routes the ticket to its queue and optional owner.
+              </p>
+              <div className="mt-4 space-y-3">
+                <Input
+                  value={ruleForm.name}
+                  onChange={(event) => setRuleForm((current) => ({ ...current, name: event.target.value }))}
+                  placeholder="System alerts to operations"
+                  className="h-10 rounded-lg"
+                />
+                <Input
+                  value={ruleForm.code}
+                  onChange={(event) => setRuleForm((current) => ({ ...current, code: event.target.value }))}
+                  placeholder="system_alerts_ops"
+                  className="h-10 rounded-lg"
+                />
+                <Select value={ruleForm.queueId} onValueChange={(value) => setRuleForm((current) => ({ ...current, queueId: value }))}>
+                  <SelectTrigger className="h-10 rounded-lg">
+                    <SelectValue placeholder="Target queue" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none">No queue</SelectItem>
+                    {queuesQuery.data?.map((queue) => (
+                      <SelectItem key={queue.id} value={queue.id}>
+                        {queue.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Select value={ruleForm.source} onValueChange={(value) => setRuleForm((current) => ({ ...current, source: value as RuleForm["source"] }))}>
+                    <SelectTrigger className="h-10 rounded-lg">
+                      <SelectValue placeholder="Source" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="any">Any source</SelectItem>
+                      <SelectItem value="customer_chat">Customer chat</SelectItem>
+                      <SelectItem value="driver_app">Driver app</SelectItem>
+                      <SelectItem value="system_alert">System alert</SelectItem>
+                      <SelectItem value="manager">Manager</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select value={ruleForm.priority} onValueChange={(value) => setRuleForm((current) => ({ ...current, priority: value as RuleForm["priority"] }))}>
+                    <SelectTrigger className="h-10 rounded-lg">
+                      <SelectValue placeholder="Priority" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="any">Any priority</SelectItem>
+                      <SelectItem value="urgent">Urgent</SelectItem>
+                      <SelectItem value="high">High</SelectItem>
+                      <SelectItem value="normal">Normal</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Input
+                  value={ruleForm.routeContains}
+                  onChange={(event) => setRuleForm((current) => ({ ...current, routeContains: event.target.value }))}
+                  placeholder="Route contains, e.g. Tashkent"
+                  className="h-10 rounded-lg"
+                />
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Select value={ruleForm.defaultOwnerId} onValueChange={(value) => setRuleForm((current) => ({ ...current, defaultOwnerId: value }))}>
+                    <SelectTrigger className="h-10 rounded-lg">
+                      <SelectValue placeholder="Owner override" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none">Queue default owner</SelectItem>
+                      {assigneesQuery.data?.map((assignee) => (
+                        <SelectItem key={assignee.id} value={assignee.id}>
+                          {assignee.name || assignee.email}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    type="number"
+                    value={ruleForm.sortOrder}
+                    onChange={(event) => setRuleForm((current) => ({ ...current, sortOrder: event.target.value }))}
+                    placeholder="100"
+                    className="h-10 rounded-lg"
+                  />
+                </div>
+                <label className="flex items-center justify-between rounded-lg border bg-slate-50 px-3 py-2 text-sm">
+                  <span>Active rule</span>
+                  <input
+                    type="checkbox"
+                    checked={ruleForm.isActive}
+                    onChange={(event) => setRuleForm((current) => ({ ...current, isActive: event.target.checked }))}
+                  />
+                </label>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    className="h-10 flex-1 rounded-lg bg-slate-950 hover:bg-slate-800"
+                    disabled={!ruleForm.name.trim() || ruleMutation.isPending}
+                    onClick={() => ruleMutation.mutate(ruleForm)}
+                  >
+                    {ruleMutation.isPending ? "Saving..." : ruleForm.id ? "Update rule" : "Create rule"}
+                  </Button>
+                  {ruleForm.id ? (
+                    <Button type="button" variant="outline" className="h-10 rounded-lg" onClick={() => setRuleForm(emptyRuleForm)}>
+                      Cancel
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-lg border bg-white p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold">Assignment rules</h2>
+                  <p className="text-sm text-slate-500">Loaded {rulesQuery.data?.length ?? 0} routing rules.</p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-9 rounded-lg"
+                  onClick={() => void rulesQuery.refetch()}
+                  disabled={rulesQuery.isFetching}
+                >
+                  Refresh
+                </Button>
+              </div>
+              <div className="mt-4 overflow-hidden rounded-xl border">
+                <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)_6rem_9rem] bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <span>Rule</span>
+                  <span>Match</span>
+                  <span>Queue</span>
+                  <span>Order</span>
+                  <span className="text-right">Actions</span>
+                </div>
+                <div className="max-h-[30rem] overflow-y-auto">
+                  {(rulesQuery.data ?? []).length === 0 ? (
+                    <div className="p-6 text-center text-sm text-slate-500">No assignment rules configured yet.</div>
+                  ) : (
+                    (rulesQuery.data ?? []).map((rule: SupportAssignmentRule) => (
+                      <div key={rule.id} className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)_6rem_9rem] items-center gap-3 border-t px-3 py-3 text-sm">
+                        <div className="min-w-0">
+                          <div className="truncate font-semibold">{rule.name}</div>
+                          <div className="truncate text-xs text-slate-500">{rule.code}</div>
+                        </div>
+                        <div className="min-w-0 text-xs text-slate-600">
+                          <div>Source: {rule.source ?? "any"}</div>
+                          <div>Priority: {rule.priority ?? "any"}</div>
+                          {rule.routeContains ? <div className="truncate">Route: {rule.routeContains}</div> : null}
+                        </div>
+                        <div className="truncate text-slate-600">{rule.queueName || "No queue"}</div>
+                        <div>{rule.sortOrder}</div>
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 rounded-lg"
+                            onClick={() =>
+                              setRuleForm({
+                                id: rule.id,
+                                name: rule.name,
+                                code: rule.code,
+                                queueId: rule.queueId ?? "__none",
+                                source: rule.source ?? "any",
+                                priority: rule.priority ?? "any",
+                                routeContains: rule.routeContains ?? "",
+                                defaultOwnerId: rule.defaultOwnerId ?? "__none",
+                                sortOrder: String(rule.sortOrder ?? 100),
+                                isActive: rule.isActive,
+                              })
+                            }
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 rounded-lg border-red-200 text-red-600 hover:bg-red-50"
+                            disabled={deleteRuleMutation.isPending}
+                            onClick={() => deleteRuleMutation.mutate(rule.id)}
+                          >
+                            Delete
+                          </Button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
       </div>
     </PageShell>
   );

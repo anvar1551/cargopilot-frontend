@@ -26,13 +26,58 @@ export type OrderTableRow = {
   createdAt?: string | null;
   labelUrl?: string | null;
   parcels?: Array<{ labelKey?: string | null }> | null;
+  senderName?: string | null;
+  senderPhone?: string | null;
+  receiverName?: string | null;
+  receiverPhone?: string | null;
   customer?: {
     name?: string | null;
     email?: string | null;
   } | null;
+  customerEntity?: {
+    id?: string | null;
+    name?: string | null;
+    companyName?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    type?: string | null;
+  } | null;
   invoice?: InvoiceLite | null;
   Invoice?: InvoiceLite | null;
 };
+
+function firstText(...values: Array<string | number | null | undefined>) {
+  for (const value of values) {
+    const text = value == null ? "" : String(value).trim();
+    if (text) return text;
+  }
+  return "";
+}
+
+function getCustomerDisplay(row: OrderTableRow) {
+  const entity = row.customerEntity;
+  const primary = firstText(
+    entity?.companyName,
+    entity?.name,
+    row.senderName,
+    row.receiverName,
+    row.customer?.name,
+    row.customer?.email,
+  );
+  const secondary = firstText(
+    entity?.email,
+    entity?.phone,
+    row.senderPhone,
+    row.receiverPhone,
+    row.customer?.email,
+  );
+
+  return {
+    primary: primary || "-",
+    secondary: secondary || "-",
+    search: `${primary} ${secondary}`.toLowerCase().trim(),
+  };
+}
 
 function statusVariant(status: string) {
   const value = String(status || "").toLowerCase();
@@ -166,14 +211,14 @@ export function getColumns(
     },
     {
       id: "customer",
-      accessorFn: (row) => `${row.customer?.name ?? ""} ${row.customer?.email ?? ""}`,
+      accessorFn: (row) => getCustomerDisplay(row).search,
       header: t("ordersTable.customer"),
       cell: ({ row }) => {
-        const customer = row.original.customer;
+        const customer = getCustomerDisplay(row.original);
         return (
           <div className="min-w-[170px] max-w-[220px]">
-            <div className="truncate text-sm font-medium">{customer?.name ?? "-"}</div>
-            <div className="truncate text-xs text-muted-foreground">{customer?.email ?? "-"}</div>
+            <div className="truncate text-sm font-medium">{customer.primary}</div>
+            <div className="truncate text-xs text-muted-foreground">{customer.secondary}</div>
           </div>
         );
       },
@@ -217,7 +262,6 @@ export function getColumns(
       header: "",
       cell: ({ row }) => {
         const order = row.original;
-        const id = order.id;
         return (
           <div className="flex justify-end gap-1">
             {options?.capabilities?.canOpenDetails !== false ? (

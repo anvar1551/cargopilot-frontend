@@ -133,7 +133,9 @@ export type Order = {
     id?: string | null;
     name?: string | null;
     companyName?: string | null;
+    email?: string | null;
     phone?: string | null;
+    type?: string | null;
   } | null;
   invoice?: {
     status?: string | null;

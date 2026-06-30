@@ -327,7 +327,7 @@ export default function CustomerDetailPage() {
 
             <div className="flex w-full max-w-sm flex-col gap-3 xl:w-[260px]">
               <CreateOrderDialog
-                mode="manager"
+                mode="operations"
                 presetCustomerEntityId={customer.id}
                 presetCustomerEntityLabel={customerLabel}
                 lockCustomerEntitySelection

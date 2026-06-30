@@ -1083,7 +1083,7 @@ export default function ManagerIntegrationsPage() {
           <DialogHeader>
             <DialogTitle>Delete provider?</DialogTitle>
             <DialogDescription>
-              This removes "{deleteProviderTarget?.providerCode}". Providers that still have carrier
+              This removes &quot;{deleteProviderTarget?.providerCode}&quot;. Providers that still have carrier
               routing rules, outbox records, webhook events, or canonical events cannot be deleted.
             </DialogDescription>
           </DialogHeader>
