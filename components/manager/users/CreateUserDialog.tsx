@@ -2,15 +2,13 @@
 
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { z } from "zod";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
-import { Building2, Loader2, UserPlus } from "lucide-react";
+import { Loader2, Plus, UserPlus } from "lucide-react";
 
-import { useI18n } from "@/components/i18n/I18nProvider";
-import { createUser, type AppRole, type CreateUserAsManagerInput } from "@/lib/users";
+import { createUser, type MembershipScopeType } from "@/lib/users";
+import { fetchRoles } from "@/lib/iam";
 import { fetchWarehouses, type Warehouse } from "@/lib/warehouses";
+import { fetchOrganizations, type Organization } from "@/lib/organizations";
 import { CustomerEntityCombobox } from "@/components/combobox/CustomerEntityCombobox";
 
 import { Button } from "@/components/ui/button";
@@ -24,130 +22,130 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-type FormValues = {
-  name: string;
-  email: string;
-  password: string;
-  role: AppRole;
-  phone?: string | null;
-  warehouseId?: string | null;
-  customerEntityId?: string | null;
+type ScopeRow = {
+  scopeType: MembershipScopeType;
+  scopeRefId: string;
 };
 
-function createFormSchema(t: (key: string) => string) {
-  return z
-    .object({
-      name: z.string().min(2, t("createUserDialog.validation.nameShort")),
-      email: z.string().email(t("createUserDialog.validation.invalidEmail")),
-      password: z.string().min(6, t("createUserDialog.validation.passwordMin")),
-      role: z.enum(["customer", "manager", "warehouse", "driver"]),
-      phone: z.string().optional().nullable(),
-      warehouseId: z.string().uuid().optional().nullable(),
-      customerEntityId: z.string().uuid().optional().nullable(),
-    })
-    .superRefine((value, ctx) => {
-      const supportsWarehouse = value.role === "warehouse" || value.role === "driver";
+const SCOPE_TYPES: MembershipScopeType[] = [
+  "company",
+  "branch",
+  "warehouse",
+  "agent",
+  "pickup_point",
+  "carrier",
+  "client",
+];
 
-      if (!supportsWarehouse && value.warehouseId) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["warehouseId"],
-          message: t("createUserDialog.validation.warehouseRoleOnly"),
-        });
-      }
-
-      if (value.role === "warehouse" && !value.warehouseId) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["warehouseId"],
-          message: t("createUserDialog.validation.warehouseRequired"),
-        });
-      }
-
-      if (value.role !== "customer" && value.customerEntityId) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["customerEntityId"],
-          message: t("createUserDialog.validation.customerRoleOnly"),
-        });
-      }
-    });
-}
-
-function generatePassword(len = 12) {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*";
+function generatePassword(len = 14) {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
   let output = "";
-  for (let index = 0; index < len; index += 1) {
-    output += chars[Math.floor(Math.random() * chars.length)];
-  }
+  for (let i = 0; i < len; i += 1) output += chars[Math.floor(Math.random() * chars.length)];
   return output;
 }
 
-function roleNeedsWarehouse(role: FormValues["role"]) {
-  return role === "warehouse";
+function getOrganizationLabel(item: Organization) {
+  return item.code ? `${item.name} (${item.code})` : item.name;
 }
 
-function roleCanHaveWarehouse(role: FormValues["role"]) {
-  return role === "warehouse" || role === "driver";
+function getWarehouseLabel(item: Warehouse) {
+  const type = item.type === "pickup_point" ? "Pickup point" : "Warehouse";
+  return `${item.name} · ${type}`;
 }
 
 export default function CreateUserDialog() {
   const [open, setOpen] = React.useState(false);
+  const [name, setName] = React.useState("");
+  const [email, setEmail] = React.useState("");
+  const [password, setPassword] = React.useState("");
+  const [selectedRoleCodes, setSelectedRoleCodes] = React.useState<string[]>([]);
+  const [warehouseId, setWarehouseId] = React.useState<string | null>(null);
+  const [driverType, setDriverType] = React.useState<"local" | "linehaul" | null>(null);
+  const [customerEntityId, setCustomerEntityId] = React.useState("");
+  const [branchId, setBranchId] = React.useState("");
+  const [scopes, setScopes] = React.useState<ScopeRow[]>([]);
+
   const qc = useQueryClient();
-  const { t } = useI18n();
-  const formSchema = React.useMemo(() => createFormSchema(t), [t]);
-
-  const form = useForm<FormValues>({
-    resolver: zodResolver(formSchema),
-    defaultValues: {
-      name: "",
-      email: "",
-      password: "",
-      role: "customer",
-      phone: null,
-      warehouseId: null,
-      customerEntityId: null,
-    },
-    mode: "onTouched",
+  const rolesQuery = useQuery({
+    queryKey: ["iam-roles"],
+    queryFn: ({ signal }) => fetchRoles(signal),
+    enabled: open,
   });
-
-  const role = useWatch({ control: form.control, name: "role" });
-  const selectedWarehouseId = useWatch({ control: form.control, name: "warehouseId" });
-  const selectedCustomerEntityId = useWatch({ control: form.control, name: "customerEntityId" });
-
   const warehousesQuery = useQuery<Warehouse[]>({
-    queryKey: ["warehouses", "create-user"],
+    queryKey: ["warehouses", "rbac-user-dialog"],
     queryFn: fetchWarehouses,
-    enabled: open && roleCanHaveWarehouse(role),
+    enabled: open,
   });
+  const organizationsQuery = useQuery({
+    queryKey: ["organizations", "rbac-user-dialog"],
+    queryFn: ({ signal }) => fetchOrganizations({ isActive: true, page: 1, limit: 100 }, signal),
+    enabled: open,
+  });
+
+  const organizations = React.useMemo(
+    () => organizationsQuery.data?.data ?? [],
+    [organizationsQuery.data?.data],
+  );
+  const warehouses = React.useMemo(() => warehousesQuery.data ?? [], [warehousesQuery.data]);
+  const scopeOptions = React.useMemo(() => {
+    const byType = new Map<MembershipScopeType, Array<{ id: string; label: string }>>();
+    const set = (type: MembershipScopeType, options: Array<{ id: string; label: string }>) => {
+      byType.set(type, options);
+    };
+
+    set(
+      "company",
+      organizations.filter((item) => item.type === "company").map((item) => ({ id: item.id, label: getOrganizationLabel(item) })),
+    );
+    set(
+      "branch",
+      organizations.filter((item) => item.type === "branch").map((item) => ({ id: item.id, label: getOrganizationLabel(item) })),
+    );
+    set(
+      "agent",
+      organizations.filter((item) => item.type === "agent").map((item) => ({ id: item.id, label: getOrganizationLabel(item) })),
+    );
+    set(
+      "carrier",
+      organizations.filter((item) => item.type === "carrier").map((item) => ({ id: item.id, label: getOrganizationLabel(item) })),
+    );
+    set(
+      "client",
+      organizations.filter((item) => item.type === "client").map((item) => ({ id: item.id, label: getOrganizationLabel(item) })),
+    );
+    set(
+      "warehouse",
+      warehouses.filter((item) => item.type !== "pickup_point").map((item) => ({ id: item.id, label: getWarehouseLabel(item) })),
+    );
+    set(
+      "pickup_point",
+      warehouses.filter((item) => item.type === "pickup_point").map((item) => ({ id: item.id, label: getWarehouseLabel(item) })),
+    );
+
+    return byType;
+  }, [organizations, warehouses]);
 
   const mutation = useMutation({
     mutationFn: createUser,
-    onSuccess: async (data) => {
-      toast.success(t("createUserDialog.successTitle"), {
-        description: t("createUserDialog.successDescription", {
-          email: data?.user?.email ?? t("common.user"),
-        }),
-      });
-
-      await qc.invalidateQueries({ queryKey: ["users"] });
-      form.reset({
-        name: "",
-        email: "",
-        password: "",
-        role: "customer",
-        phone: null,
-        warehouseId: null,
-        customerEntityId: null,
-      });
+    onSuccess: async () => {
+      toast.success("User created");
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["users"] }),
+        qc.invalidateQueries({ queryKey: ["iam-roles"] }),
+      ]);
+      setName("");
+      setEmail("");
+      setPassword("");
+      setSelectedRoleCodes([]);
+      setWarehouseId(null);
+      setDriverType(null);
+      setCustomerEntityId("");
+      setBranchId("");
+      setScopes([]);
       setOpen(false);
     },
     onError: (error: unknown) => {
@@ -160,31 +158,44 @@ export default function CreateUserDialog() {
               }
             ).response?.data?.error ?? (error as { message?: string }).message
           : undefined;
-
-      toast.error(t("createUserDialog.errorTitle"), {
-        description: message ?? t("createUserDialog.unknownError"),
-      });
+      toast.error(message ?? "Failed to create user");
     },
   });
 
-  const onSubmit = (values: FormValues) => {
-    const payload: CreateUserAsManagerInput = {
-      name: values.name,
-      email: values.email,
-      password: values.password,
-      role: values.role,
-    };
+  const toggleRole = (code: string, checked: boolean) => {
+    setSelectedRoleCodes((prev) =>
+      checked ? Array.from(new Set([...prev, code])) : prev.filter((item) => item !== code),
+    );
+  };
 
-    if (values.role === "customer") {
-      payload.phone = values.phone ?? null;
-      payload.customerEntityId = values.customerEntityId ?? null;
+  const addScope = () => {
+    setScopes((prev) => [...prev, { scopeType: "company", scopeRefId: "" }]);
+  };
+
+  const submit = () => {
+    if (!name.trim() || !email.trim() || password.trim().length < 6) {
+      toast.error("Name, email, and password (min 6 chars) are required");
+      return;
     }
-
-    if (values.role === "warehouse" || values.role === "driver") {
-      payload.warehouseId = values.warehouseId ?? null;
+    if (selectedRoleCodes.length === 0) {
+      toast.error("Select at least one role");
+      return;
     }
+    const cleanScopes = scopes
+      .map((item) => ({ scopeType: item.scopeType, scopeRefId: item.scopeRefId.trim() }))
+      .filter((item) => item.scopeRefId.length > 0);
 
-    mutation.mutate(payload);
+    mutation.mutate({
+      name: name.trim(),
+      email: email.trim(),
+      password: password.trim(),
+      roleCodes: selectedRoleCodes,
+      warehouseId: warehouseId ?? null,
+      driverType,
+      branchId: branchId.trim() || null,
+      customerEntityId: customerEntityId.trim() || null,
+      scopes: cleanScopes.length > 0 ? cleanScopes : undefined,
+    });
   };
 
   return (
@@ -192,205 +203,205 @@ export default function CreateUserDialog() {
       <DialogTrigger asChild>
         <Button className="gap-2">
           <UserPlus className="h-4 w-4" />
-          {t("createUserDialog.trigger")}
+          Create User
         </Button>
       </DialogTrigger>
-
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-5xl">
         <DialogHeader>
-          <DialogTitle className="text-xl">{t("createUserDialog.title")}</DialogTitle>
-          <DialogDescription>{t("createUserDialog.description")}</DialogDescription>
+          <DialogTitle>Create User (RBAC)</DialogTitle>
+          <DialogDescription>
+            Invite a user, assign one or more roles, and optionally define explicit membership scopes.
+          </DialogDescription>
         </DialogHeader>
 
-        <form className="space-y-5" onSubmit={form.handleSubmit(onSubmit)} noValidate>
-          <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-5">
+          <div className="grid gap-3 sm:grid-cols-3">
             <div className="space-y-2">
-              <Label htmlFor="name">{t("createUserDialog.name")}</Label>
-              <Input id="name" placeholder={t("createUserDialog.namePlaceholder")} {...form.register("name")} />
-              {form.formState.errors.name ? (
-                <p className="text-sm text-destructive">{form.formState.errors.name.message}</p>
-              ) : null}
+              <Label>Name</Label>
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="John Doe" />
             </div>
-
             <div className="space-y-2">
-              <Label htmlFor="email">{t("createUserDialog.email")}</Label>
-              <Input
-                id="email"
-                placeholder={t("createUserDialog.emailPlaceholder")}
-                type="email"
-                {...form.register("email")}
-              />
-              {form.formState.errors.email ? (
-                <p className="text-sm text-destructive">{form.formState.errors.email.message}</p>
-              ) : null}
+              <Label>Email</Label>
+              <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="john@company.com" />
             </div>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label>{t("createUserDialog.role")}</Label>
-              <Select
-                value={role}
-                onValueChange={(value) => {
-                  form.setValue("role", value as AppRole, { shouldValidate: true });
-                  form.setValue("warehouseId", null);
-                  form.setValue("customerEntityId", null);
-                  form.setValue("phone", null);
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={t("createUserDialog.selectRole")} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="customer">{t("common.role.customer")}</SelectItem>
-                  <SelectItem value="driver">{t("common.role.driver")}</SelectItem>
-                  <SelectItem value="warehouse">{t("common.role.warehouse")}</SelectItem>
-                  <SelectItem value="manager">{t("common.role.manager")}</SelectItem>
-                </SelectContent>
-              </Select>
-              {form.formState.errors.role ? (
-                <p className="text-sm text-destructive">{form.formState.errors.role.message}</p>
-              ) : null}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="password">{t("createUserDialog.password")}</Label>
+              <Label>Password</Label>
               <div className="flex gap-2">
-                <Input
-                  id="password"
-                  type="text"
-                  placeholder={t("createUserDialog.passwordPlaceholder")}
-                  {...form.register("password")}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() =>
-                    form.setValue("password", generatePassword(), {
-                      shouldValidate: true,
-                    })
-                  }
-                >
-                  {t("createUserDialog.generate")}
+                <Input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Min 6 chars" />
+                <Button type="button" variant="outline" onClick={() => setPassword(generatePassword())}>
+                  Generate
                 </Button>
               </div>
-              {form.formState.errors.password ? (
-                <p className="text-sm text-destructive">{form.formState.errors.password.message}</p>
-              ) : null}
             </div>
           </div>
 
-          {role === "customer" ? (
-            <div className="space-y-4 rounded-2xl border border-border/60 bg-muted/20 p-4">
-              <div className="space-y-2">
-                <Label>{t("createUserDialog.phoneOptional")}</Label>
-                <Input placeholder={t("createUserDialog.phonePlaceholder")} {...form.register("phone")} />
-              </div>
-
-              <div className="space-y-2">
-                <Label>{t("createUserDialog.customerCompanyOptional")}</Label>
-                <CustomerEntityCombobox
-                  value={selectedCustomerEntityId}
-                  onChange={(id) => form.setValue("customerEntityId", id, { shouldDirty: true })}
-                  placeholder={t("createUserDialog.customerPlaceholder")}
-                />
-                <p className="text-xs text-muted-foreground">{t("createUserDialog.customerHint")}</p>
-              </div>
+          <div className="rounded-2xl border p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <Label>Role Bindings</Label>
+              <Badge variant="outline">{selectedRoleCodes.length} selected</Badge>
             </div>
-          ) : null}
+            <div className="grid gap-2 sm:grid-cols-2">
+              {(rolesQuery.data ?? []).map((role) => {
+                const checked = selectedRoleCodes.includes(role.code);
+                return (
+                  <label key={role.id} className="flex cursor-pointer items-center gap-3 rounded-xl border p-3">
+                    <Checkbox checked={checked} onCheckedChange={(state) => toggleRole(role.code, Boolean(state))} />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{role.name}</p>
+                      <p className="truncate text-xs text-muted-foreground">{role.code}</p>
+                    </div>
+                    {role.isSystem ? <Badge variant="secondary">System</Badge> : null}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
 
-          {role === "warehouse" || role === "driver" ? (
-            <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/20 p-4">
-              <div className="flex items-center gap-2">
-                <Building2 className="h-4 w-4 text-muted-foreground" />
-                <p className="text-sm font-medium">
-                  {t("createUserDialog.warehouseAssignment")} ({roleNeedsWarehouse(role) ? t("createUserDialog.required") : t("createUserDialog.optional")})
-                </p>
-              </div>
-
-              <p className="text-xs text-muted-foreground">
-                {roleNeedsWarehouse(role)
-                  ? t("createUserDialog.warehouseRequiredHint")
-                  : t("createUserDialog.warehouseOptionalHint")}
-              </p>
-
-              <Select
-                value={selectedWarehouseId ?? undefined}
-                onValueChange={(value) =>
-                  form.setValue("warehouseId", value || null, {
-                    shouldDirty: true,
-                    shouldValidate: true,
-                  })
-                }
-              >
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="space-y-2">
+              <Label>Branch (optional)</Label>
+              <Select value={branchId || "none"} onValueChange={(value) => setBranchId(value === "none" ? "" : value)}>
                 <SelectTrigger>
-                  <SelectValue placeholder={t("createUserDialog.selectWarehouse")} />
+                  <SelectValue placeholder="Select branch" />
                 </SelectTrigger>
                 <SelectContent>
-                  {(warehousesQuery.data ?? []).map((warehouse) => (
-                    <SelectItem key={warehouse.id} value={warehouse.id}>
-                      {warehouse.name}
-                      {warehouse.location ? ` - ${warehouse.location}` : ""}
+                  <SelectItem value="none">None</SelectItem>
+                  {(scopeOptions.get("branch") ?? []).map((item) => (
+                    <SelectItem key={item.id} value={item.id}>
+                      {item.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-
-              {warehousesQuery.isLoading ? (
-                <p className="text-xs text-muted-foreground">{t("createUserDialog.loadingWarehouses")}</p>
-              ) : null}
-              {warehousesQuery.isError ? (
-                <p className="text-xs text-destructive">{t("createUserDialog.warehousesLoadFailed")}</p>
-              ) : null}
-              {!warehousesQuery.isLoading && !warehousesQuery.isError && (warehousesQuery.data?.length ?? 0) === 0 ? (
-                <p className="text-xs text-muted-foreground">{t("createUserDialog.noWarehouses")}</p>
-              ) : null}
-
-              {!roleNeedsWarehouse(role) && selectedWarehouseId ? (
-                <button
-                  type="button"
-                  className="w-fit text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
-                  onClick={() =>
-                    form.setValue("warehouseId", null, {
-                      shouldDirty: true,
-                      shouldValidate: true,
-                    })
-                  }
-                >
-                  {t("createUserDialog.clearWarehouse")}
-                </button>
-              ) : null}
-
-              {form.formState.errors.warehouseId ? (
-                <p className="text-sm text-destructive">{form.formState.errors.warehouseId.message}</p>
-              ) : null}
             </div>
-          ) : null}
+            <div className="space-y-2">
+              <Label>Warehouse (optional)</Label>
+              <Select value={warehouseId ?? "none"} onValueChange={(value) => setWarehouseId(value === "none" ? null : value)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select warehouse" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {warehouses.map((item) => (
+                    <SelectItem key={item.id} value={item.id}>
+                      {getWarehouseLabel(item)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Driver Type (optional)</Label>
+              <Select value={driverType ?? "none"} onValueChange={(value) => setDriverType(value === "none" ? null : (value as "local" | "linehaul"))}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  <SelectItem value="local">local</SelectItem>
+                  <SelectItem value="linehaul">linehaul</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Customer entity (optional)</Label>
+              <CustomerEntityCombobox
+                value={customerEntityId || null}
+                onChange={(id) => setCustomerEntityId(id ?? "")}
+                buttonClassName="w-full justify-between"
+                placeholder="Select customer"
+              />
+            </div>
+          </div>
 
-          <div className="flex items-center justify-end gap-2 pt-2">
+          <div className="rounded-2xl border p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <Label>Membership Scopes (optional)</Label>
+              <Button type="button" variant="outline" size="sm" className="gap-2" onClick={addScope}>
+                <Plus className="h-3.5 w-3.5" />
+                Add scope
+              </Button>
+            </div>
+            <div className="space-y-2">
+              {scopes.length === 0 ? (
+                <p className="text-sm text-muted-foreground">If empty, backend applies default company scope.</p>
+              ) : (
+                scopes.map((row, index) => (
+                  <div key={`${index}-${row.scopeType}`} className="grid gap-2 sm:grid-cols-[180px_1fr_auto]">
+                    <Select
+                      value={row.scopeType}
+                      onValueChange={(value) =>
+                        setScopes((prev) =>
+                          prev.map((item, itemIndex) =>
+                            itemIndex === index
+                              ? { ...item, scopeType: value as MembershipScopeType, scopeRefId: "" }
+                              : item,
+                          ),
+                        )
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {SCOPE_TYPES.map((type) => (
+                          <SelectItem key={type} value={type}>
+                            {type}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Select
+                      value={row.scopeRefId || "none"}
+                      onValueChange={(value) =>
+                        setScopes((prev) =>
+                          prev.map((item, itemIndex) =>
+                            itemIndex === index ? { ...item, scopeRefId: value === "none" ? "" : value } : item,
+                          ),
+                        )
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select scope target" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Select {row.scopeType}</SelectItem>
+                        {(scopeOptions.get(row.scopeType) ?? []).map((item) => (
+                          <SelectItem key={item.id} value={item.id}>
+                            {item.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => setScopes((prev) => prev.filter((_, itemIndex) => itemIndex !== index))}
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={mutation.isPending}>
-              {t("createUserDialog.cancel")}
+              Cancel
             </Button>
-
-            <Button
-              type="submit"
-              disabled={
-                mutation.isPending ||
-                (roleNeedsWarehouse(role) &&
-                  ((!warehousesQuery.isLoading && (warehousesQuery.data?.length ?? 0) === 0) || !selectedWarehouseId))
-              }
-            >
+            <Button type="button" onClick={submit} disabled={mutation.isPending}>
               {mutation.isPending ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  {t("createUserDialog.creating")}
+                  Creating
                 </>
               ) : (
-                t("createUserDialog.createUser")
+                "Create User"
               )}
             </Button>
           </div>
-        </form>
+        </div>
       </DialogContent>
     </Dialog>
   );

@@ -11,6 +11,7 @@ export type UserSettings = {
 };
 
 const STORAGE_KEY = "cp.user-settings.v1";
+export const USER_SETTINGS_CHANGED_EVENT = "cp:user-settings-changed";
 
 export const DEFAULT_USER_SETTINGS: UserSettings = {
   uiDensity: "comfortable",
@@ -37,7 +38,9 @@ export function loadUserSettings(): UserSettings {
 
     return {
       uiDensity:
-        parsed.uiDensity === "compact" ? "compact" : DEFAULT_USER_SETTINGS.uiDensity,
+        parsed.uiDensity === "compact"
+          ? "compact"
+          : DEFAULT_USER_SETTINGS.uiDensity,
       autoRefreshSec:
         parsed.autoRefreshSec === "off" ||
         parsed.autoRefreshSec === "15" ||
@@ -74,6 +77,7 @@ export function loadUserSettings(): UserSettings {
 export function saveUserSettings(settings: UserSettings) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+  window.dispatchEvent(new Event(USER_SETTINGS_CHANGED_EVENT));
 }
 
 export function roleSettingsDescription(role: Role) {

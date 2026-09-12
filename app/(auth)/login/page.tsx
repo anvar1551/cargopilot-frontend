@@ -6,7 +6,7 @@ import { api } from "@/lib/api";
 import {
   hasActiveSession,
   saveAuth,
-  roleToDashboardPath,
+  dashboardPathForUser,
   AuthUser,
   getUser,
 } from "@/lib/auth";
@@ -22,7 +22,7 @@ type LoginResponse = {
   token: string;
   refreshToken?: string;
   accessTokenExpiresInSec?: number;
-  user: AuthUser & { password?: string };
+  user: (AuthUser & { password?: string }) | Record<string, unknown>;
 };
 
 function extractErrorMessage(err: unknown) {
@@ -52,7 +52,7 @@ export default function LoginPage() {
     const user = getUser();
     if (!user) return;
     const next = searchParams.get("next");
-    router.replace(next || roleToDashboardPath(user.role));
+    router.replace(next || dashboardPathForUser(user));
   }, [router, searchParams]);
 
   async function onSubmit(e: React.FormEvent) {
@@ -67,21 +67,15 @@ export default function LoginPage() {
 
       const { token, refreshToken, user } = res.data;
 
-      saveAuth(token, {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        warehouseId: user.warehouseId ?? null,
-        customerEntityId: user.customerEntityId ?? null,
-      }, {
+      saveAuth(token, user, {
         refreshToken: refreshToken ?? null,
       });
 
       toast.success("Logged in successfully");
 
       const next = searchParams.get("next");
-      router.replace(next || roleToDashboardPath(user.role));
+      const storedUser = getUser();
+      router.replace(next || dashboardPathForUser(storedUser));
     } catch (err: unknown) {
       toast.error(extractErrorMessage(err));
     } finally {

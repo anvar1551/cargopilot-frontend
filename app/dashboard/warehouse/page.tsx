@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   AlertTriangle,
@@ -19,7 +19,10 @@ import {
   Wallet,
 } from "lucide-react";
 
-import DispatchCenter from "@/components/manager/dispatch/DispatchCenter";
+import DispatchCenter from "@/components/operations/dispatch/DispatchCenter";
+import OrdersTable, {
+  type OrderTableRow,
+} from "@/components/orders/OrderTable";
 import PageShell from "@/components/layout/PageShell";
 import { useI18n } from "@/components/i18n/I18nProvider";
 import { Badge } from "@/components/ui/badge";
@@ -27,7 +30,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { getUser, type AuthUser } from "@/lib/auth";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { getPrimaryWarehouseId, getUser, type AuthUser } from "@/lib/auth";
+import { getWarehouseOrderCapabilities } from "@/lib/orders/permissions";
 import {
   driverManifestCopy,
   EMPTY_DRIVER_MANIFEST_ERROR,
@@ -49,10 +54,16 @@ import {
   type CashQueueSummary,
   type OrdersResponse,
 } from "@/lib/orders";
-import { fetchDrivers, type DriverLite } from "@/lib/manager";
+import {
+  fetchDrivers,
+  subscribeOperationsAnalyticsStream,
+  type DriverLite,
+} from "@/lib/operations";
 import { playScanSound, primeScanSound } from "@/lib/scan-sound";
 import { loadUserSettings } from "@/lib/user-settings";
 import { fetchWarehouses, normalizeWarehouseType } from "@/lib/warehouses";
+import { usePageVisibility } from "@/lib/usePageVisibility";
+import { useRealtimeFallbackInterval } from "@/lib/use-realtime-fallback";
 import {
   Select,
   SelectContent,
@@ -94,9 +105,11 @@ const copy = {
     floorControl: "Floor control",
     floorControlHint:
       "Scan order ID, order number, or parcel barcode directly into the batch cart on the board. Multi-piece warnings stay active there.",
-    searchPlaceholder: "Search by order number, parcel code, customer, or address...",
+    searchPlaceholder:
+      "Search by order number, parcel code, customer, or address...",
     quickScan: "Quick scan dock",
-    quickScanHint: "Cursor stays here. Press Enter to push directly into the warehouse batch.",
+    quickScanHint:
+      "Cursor stays here. Press Enter to push directly into the warehouse batch.",
     quickScanPlaceholder: "Scan order ID / order number / parcel code...",
     sendToBatch: "Send to batch",
     lastScan: "Last scan",
@@ -105,12 +118,14 @@ const copy = {
     lastScanLimit: "{count} skipped by batch limit",
     lastScanEmpty: "No new orders were added from this scan.",
     scanReady: "Scan-ready intake",
-    scanReadyHint: "Use one board for receiving, sorting, and outbound dispatch.",
+    scanReadyHint:
+      "Use one board for receiving, sorting, and outbound dispatch.",
     refresh: "Refresh",
     queueHealth: "Queue health",
     queueHealthHint: "Physical warehouse flow, not just raw statuses.",
     quickFilters: "Quick filters",
-    quickFiltersHint: "Shrink the loaded queue into the warehouse lane you are working right now.",
+    quickFiltersHint:
+      "Shrink the loaded queue into the warehouse lane you are working right now.",
     filterAll: "All",
     filterNeedsIntake: "Needs intake",
     filterOnFloor: "On floor",
@@ -152,7 +167,8 @@ const copy = {
     unnumbered: "Unnumbered order",
     settings: "Settings",
     manifestTitle: "Driver manifest",
-    manifestHint: "Reprint the current assigned queue for a warehouse driver as a paper fallback.",
+    manifestHint:
+      "Reprint the current assigned queue for a warehouse driver as a paper fallback.",
     manifestDriver: "Driver",
     manifestChooseDriver: "Choose driver",
     manifestNoDrivers: "No drivers are attached to this warehouse yet.",
@@ -196,7 +212,8 @@ const copy = {
     ppHandoverCashPending:
       "COD/service charge is still expected. Collect due amounts before handover.",
     cashQueueTitle: "Cash action queue",
-    cashQueueHint: "Expected and held cash items that need operational follow-up.",
+    cashQueueHint:
+      "Expected and held cash items that need operational follow-up.",
     cashQueueStatus: "Status",
     cashQueueKind: "Kind",
     cashQueueFrom: "From",
@@ -226,50 +243,67 @@ const copy = {
     cashQueueNoExpectedItems: "Select at least one expected cash item.",
   },
   ru: {
-    badge: "\u0421\u043a\u043b\u0430\u0434\u0441\u043a\u0430\u044f \u0437\u043e\u043d\u0430",
-    title: "\u0421\u043a\u043b\u0430\u0434\u0441\u043a\u0438\u0435 \u043e\u043f\u0435\u0440\u0430\u0446\u0438\u0438",
+    badge:
+      "\u0421\u043a\u043b\u0430\u0434\u0441\u043a\u0430\u044f \u0437\u043e\u043d\u0430",
+    title:
+      "\u0421\u043a\u043b\u0430\u0434\u0441\u043a\u0438\u0435 \u043e\u043f\u0435\u0440\u0430\u0446\u0438\u0438",
     subtitle:
       "\u041f\u0440\u0438\u043d\u0438\u043c\u0430\u0439\u0442\u0435 \u0432\u0445\u043e\u0434\u044f\u0449\u0438\u0439 \u0433\u0440\u0443\u0437, \u043a\u043e\u043d\u0442\u0440\u043e\u043b\u0438\u0440\u0443\u0439\u0442\u0435 \u043e\u0447\u0435\u0440\u0435\u0434\u0438 \u043d\u0430 \u043f\u043e\u043b\u0443, \u0441\u043a\u0430\u043d\u0438\u0440\u0443\u0439\u0442\u0435 \u043f\u0430\u043a\u0435\u0442\u044b \u0438 \u0437\u0430\u043f\u0443\u0441\u043a\u0430\u0439\u0442\u0435 \u0438\u0441\u0445\u043e\u0434\u044f\u0449\u0435\u0435 \u0434\u0432\u0438\u0436\u0435\u043d\u0438\u0435 \u0438\u0437 \u043e\u0434\u043d\u043e\u0439 \u043e\u043f\u0435\u0440\u0430\u0446\u0438\u043e\u043d\u043d\u043e\u0439 \u0434\u043e\u0441\u043a\u0438.",
-    attachedWarehouse: "\u041f\u0440\u0438\u0432\u044f\u0437\u0430\u043d\u043d\u044b\u0439 \u0441\u043a\u043b\u0430\u0434",
-    unlinkedWarehouse: "\u0421\u043a\u043b\u0430\u0434 \u043d\u0435 \u043f\u0440\u0438\u0432\u044f\u0437\u0430\u043d",
-    floorControl: "\u041a\u043e\u043d\u0442\u0440\u043e\u043b\u044c \u043f\u043e\u043b\u0430",
+    attachedWarehouse:
+      "\u041f\u0440\u0438\u0432\u044f\u0437\u0430\u043d\u043d\u044b\u0439 \u0441\u043a\u043b\u0430\u0434",
+    unlinkedWarehouse:
+      "\u0421\u043a\u043b\u0430\u0434 \u043d\u0435 \u043f\u0440\u0438\u0432\u044f\u0437\u0430\u043d",
+    floorControl:
+      "\u041a\u043e\u043d\u0442\u0440\u043e\u043b\u044c \u043f\u043e\u043b\u0430",
     floorControlHint:
       "\u0421\u043a\u0430\u043d\u0438\u0440\u0443\u0439\u0442\u0435 ID \u0437\u0430\u043a\u0430\u0437\u0430, \u043d\u043e\u043c\u0435\u0440 \u0437\u0430\u043a\u0430\u0437\u0430 \u0438\u043b\u0438 \u0448\u0442\u0440\u0438\u0445\u043a\u043e\u0434 \u043c\u0435\u0441\u0442\u0430 \u043f\u0440\u044f\u043c\u043e \u0432 batch cart \u043d\u0430 \u0434\u043e\u0441\u043a\u0435. \u041f\u0440\u0435\u0434\u0443\u043f\u0440\u0435\u0436\u0434\u0435\u043d\u0438\u044f \u043f\u043e multi-piece \u043e\u0441\u0442\u0430\u044e\u0442\u0441\u044f \u0442\u0430\u043c \u0436\u0435.",
     searchPlaceholder:
       "\u041f\u043e\u0438\u0441\u043a \u043f\u043e \u043d\u043e\u043c\u0435\u0440\u0443 \u0437\u0430\u043a\u0430\u0437\u0430, \u043a\u043e\u0434\u0443 \u043c\u0435\u0441\u0442\u0430, \u043a\u043b\u0438\u0435\u043d\u0442\u0443 \u0438\u043b\u0438 \u0430\u0434\u0440\u0435\u0441\u0443...",
-    quickScan: "\u0411\u044b\u0441\u0442\u0440\u044b\u0439 \u0441\u043a\u0430\u043d",
+    quickScan:
+      "\u0411\u044b\u0441\u0442\u0440\u044b\u0439 \u0441\u043a\u0430\u043d",
     quickScanHint:
       "\u041a\u0443\u0440\u0441\u043e\u0440 \u043e\u0441\u0442\u0430\u0435\u0442\u0441\u044f \u0437\u0434\u0435\u0441\u044c. \u041d\u0430\u0436\u043c\u0438\u0442\u0435 Enter, \u0447\u0442\u043e\u0431\u044b \u0441\u0440\u0430\u0437\u0443 \u043e\u0442\u043f\u0440\u0430\u0432\u0438\u0442\u044c \u0432 warehouse batch.",
     quickScanPlaceholder:
       "\u0421\u043a\u0430\u043d ID \u0437\u0430\u043a\u0430\u0437\u0430 / \u043d\u043e\u043c\u0435\u0440 \u0437\u0430\u043a\u0430\u0437\u0430 / \u043a\u043e\u0434 \u043c\u0435\u0441\u0442\u0430...",
     sendToBatch: "\u0412 batch",
-    lastScan: "\u041f\u043e\u0441\u043b\u0435\u0434\u043d\u0438\u0439 \u0441\u043a\u0430\u043d",
-    lastScanAdded: "\u0414\u043e\u0431\u0430\u0432\u043b\u0435\u043d\u043e \u0432 batch",
+    lastScan:
+      "\u041f\u043e\u0441\u043b\u0435\u0434\u043d\u0438\u0439 \u0441\u043a\u0430\u043d",
+    lastScanAdded:
+      "\u0414\u043e\u0431\u0430\u0432\u043b\u0435\u043d\u043e \u0432 batch",
     lastScanInvalid: "\u041d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u043e",
-    lastScanLimit: "{count} \u043f\u0440\u043e\u043f\u0443\u0449\u0435\u043d\u043e \u0438\u0437-\u0437\u0430 \u043b\u0438\u043c\u0438\u0442\u0430 batch",
-    lastScanEmpty: "\u042d\u0442\u043e\u0442 \u0441\u043a\u0430\u043d \u043d\u0435 \u0434\u043e\u0431\u0430\u0432\u0438\u043b \u043d\u043e\u0432\u044b\u0445 \u0437\u0430\u043a\u0430\u0437\u043e\u0432.",
-    scanReady: "\u0413\u043e\u0442\u043e\u0432\u043e \u043a \u0441\u043a\u0430\u043d\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u044e",
+    lastScanLimit:
+      "{count} \u043f\u0440\u043e\u043f\u0443\u0449\u0435\u043d\u043e \u0438\u0437-\u0437\u0430 \u043b\u0438\u043c\u0438\u0442\u0430 batch",
+    lastScanEmpty:
+      "\u042d\u0442\u043e\u0442 \u0441\u043a\u0430\u043d \u043d\u0435 \u0434\u043e\u0431\u0430\u0432\u0438\u043b \u043d\u043e\u0432\u044b\u0445 \u0437\u0430\u043a\u0430\u0437\u043e\u0432.",
+    scanReady:
+      "\u0413\u043e\u0442\u043e\u0432\u043e \u043a \u0441\u043a\u0430\u043d\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u044e",
     scanReadyHint:
       "\u041e\u0434\u043d\u0430 \u0434\u043e\u0441\u043a\u0430 \u0434\u043b\u044f \u043f\u0440\u0438\u0435\u043c\u043a\u0438, \u0441\u043e\u0440\u0442\u0438\u0440\u043e\u0432\u043a\u0438 \u0438 \u0438\u0441\u0445\u043e\u0434\u044f\u0449\u0435\u0439 \u043e\u0442\u0433\u0440\u0443\u0437\u043a\u0438.",
     refresh: "\u041e\u0431\u043d\u043e\u0432\u0438\u0442\u044c",
-    queueHealth: "\u0421\u043e\u0441\u0442\u043e\u044f\u043d\u0438\u0435 \u043e\u0447\u0435\u0440\u0435\u0434\u0438",
+    queueHealth:
+      "\u0421\u043e\u0441\u0442\u043e\u044f\u043d\u0438\u0435 \u043e\u0447\u0435\u0440\u0435\u0434\u0438",
     queueHealthHint:
       "\u0424\u0438\u0437\u0438\u0447\u0435\u0441\u043a\u0438\u0439 \u043f\u043e\u0442\u043e\u043a \u0441\u043a\u043b\u0430\u0434\u0430, \u0430 \u043d\u0435 \u0442\u043e\u043b\u044c\u043a\u043e \u0441\u044b\u0440\u044b\u0435 \u0441\u0442\u0430\u0442\u0443\u0441\u044b.",
-    quickFilters: "\u0411\u044b\u0441\u0442\u0440\u044b\u0435 \u0444\u0438\u043b\u044c\u0442\u0440\u044b",
+    quickFilters:
+      "\u0411\u044b\u0441\u0442\u0440\u044b\u0435 \u0444\u0438\u043b\u044c\u0442\u0440\u044b",
     quickFiltersHint:
       "\u0421\u0443\u0436\u0430\u0439\u0442\u0435 \u0442\u0435\u043a\u0443\u0449\u0438\u0439 loaded queue \u0434\u043e \u0442\u043e\u0439 warehouse-lane, \u0441 \u043a\u043e\u0442\u043e\u0440\u043e\u0439 \u0440\u0430\u0431\u043e\u0442\u0430\u0435\u0442\u0435 \u0441\u0435\u0439\u0447\u0430\u0441.",
     filterAll: "\u0412\u0441\u0435",
-    filterNeedsIntake: "\u041e\u0436\u0438\u0434\u0430\u044e\u0442 \u043f\u0440\u0438\u0435\u043c\u043a\u0438",
+    filterNeedsIntake:
+      "\u041e\u0436\u0438\u0434\u0430\u044e\u0442 \u043f\u0440\u0438\u0435\u043c\u043a\u0438",
     filterOnFloor: "\u041d\u0430 \u043f\u043e\u043b\u0443",
     filterOutbound: "\u0418\u0441\u0445\u043e\u0434",
-    filterExceptions: "\u0418\u0441\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u044f",
-    intakeQueue: "\u041e\u0436\u0438\u0434\u0430\u044e\u0442 \u043f\u0440\u0438\u0435\u043c\u043a\u0438",
+    filterExceptions:
+      "\u0418\u0441\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u044f",
+    intakeQueue:
+      "\u041e\u0436\u0438\u0434\u0430\u044e\u0442 \u043f\u0440\u0438\u0435\u043c\u043a\u0438",
     intakeQueueHint:
       "\u0417\u0430\u0431\u0440\u0430\u043d\u044b \u0443 \u043a\u043b\u0438\u0435\u043d\u0442\u0430 \u0438 \u0436\u0434\u0443\u0442 \u043f\u0440\u0438\u0435\u043c\u043a\u0438 \u043d\u0430 \u0441\u043a\u043b\u0430\u0434\u0435",
     onFloor: "\u041d\u0430 \u043f\u043e\u043b\u0443",
     onFloorHint:
       "\u0423\u0436\u0435 \u043f\u0440\u0438\u043d\u044f\u0442\u044b \u0438 \u0441\u043e\u0440\u0442\u0438\u0440\u0443\u044e\u0442\u0441\u044f",
-    outboundWave: "\u0418\u0441\u0445\u043e\u0434\u044f\u0449\u0430\u044f \u0432\u043e\u043b\u043d\u0430",
+    outboundWave:
+      "\u0418\u0441\u0445\u043e\u0434\u044f\u0449\u0430\u044f \u0432\u043e\u043b\u043d\u0430",
     outboundWaveHint:
       "\u0413\u043e\u0442\u043e\u0432\u044b \u043a \u0442\u0440\u0430\u043d\u0437\u0438\u0442\u0443 \u0438\u043b\u0438 \u043f\u043e\u0441\u043b\u0435\u0434\u043d\u0435\u0439 \u043c\u0438\u043b\u0435",
     exceptions: "\u0418\u0441\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u044f",
@@ -283,39 +317,56 @@ const copy = {
     inboundLane: "\u041f\u0440\u0438\u0435\u043c\u043a\u0430",
     inboundLaneHint:
       "\u041f\u0435\u0440\u0432\u043e\u0435 \u043a\u0430\u0441\u0430\u043d\u0438\u0435 \u0441\u043a\u043b\u0430\u0434\u0430 \u043f\u043e\u0441\u043b\u0435 pickup.",
-    sortLane: "\u0421\u043e\u0440\u0442\u0438\u0440\u043e\u0432\u043e\u0447\u043d\u044b\u0439 \u043f\u043e\u043b",
+    sortLane:
+      "\u0421\u043e\u0440\u0442\u0438\u0440\u043e\u0432\u043e\u0447\u043d\u044b\u0439 \u043f\u043e\u043b",
     sortLaneHint:
       "\u041e\u0442\u043f\u0440\u0430\u0432\u043a\u0438, \u0444\u0438\u0437\u0438\u0447\u0435\u0441\u043a\u0438 \u043d\u0430\u0445\u043e\u0434\u044f\u0449\u0438\u0435\u0441\u044f \u0432 \u0441\u043a\u043b\u0430\u0434\u0435.",
-    outboundLane: "\u0418\u0441\u0445\u043e\u0434\u044f\u0449\u0430\u044f \u043f\u0435\u0440\u0435\u0434\u0430\u0447\u0430",
+    outboundLane:
+      "\u0418\u0441\u0445\u043e\u0434\u044f\u0449\u0430\u044f \u043f\u0435\u0440\u0435\u0434\u0430\u0447\u0430",
     outboundLaneHint:
       "\u041f\u043e\u0434\u0433\u043e\u0442\u043e\u0432\u043b\u0435\u043d\u044b \u043a linehaul \u0438\u043b\u0438 \u043f\u043e\u0441\u043b\u0435\u0434\u043d\u0435\u0439 \u043c\u0438\u043b\u0435.",
-    issueLane: "\u0417\u043e\u043d\u0430 \u0432\u043d\u0438\u043c\u0430\u043d\u0438\u044f",
+    issueLane:
+      "\u0417\u043e\u043d\u0430 \u0432\u043d\u0438\u043c\u0430\u043d\u0438\u044f",
     issueLaneHint:
       "\u0420\u0435\u0448\u0438\u0442\u0435 \u0434\u043e \u0434\u0430\u043b\u044c\u043d\u0435\u0439\u0448\u0435\u0439 \u043e\u0442\u043f\u0440\u0430\u0432\u043a\u0438.",
     countOrders: "{count} \u0437\u0430\u043a\u0430\u0437\u043e\u0432",
-    boardTitle: "\u0421\u043a\u043b\u0430\u0434\u0441\u043a\u0430\u044f \u0434\u043e\u0441\u043a\u0430",
+    boardTitle:
+      "\u0421\u043a\u043b\u0430\u0434\u0441\u043a\u0430\u044f \u0434\u043e\u0441\u043a\u0430",
     boardSubtitle:
       "\u0418\u0449\u0438\u0442\u0435, \u0441\u043a\u0430\u043d\u0438\u0440\u0443\u0439\u0442\u0435, \u0441\u043e\u0431\u0438\u0440\u0430\u0439\u0442\u0435 batch \u0438 \u043f\u0440\u0438\u043c\u0435\u043d\u044f\u0439\u0442\u0435 warehouse-safe \u0441\u0442\u0430\u0442\u0443\u0441\u044b \u0438\u0437 \u043e\u0434\u043d\u043e\u0433\u043e \u043c\u0435\u0441\u0442\u0430.",
     liveView: "\u0416\u0438\u0432\u043e\u0439 \u0432\u0438\u0434",
-    searchMode: "\u0420\u0435\u0436\u0438\u043c \u043f\u043e\u0438\u0441\u043a\u0430",
-    limitedView: "\u041e\u043f\u0435\u0440\u0430\u0446\u0438\u043e\u043d\u043d\u044b\u0439 \u0441\u0440\u0435\u0437",
-    syncedAt: "\u0421\u0438\u043d\u0445\u0440\u043e\u043d\u0438\u0437\u0438\u0440\u043e\u0432\u0430\u043d\u043e {time}",
-    notSynced: "\u0415\u0449\u0435 \u043d\u0435 \u0441\u0438\u043d\u0445\u0440\u043e\u043d\u0438\u0437\u0438\u0440\u043e\u0432\u0430\u043d\u043e",
+    searchMode:
+      "\u0420\u0435\u0436\u0438\u043c \u043f\u043e\u0438\u0441\u043a\u0430",
+    limitedView:
+      "\u041e\u043f\u0435\u0440\u0430\u0446\u0438\u043e\u043d\u043d\u044b\u0439 \u0441\u0440\u0435\u0437",
+    syncedAt:
+      "\u0421\u0438\u043d\u0445\u0440\u043e\u043d\u0438\u0437\u0438\u0440\u043e\u0432\u0430\u043d\u043e {time}",
+    notSynced:
+      "\u0415\u0449\u0435 \u043d\u0435 \u0441\u0438\u043d\u0445\u0440\u043e\u043d\u0438\u0437\u0438\u0440\u043e\u0432\u0430\u043d\u043e",
     page: "\u0421\u0442\u0440\u0430\u043d\u0438\u0446\u0430 {page}",
     loaded: "\u0417\u0430\u0433\u0440\u0443\u0436\u0435\u043d\u043e {count}",
-    noOrders: "\u0412 \u044d\u0442\u043e\u043c \u0441\u0440\u0435\u0437\u0435 \u043d\u0435\u0442 \u0437\u0430\u043a\u0430\u0437\u043e\u0432.",
-    unnumbered: "\u0417\u0430\u043a\u0430\u0437 \u0431\u0435\u0437 \u043d\u043e\u043c\u0435\u0440\u0430",
+    noOrders:
+      "\u0412 \u044d\u0442\u043e\u043c \u0441\u0440\u0435\u0437\u0435 \u043d\u0435\u0442 \u0437\u0430\u043a\u0430\u0437\u043e\u0432.",
+    unnumbered:
+      "\u0417\u0430\u043a\u0430\u0437 \u0431\u0435\u0437 \u043d\u043e\u043c\u0435\u0440\u0430",
     settings: "\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438",
-    manifestTitle: "\u041c\u0430\u043d\u0438\u0444\u0435\u0441\u0442 \u0432\u043e\u0434\u0438\u0442\u0435\u043b\u044f",
+    manifestTitle:
+      "\u041c\u0430\u043d\u0438\u0444\u0435\u0441\u0442 \u0432\u043e\u0434\u0438\u0442\u0435\u043b\u044f",
     manifestHint:
       "\u041f\u0435\u0440\u0435\u043f\u0435\u0447\u0430\u0442\u0430\u0439\u0442\u0435 \u0442\u0435\u043a\u0443\u0449\u0443\u044e \u043d\u0430\u0437\u043d\u0430\u0447\u0435\u043d\u043d\u0443\u044e \u043e\u0447\u0435\u0440\u0435\u0434\u044c \u043a\u0443\u0440\u044c\u0435\u0440\u0430 \u043a\u0430\u043a \u0431\u0443\u043c\u0430\u0436\u043d\u044b\u0439 \u0440\u0435\u0437\u0435\u0440\u0432.",
     manifestDriver: "\u0412\u043e\u0434\u0438\u0442\u0435\u043b\u044c",
-    manifestChooseDriver: "\u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u0432\u043e\u0434\u0438\u0442\u0435\u043b\u044f",
-    manifestNoDrivers: "\u041a \u044d\u0442\u043e\u043c\u0443 \u0441\u043a\u043b\u0430\u0434\u0443 \u0435\u0449\u0435 \u043d\u0435 \u043f\u0440\u0438\u0432\u044f\u0437\u0430\u043d\u044b \u0432\u043e\u0434\u0438\u0442\u0435\u043b\u0438.",
-    manifestPrint: "\u041f\u0435\u0447\u0430\u0442\u044c \u043c\u0430\u043d\u0438\u0444\u0435\u0441\u0442\u0430",
-    manifestPrinting: "\u041f\u043e\u0434\u0433\u043e\u0442\u043e\u0432\u043a\u0430...",
-    manifestEmpty: "\u0423 \u044d\u0442\u043e\u0433\u043e \u0432\u043e\u0434\u0438\u0442\u0435\u043b\u044f \u043d\u0435\u0442 \u0430\u043a\u0442\u0438\u0432\u043d\u044b\u0445 \u043d\u0430\u0437\u043d\u0430\u0447\u0435\u043d\u043d\u044b\u0445 \u0437\u0430\u043a\u0430\u0437\u043e\u0432.",
-    manifestFailed: "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0440\u0430\u0441\u043f\u0435\u0447\u0430\u0442\u0430\u0442\u044c \u043c\u0430\u043d\u0438\u0444\u0435\u0441\u0442 \u0432\u043e\u0434\u0438\u0442\u0435\u043b\u044f.",
+    manifestChooseDriver:
+      "\u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u0432\u043e\u0434\u0438\u0442\u0435\u043b\u044f",
+    manifestNoDrivers:
+      "\u041a \u044d\u0442\u043e\u043c\u0443 \u0441\u043a\u043b\u0430\u0434\u0443 \u0435\u0449\u0435 \u043d\u0435 \u043f\u0440\u0438\u0432\u044f\u0437\u0430\u043d\u044b \u0432\u043e\u0434\u0438\u0442\u0435\u043b\u0438.",
+    manifestPrint:
+      "\u041f\u0435\u0447\u0430\u0442\u044c \u043c\u0430\u043d\u0438\u0444\u0435\u0441\u0442\u0430",
+    manifestPrinting:
+      "\u041f\u043e\u0434\u0433\u043e\u0442\u043e\u0432\u043a\u0430...",
+    manifestEmpty:
+      "\u0423 \u044d\u0442\u043e\u0433\u043e \u0432\u043e\u0434\u0438\u0442\u0435\u043b\u044f \u043d\u0435\u0442 \u0430\u043a\u0442\u0438\u0432\u043d\u044b\u0445 \u043d\u0430\u0437\u043d\u0430\u0447\u0435\u043d\u043d\u044b\u0445 \u0437\u0430\u043a\u0430\u0437\u043e\u0432.",
+    manifestFailed:
+      "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0440\u0430\u0441\u043f\u0435\u0447\u0430\u0442\u0430\u0442\u044c \u043c\u0430\u043d\u0438\u0444\u0435\u0441\u0442 \u0432\u043e\u0434\u0438\u0442\u0435\u043b\u044f.",
     ppIntakeQueue: "Прибыло в ПВЗ",
     ppIntakeQueueHint: "Готово к приёмке на стойке и уведомлению клиента.",
     ppOnFloor: "Готово к выдаче клиенту",
@@ -378,8 +429,10 @@ const copy = {
     cashQueueCollectFailed: "Не удалось собрать деньги пачкой.",
     cashQueueHandoffFailed: "Не удалось передать деньги пачкой.",
     cashQueuePickDriverError: "Выберите водителя для передачи.",
-    cashQueueNoHeldItems: "Выберите хотя бы одну позицию со статусом 'на руках'.",
-    cashQueueNoExpectedItems: "Выберите хотя бы одну позицию со статусом 'ожидается'.",
+    cashQueueNoHeldItems:
+      "Выберите хотя бы одну позицию со статусом 'на руках'.",
+    cashQueueNoExpectedItems:
+      "Выберите хотя бы одну позицию со статусом 'ожидается'.",
   },
   uz: {
     badge: "Ombor maydoni",
@@ -396,7 +449,8 @@ const copy = {
     quickScan: "Tez skan dock",
     quickScanHint:
       "Kursor shu yerda qoladi. Enter bosib kodni to'g'ridan-to'g'ri warehouse batch ga yuboring.",
-    quickScanPlaceholder: "Order ID / order number / parcel code ni skan qiling...",
+    quickScanPlaceholder:
+      "Order ID / order number / parcel code ni skan qiling...",
     sendToBatch: "Batchga yuborish",
     lastScan: "Oxirgi skan",
     lastScanAdded: "Batchga qo'shildi",
@@ -404,7 +458,8 @@ const copy = {
     lastScanLimit: "{count} tasi batch limit sabab o'tkazib yuborildi",
     lastScanEmpty: "Bu skandan yangi buyurtma qo'shilmadi.",
     scanReady: "Skan uchun tayyor",
-    scanReadyHint: "Qabul qilish, saralash va outbound dispatch uchun bitta board.",
+    scanReadyHint:
+      "Qabul qilish, saralash va outbound dispatch uchun bitta board.",
     refresh: "Yangilash",
     queueHealth: "Navbat holati",
     queueHealthHint: "Faqat status emas, fizik ombor oqimi.",
@@ -466,7 +521,8 @@ const copy = {
     ppOnFloor: "Mijozga topshirishga tayyor",
     ppOnFloorHint: "Out for delivery buyurtmalarini counterdan topshirasiz.",
     ppOutboundWave: "Filiallar orasidagi harakat",
-    ppOutboundWaveHint: "Hub va pickup point orasida harakatlanayotgan jo'natmalar.",
+    ppOutboundWaveHint:
+      "Hub va pickup point orasida harakatlanayotgan jo'natmalar.",
     ppExceptions: "Pickup point istisnolari",
     ppExceptionsHint: "Topshirish muammosi va return flow qo'lda ko'riladi.",
     ppInboundLane: "Counter intake lane",
@@ -480,7 +536,8 @@ const copy = {
     ppHandoverTitle: "Mijozga topshirish",
     ppHandoverHint:
       "Shu pickup pointda self-pickup topshirishni tasdiqlang. Faqat Out for delivery statusi ruxsat etiladi.",
-    ppHandoverInputPlaceholder: "Order raqami / parcel code / order ID ni skan qiling...",
+    ppHandoverInputPlaceholder:
+      "Order raqami / parcel code / order ID ni skan qiling...",
     ppHandoverNotePlaceholder: "Izoh (ixtiyoriy)",
     ppHandoverReadyLabel: "Topshirishga tayyor",
     ppHandoverSelected: "Tanlangan order",
@@ -497,7 +554,8 @@ const copy = {
     ppHandoverCashPending:
       "COD/xizmat haqi hali kutilmoqda. Topshirishdan oldin mablag'ni yig'ing.",
     cashQueueTitle: "Naqd pul navbati",
-    cashQueueHint: "Operatsion kuzatuv talab qiladigan expected va held yozuvlar.",
+    cashQueueHint:
+      "Operatsion kuzatuv talab qiladigan expected va held yozuvlar.",
     cashQueueStatus: "Status",
     cashQueueKind: "Turi",
     cashQueueFrom: "Dan",
@@ -554,7 +612,8 @@ function statusVariant(status?: string | null): StatusTone {
   ) {
     return "destructive";
   }
-  if (normalized === "at_warehouse" || normalized === "in_transit") return "secondary";
+  if (normalized === "at_warehouse" || normalized === "in_transit")
+    return "secondary";
   return "outline";
 }
 
@@ -562,20 +621,29 @@ function orderRef(order: TokenSearchOrder, fallback: string) {
   return order.orderNumber ? `#${order.orderNumber}` : fallback;
 }
 
-function findOrderByToken<T extends TokenSearchOrder>(orders: T[], tokenRaw: string): T | null {
+function findOrderByToken<T extends TokenSearchOrder>(
+  orders: T[],
+  tokenRaw: string,
+): T | null {
   const token = tokenRaw.trim().toLowerCase();
   if (!token) return null;
 
   return (
     orders.find((order) => {
-      const id = String(order.id ?? "").trim().toLowerCase();
-      const orderNumber = String(order.orderNumber ?? "").trim().toLowerCase();
+      const id = String(order.id ?? "")
+        .trim()
+        .toLowerCase();
+      const orderNumber = String(order.orderNumber ?? "")
+        .trim()
+        .toLowerCase();
       if (id && id === token) return true;
       if (orderNumber && orderNumber === token) return true;
 
       const parcels = Array.isArray(order.parcels) ? order.parcels : [];
       return parcels.some((parcel) => {
-        const parcelCode = String(parcel.parcelCode ?? "").trim().toLowerCase();
+        const parcelCode = String(parcel.parcelCode ?? "")
+          .trim()
+          .toLowerCase();
         return parcelCode !== "" && parcelCode === token;
       });
     }) ?? null
@@ -590,21 +658,20 @@ function toPositiveNumber(value: unknown) {
 function getOrderDueCash(order: RawOrder | null): DueCashItem[] {
   if (!order) return [];
   const currency = typeof order.currency === "string" ? order.currency : null;
-  const fromCollections =
-    Array.isArray(order.cashCollections)
-      ? order.cashCollections
-          .filter(
-            (row) =>
-              (row?.kind === "cod" || row?.kind === "service_charge") &&
-              row?.status === "expected" &&
-              toPositiveNumber(row?.expectedAmount) > 0,
-          )
-          .map((row) => ({
-            kind: row!.kind as CashQueueKind,
-            expectedAmount: toPositiveNumber(row?.expectedAmount),
-            currency: row?.currency ?? currency,
-          }))
-      : [];
+  const fromCollections = Array.isArray(order.cashCollections)
+    ? order.cashCollections
+        .filter(
+          (row) =>
+            (row?.kind === "cod" || row?.kind === "service_charge") &&
+            row?.status === "expected" &&
+            toPositiveNumber(row?.expectedAmount) > 0,
+        )
+        .map((row) => ({
+          kind: row!.kind as CashQueueKind,
+          expectedAmount: toPositiveNumber(row?.expectedAmount),
+          currency: row?.currency ?? currency,
+        }))
+    : [];
 
   if (fromCollections.length > 0) {
     const seen = new Set<string>();
@@ -624,7 +691,9 @@ function getOrderDueCash(order: RawOrder | null): DueCashItem[] {
   }
 
   const serviceAmount = toPositiveNumber((order as any)?.serviceCharge);
-  const serviceStatus = String((order as any)?.serviceChargePaidStatus ?? "").toUpperCase();
+  const serviceStatus = String(
+    (order as any)?.serviceChargePaidStatus ?? "",
+  ).toUpperCase();
   if (serviceAmount > 0 && serviceStatus !== "PAID") {
     fallback.push({
       kind: "service_charge",
@@ -644,7 +713,11 @@ function sameLocalDay(left: Date, right: Date) {
   );
 }
 
-function formatCashAmount(amount: number, currency: string | null | undefined, locale: string) {
+function formatCashAmount(
+  amount: number,
+  currency: string | null | undefined,
+  locale: string,
+) {
   const safeAmount = Number.isFinite(amount) ? amount : 0;
   const currencyCode = (currency || "UZS").toUpperCase();
   try {
@@ -660,6 +733,8 @@ function formatCashAmount(amount: number, currency: string | null | undefined, l
 
 export default function WarehouseDashboardPage() {
   const { locale, t } = useI18n();
+  const queryClient = useQueryClient();
+  const isPageVisible = usePageVisibility();
   const text = copy[locale];
   const [user, setUser] = useState<AuthUser | null>(null);
   const [userResolved, setUserResolved] = useState(false);
@@ -668,8 +743,12 @@ export default function WarehouseDashboardPage() {
   const [quickScanValue, setQuickScanValue] = useState("");
   const [handoverToken, setHandoverToken] = useState("");
   const [handoverNote, setHandoverNote] = useState("");
-  const [cashStatusFilter, setCashStatusFilter] = useState<"all" | CashQueueStatus>("all");
-  const [cashKindFilter, setCashKindFilter] = useState<"all" | CashQueueKind>("all");
+  const [cashStatusFilter, setCashStatusFilter] = useState<
+    "all" | CashQueueStatus
+  >("all");
+  const [cashKindFilter, setCashKindFilter] = useState<"all" | CashQueueKind>(
+    "all",
+  );
   const [cashFrom, setCashFrom] = useState("");
   const [cashTo, setCashTo] = useState("");
   const [cashPage, setCashPage] = useState(1);
@@ -680,16 +759,29 @@ export default function WarehouseDashboardPage() {
     id: number;
     raw: string;
   } | null>(null);
-  const [lastScanFeedback, setLastScanFeedback] = useState<LastScanFeedback | null>(null);
+  const [lastScanFeedback, setLastScanFeedback] =
+    useState<LastScanFeedback | null>(null);
   const debouncedQ = useDebouncedValue(q);
   const isSearchMode = debouncedQ.trim().length > 0;
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
+  const [warehouseStreamConnectedAt, setWarehouseStreamConnectedAt] = useState<
+    string | null
+  >(null);
+  const realtimeFallbackInterval = useRealtimeFallbackInterval({
+    isPageVisible,
+    realtimeConnected: Boolean(warehouseStreamConnectedAt),
+  });
+  const warehouseInvalidateTimerRef = React.useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
 
-  const [baseCursorStack, setBaseCursorStack] = useState<Array<string | null>>([null]);
-  const [baseCursorIndex, setBaseCursorIndex] = useState(0);
-  const [searchCursorStack, setSearchCursorStack] = useState<Array<string | null>>([
+  const [baseCursorStack, setBaseCursorStack] = useState<Array<string | null>>([
     null,
   ]);
+  const [baseCursorIndex, setBaseCursorIndex] = useState(0);
+  const [searchCursorStack, setSearchCursorStack] = useState<
+    Array<string | null>
+  >([null]);
   const [searchCursorIndex, setSearchCursorIndex] = useState(0);
 
   React.useEffect(() => {
@@ -706,25 +798,31 @@ export default function WarehouseDashboardPage() {
     setCashPage(1);
   }, [cashStatusFilter, cashKindFilter, cashFrom, cashTo]);
 
+  const activeWarehouseId = getPrimaryWarehouseId(user);
+
   const warehousesQuery = useQuery({
     queryKey: ["warehouses", "warehouse-dashboard"],
     queryFn: fetchWarehouses,
-    enabled: Boolean(user?.warehouseId),
+    enabled: Boolean(activeWarehouseId),
     staleTime: 60_000,
+    refetchInterval: realtimeFallbackInterval,
+    refetchOnWindowFocus: false,
   });
 
   const driversQuery = useQuery<DriverLite[]>({
     queryKey: ["warehouse-drivers-manifest"],
     queryFn: fetchDrivers,
-    enabled: Boolean(user?.warehouseId),
+    enabled: Boolean(activeWarehouseId),
     staleTime: 60_000,
+    refetchInterval: realtimeFallbackInterval,
+    refetchOnWindowFocus: false,
   });
 
   const baseQuery = useQuery<OrdersResponse>({
     queryKey: [
       "warehouse-orders",
       "base",
-      user?.warehouseId ?? null,
+      activeWarehouseId ?? null,
       baseCursorStack[baseCursorIndex] ?? null,
     ],
     queryFn: () =>
@@ -733,15 +831,17 @@ export default function WarehouseDashboardPage() {
         mode: "cursor",
         cursor: baseCursorStack[baseCursorIndex] ?? undefined,
       }),
-    enabled: !isSearchMode && Boolean(user?.warehouseId),
+    enabled: !isSearchMode && Boolean(activeWarehouseId),
     placeholderData: (prev) => prev,
+    refetchInterval: realtimeFallbackInterval,
+    refetchOnWindowFocus: false,
   });
 
   const searchQuery = useQuery<OrdersResponse>({
     queryKey: [
       "warehouse-orders",
       "search",
-      user?.warehouseId ?? null,
+      activeWarehouseId ?? null,
       debouncedQ,
       searchCursorStack[searchCursorIndex] ?? null,
     ],
@@ -752,8 +852,10 @@ export default function WarehouseDashboardPage() {
         mode: "cursor",
         cursor: searchCursorStack[searchCursorIndex] ?? undefined,
       }),
-    enabled: isSearchMode && Boolean(user?.warehouseId),
+    enabled: isSearchMode && Boolean(activeWarehouseId),
     placeholderData: (prev) => prev,
+    refetchInterval: realtimeFallbackInterval,
+    refetchOnWindowFocus: false,
   });
 
   React.useEffect(() => {
@@ -778,9 +880,26 @@ export default function WarehouseDashboardPage() {
       next[nextIndex] = nextCursor;
       return next;
     });
-  }, [searchCursorIndex, searchQuery.data?.hasMore, searchQuery.data?.nextCursor]);
+  }, [
+    searchCursorIndex,
+    searchQuery.data?.hasMore,
+    searchQuery.data?.nextCursor,
+  ]);
 
   const activeQuery = isSearchMode ? searchQuery : baseQuery;
+  const orderCapabilities = useMemo(
+    () => getWarehouseOrderCapabilities(user),
+    [user],
+  );
+  const orderTableCapabilities = useMemo(
+    () => ({
+      ...orderCapabilities,
+      canSelect: orderCapabilities.canAssignDriver,
+      canBookCarrier: false,
+      canDelete: false,
+    }),
+    [orderCapabilities],
+  );
 
   const cashFilters = useMemo(() => {
     const toStartIso = (dateValue: string) => {
@@ -807,7 +926,7 @@ export default function WarehouseDashboardPage() {
   const cashQueueQuery = useQuery({
     queryKey: [
       "warehouse-cash-queue",
-      user?.warehouseId ?? null,
+      activeWarehouseId ?? null,
       cashFilters.page,
       cashFilters.pageSize,
       cashFilters.statuses?.join(",") ?? "all",
@@ -816,14 +935,16 @@ export default function WarehouseDashboardPage() {
       cashFilters.to ?? null,
     ],
     queryFn: () => fetchCashQueue(cashFilters),
-    enabled: Boolean(user?.warehouseId),
+    enabled: Boolean(activeWarehouseId),
     placeholderData: (prev) => prev,
+    refetchInterval: realtimeFallbackInterval,
+    refetchOnWindowFocus: false,
   });
 
   const cashSummaryQuery = useQuery({
     queryKey: [
       "warehouse-cash-queue-summary",
-      user?.warehouseId ?? null,
+      activeWarehouseId ?? null,
       cashFilters.statuses?.join(",") ?? "all",
       cashFilters.kinds?.join(",") ?? "all",
       cashFilters.from ?? null,
@@ -836,9 +957,52 @@ export default function WarehouseDashboardPage() {
         from: cashFilters.from,
         to: cashFilters.to,
       }),
-    enabled: Boolean(user?.warehouseId),
+    enabled: Boolean(activeWarehouseId),
     placeholderData: (prev) => prev,
+    refetchInterval: realtimeFallbackInterval,
+    refetchOnWindowFocus: false,
   });
+
+  React.useEffect(() => {
+    if (!isPageVisible || !activeWarehouseId) return;
+
+    const scheduleRefresh = () => {
+      if (warehouseInvalidateTimerRef.current) return;
+      warehouseInvalidateTimerRef.current = setTimeout(() => {
+        warehouseInvalidateTimerRef.current = null;
+        void Promise.all([
+          queryClient.invalidateQueries({ queryKey: ["warehouse-orders"] }),
+          queryClient.invalidateQueries({ queryKey: ["warehouse-cash-queue"] }),
+          queryClient.invalidateQueries({
+            queryKey: ["warehouse-cash-queue-summary"],
+          }),
+          queryClient.invalidateQueries({
+            queryKey: ["warehouse-drivers-manifest"],
+          }),
+          queryClient.invalidateQueries({
+            queryKey: ["warehouses", "warehouse-dashboard"],
+          }),
+        ]);
+      }, 320);
+    };
+
+    const unsubscribe = subscribeOperationsAnalyticsStream({
+      onReady: (payload) =>
+        setWarehouseStreamConnectedAt(
+          payload.connectedAt ?? new Date().toISOString(),
+        ),
+      onRefresh: () => scheduleRefresh(),
+      onError: () => setWarehouseStreamConnectedAt(null),
+    });
+
+    return () => {
+      unsubscribe();
+      if (warehouseInvalidateTimerRef.current) {
+        clearTimeout(warehouseInvalidateTimerRef.current);
+        warehouseInvalidateTimerRef.current = null;
+      }
+    };
+  }, [isPageVisible, queryClient, activeWarehouseId]);
 
   const cashQueueItems = cashQueueQuery.data?.items ?? [];
   const cashQueueMeta = cashQueueQuery.data?.meta ?? {
@@ -871,7 +1035,9 @@ export default function WarehouseDashboardPage() {
   const selectedCashRows = useMemo<CashQueueItem[]>(() => {
     if (cashSelectedIds.length === 0) return [];
     const map = new Map(cashQueueItems.map((item) => [item.id, item]));
-    return cashSelectedIds.map((id) => map.get(id)).filter(Boolean) as CashQueueItem[];
+    return cashSelectedIds
+      .map((id) => map.get(id))
+      .filter(Boolean) as CashQueueItem[];
   }, [cashQueueItems, cashSelectedIds]);
 
   React.useEffect(() => {
@@ -890,6 +1056,7 @@ export default function WarehouseDashboardPage() {
         typeof order.status === "string" && order.status.trim().length > 0
           ? order.status
           : "pending",
+      paymentState: order.paymentState ?? null,
       pickupAddress: order.pickupAddress,
       dropoffAddress: order.dropoffAddress,
       createdAt: order.createdAt,
@@ -901,9 +1068,28 @@ export default function WarehouseDashboardPage() {
           pieceNo: parcel.pieceNo ?? null,
           pieceTotal: parcel.pieceTotal ?? null,
         })) ?? null,
-      }));
+    }));
   }, [activeQuery.data]);
   const rawOrders = activeQuery.data?.orders ?? [];
+  const orderTableRows = useMemo<OrderTableRow[]>(() => {
+    return rawOrders.map((order) => ({
+      id: order.id,
+      orderNumber: order.orderNumber,
+      status: order.status ?? null,
+      paymentState: order.paymentState ?? null,
+      pickupAddress: order.pickupAddress ?? null,
+      dropoffAddress: order.dropoffAddress ?? null,
+      createdAt: order.createdAt ?? null,
+      labelUrl: order.labelUrl ?? null,
+      parcels:
+        order.parcels?.map((parcel) => ({
+          labelKey: parcel.labelKey ?? null,
+        })) ?? null,
+      customer: order.customer ?? null,
+      invoice: order.invoice ?? null,
+      Invoice: order.Invoice ?? null,
+    }));
+  }, [rawOrders]);
   const page = isSearchMode ? searchCursorIndex + 1 : baseCursorIndex + 1;
   const canPrev = page > 1;
   const canNext = Boolean(activeQuery.data?.hasMore);
@@ -992,17 +1178,18 @@ export default function WarehouseDashboardPage() {
   };
 
   const attachedWarehouse = useMemo(() => {
-    const attached = user?.warehouseId;
+    const attached = activeWarehouseId;
     if (!attached) return null;
     return (
-      warehousesQuery.data?.find((warehouse) => warehouse.id === attached) ?? null
+      warehousesQuery.data?.find((warehouse) => warehouse.id === attached) ??
+      null
     );
-  }, [user?.warehouseId, warehousesQuery.data]);
+  }, [activeWarehouseId, warehousesQuery.data]);
 
   const warehouseName = useMemo(() => {
-    if (!user?.warehouseId) return text.unlinkedWarehouse;
-    return attachedWarehouse?.name ?? user.warehouseId;
-  }, [attachedWarehouse?.name, text.unlinkedWarehouse, user?.warehouseId]);
+    if (!activeWarehouseId) return text.unlinkedWarehouse;
+    return attachedWarehouse?.name ?? activeWarehouseId;
+  }, [attachedWarehouse?.name, text.unlinkedWarehouse, activeWarehouseId]);
 
   const attachedLocationType = normalizeWarehouseType(attachedWarehouse?.type);
   const attachedLocationTypeLabel =
@@ -1010,13 +1197,18 @@ export default function WarehouseDashboardPage() {
       ? t("managerAnalytics.finance.holderTypes.pickup_point")
       : t("managerAnalytics.finance.holderTypes.warehouse");
 
-  const manifestDrivers = useMemo(() => driversQuery.data ?? [], [driversQuery.data]);
+  const manifestDrivers = useMemo(
+    () => driversQuery.data ?? [],
+    [driversQuery.data],
+  );
   const selectedManifestDriver = useMemo(
-    () => manifestDrivers.find((driver) => driver.id === manifestDriverId) ?? null,
+    () =>
+      manifestDrivers.find((driver) => driver.id === manifestDriverId) ?? null,
     [manifestDriverId, manifestDrivers],
   );
   const manifestLabels =
-    driverManifestCopy[locale as keyof typeof driverManifestCopy] ?? driverManifestCopy.en;
+    driverManifestCopy[locale as keyof typeof driverManifestCopy] ??
+    driverManifestCopy.en;
 
   const manifestMutation = useMutation({
     mutationFn: async () => {
@@ -1032,15 +1224,22 @@ export default function WarehouseDashboardPage() {
       });
     },
     onError: (error: unknown) => {
-      if (error instanceof Error && error.message === EMPTY_DRIVER_MANIFEST_ERROR) {
+      if (
+        error instanceof Error &&
+        error.message === EMPTY_DRIVER_MANIFEST_ERROR
+      ) {
         toast(text.manifestEmpty);
         return;
       }
-      if (error instanceof Error && error.message === POPUP_BLOCKED_DRIVER_MANIFEST_ERROR) {
+      if (
+        error instanceof Error &&
+        error.message === POPUP_BLOCKED_DRIVER_MANIFEST_ERROR
+      ) {
         toast.error(manifestLabels.popupBlocked);
         return;
       }
-      if (error instanceof Error && error.message === "NO_DRIVER_SELECTED") return;
+      if (error instanceof Error && error.message === "NO_DRIVER_SELECTED")
+        return;
       toast.error(text.manifestFailed);
     },
   });
@@ -1056,31 +1255,39 @@ export default function WarehouseDashboardPage() {
 
   const isPickupPoint = attachedLocationType === "pickup_point";
   const needsIntake = isPickupPoint
-    ? statusCounts.get("at_warehouse") ?? 0
-    : statusCounts.get("picked_up") ?? 0;
+    ? (statusCounts.get("at_warehouse") ?? 0)
+    : (statusCounts.get("picked_up") ?? 0);
   const onFloor = isPickupPoint
-    ? statusCounts.get("out_for_delivery") ?? 0
-    : statusCounts.get("at_warehouse") ?? 0;
+    ? (statusCounts.get("out_for_delivery") ?? 0)
+    : (statusCounts.get("at_warehouse") ?? 0);
   const outboundWave = isPickupPoint
-    ? statusCounts.get("in_transit") ?? 0
+    ? (statusCounts.get("in_transit") ?? 0)
     : (statusCounts.get("in_transit") ?? 0) +
       (statusCounts.get("out_for_delivery") ?? 0);
   const exceptions =
-    (statusCounts.get("exception") ?? 0) + (statusCounts.get("return_in_progress") ?? 0);
+    (statusCounts.get("exception") ?? 0) +
+    (statusCounts.get("return_in_progress") ?? 0);
 
   const intakeTitle = isPickupPoint ? text.ppIntakeQueue : text.intakeQueue;
-  const intakeHint = isPickupPoint ? text.ppIntakeQueueHint : text.intakeQueueHint;
+  const intakeHint = isPickupPoint
+    ? text.ppIntakeQueueHint
+    : text.intakeQueueHint;
   const onFloorTitle = isPickupPoint ? text.ppOnFloor : text.onFloor;
   const onFloorHint = isPickupPoint ? text.ppOnFloorHint : text.onFloorHint;
   const outboundTitle = isPickupPoint ? text.ppOutboundWave : text.outboundWave;
-  const outboundHint = isPickupPoint ? text.ppOutboundWaveHint : text.outboundWaveHint;
+  const outboundHint = isPickupPoint
+    ? text.ppOutboundWaveHint
+    : text.outboundWaveHint;
   const exceptionTitle = isPickupPoint ? text.ppExceptions : text.exceptions;
-  const exceptionHint = isPickupPoint ? text.ppExceptionsHint : text.exceptionsHint;
+  const exceptionHint = isPickupPoint
+    ? text.ppExceptionsHint
+    : text.exceptionsHint;
 
   const deliveredToday = useMemo(() => {
     const today = new Date();
     return orders.filter((order) => {
-      if (String(order.status ?? "").toLowerCase() !== "delivered") return false;
+      if (String(order.status ?? "").toLowerCase() !== "delivered")
+        return false;
       if (!order.createdAt) return false;
       const createdAt = new Date(order.createdAt);
       if (Number.isNaN(createdAt.getTime())) return false;
@@ -1091,7 +1298,11 @@ export default function WarehouseDashboardPage() {
   const incompleteMultiPiece = useMemo(() => {
     return orders.filter((order) => {
       const parcels = order.parcels ?? [];
-      const pieceTotal = Math.max(1, parcels[0]?.pieceTotal ?? 0, parcels.length);
+      const pieceTotal = Math.max(
+        1,
+        parcels[0]?.pieceTotal ?? 0,
+        parcels.length,
+      );
       const knownCodes = parcels.filter((parcel) => parcel.parcelCode).length;
       return pieceTotal > 1 && knownCodes > 0 && knownCodes < pieceTotal;
     });
@@ -1139,9 +1350,11 @@ export default function WarehouseDashboardPage() {
   const handoverMutation = useMutation({
     mutationFn: async () => {
       if (!isPickupPoint) {
-        throw new Error("Pickup point handover is disabled for this location type.");
+        throw new Error(
+          "Pickup point handover is disabled for this location type.",
+        );
       }
-      if (!user?.warehouseId) {
+      if (!activeWarehouseId) {
         throw new Error(text.ppHandoverNeedsWarehouse);
       }
       if (!handoverMatchedOrder) {
@@ -1157,9 +1370,10 @@ export default function WarehouseDashboardPage() {
       return updateOrdersStatusBulk({
         orderIds: [handoverMatchedOrder.id],
         status: "delivered",
-        warehouseId: user.warehouseId,
+        warehouseId: activeWarehouseId,
         note:
-          handoverNote.trim() || "Pickup point handover confirmed by warehouse operator",
+          handoverNote.trim() ||
+          "Pickup point handover confirmed by warehouse operator",
       });
     },
     onSuccess: () => {
@@ -1282,8 +1496,12 @@ export default function WarehouseDashboardPage() {
               </div>
 
               <div className="space-y-2">
-                <h1 className="text-3xl font-semibold tracking-tight">{text.title}</h1>
-                <p className="max-w-3xl text-sm text-slate-100/85">{text.subtitle}</p>
+                <h1 className="text-3xl font-semibold tracking-tight">
+                  {text.title}
+                </h1>
+                <p className="max-w-3xl text-sm text-slate-100/85">
+                  {text.subtitle}
+                </p>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -1325,11 +1543,15 @@ export default function WarehouseDashboardPage() {
                     <p className="text-xs uppercase tracking-[0.18em] text-white/70">
                       {text.attachedWarehouse}
                     </p>
-                    <p className="mt-2 text-xl font-semibold">{warehouseName}</p>
-                    <p className="mt-1 text-xs text-white/70">{attachedLocationTypeLabel}</p>
+                    <p className="mt-2 text-xl font-semibold">
+                      {warehouseName}
+                    </p>
+                    <p className="mt-1 text-xs text-white/70">
+                      {attachedLocationTypeLabel}
+                    </p>
                   </div>
                   <Badge className="rounded-full border-white/15 bg-white/10 text-white hover:bg-white/10">
-                    {user?.warehouseId ? text.liveView : text.unlinkedWarehouse}
+                    {activeWarehouseId ? text.liveView : text.unlinkedWarehouse}
                   </Badge>
                 </div>
               </div>
@@ -1341,7 +1563,9 @@ export default function WarehouseDashboardPage() {
                   </div>
                   <div>
                     <p className="text-sm font-medium">{text.floorControl}</p>
-                    <p className="mt-2 text-sm text-slate-100/80">{text.floorControlHint}</p>
+                    <p className="mt-2 text-sm text-slate-100/80">
+                      {text.floorControlHint}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -1351,13 +1575,17 @@ export default function WarehouseDashboardPage() {
                   <p className="text-xs uppercase tracking-[0.18em] text-white/70">
                     {text.scanReady}
                   </p>
-                  <p className="mt-2 text-sm text-slate-100/80">{text.scanReadyHint}</p>
+                  <p className="mt-2 text-sm text-slate-100/80">
+                    {text.scanReadyHint}
+                  </p>
                 </div>
                 <div className="rounded-3xl border border-white/15 bg-white/10 p-4 backdrop-blur">
                   <p className="text-xs uppercase tracking-[0.18em] text-white/70">
                     {text.queueHealth}
                   </p>
-                  <p className="mt-2 text-sm text-slate-100/80">{text.queueHealthHint}</p>
+                  <p className="mt-2 text-sm text-slate-100/80">
+                    {text.queueHealthHint}
+                  </p>
                 </div>
               </div>
             </div>
@@ -1366,8 +1594,12 @@ export default function WarehouseDashboardPage() {
 
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div className="space-y-1">
-            <h2 className="text-xl font-semibold tracking-tight">{text.boardTitle}</h2>
-            <p className="text-sm text-muted-foreground">{text.boardSubtitle}</p>
+            <h2 className="text-xl font-semibold tracking-tight">
+              {text.boardTitle}
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              {text.boardSubtitle}
+            </p>
           </div>
 
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -1380,8 +1612,15 @@ export default function WarehouseDashboardPage() {
                 className="pl-9"
               />
             </div>
-            <Button variant="outline" className="gap-2" onClick={handleRefresh} disabled={isFetching}>
-              <RefreshCw className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
+            <Button
+              variant="outline"
+              className="gap-2"
+              onClick={handleRefresh}
+              disabled={isFetching}
+            >
+              <RefreshCw
+                className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`}
+              />
               {text.refresh}
             </Button>
             <Button asChild variant="outline" className="gap-2">
@@ -1390,240 +1629,379 @@ export default function WarehouseDashboardPage() {
           </div>
         </div>
 
-        <Card className="rounded-3xl border-border/70">
-          <CardContent className="p-5">
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <div className="rounded-2xl border border-border/70 bg-muted/25 p-2">
-                    <ScanLine className="h-4 w-4 text-muted-foreground" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">{text.quickScan}</p>
-                    <p className="text-xs text-muted-foreground">{text.quickScanHint}</p>
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <Input
-                    value={quickScanValue}
-                    onChange={(event) => setQuickScanValue(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        submitQuickScan();
-                      }
-                    }}
-                    placeholder={text.quickScanPlaceholder}
-                    autoFocus
-                  />
-                  <Button className="gap-2" onClick={submitQuickScan} disabled={!quickScanValue.trim()}>
-                    <ScanLine className="h-4 w-4" />
-                    {text.sendToBatch}
-                  </Button>
-                </div>
-              </div>
-
-              <div className="rounded-3xl border border-border/70 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
-                {text.floorControlHint}
-              </div>
-            </div>
-
-            {lastScanFeedback ? (
-              <div className="mt-4 rounded-3xl border border-emerald-300/40 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
-                <div className="flex items-start gap-3">
-                  <div className="rounded-2xl bg-emerald-500/10 p-2">
-                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                  </div>
-                  <div className="min-w-0 flex-1 space-y-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium">{text.lastScan}</span>
-                      <Badge variant="outline" className="rounded-full bg-white/70">
-                        {lastScanFeedback.raw}
-                      </Badge>
-                    </div>
-
-                    {lastScanFeedback.addedOrders.length > 0 ? (
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-xs uppercase tracking-[0.18em] text-emerald-800/80">
-                          {text.lastScanAdded}
-                        </span>
-                        {lastScanFeedback.addedOrders.map((order) => (
-                          <Badge
-                            key={`${lastScanFeedback.requestId}-${order.id}`}
-                            variant={statusVariant(order.status)}
-                            className="rounded-full bg-white/80"
-                          >
-                            {orderRef(order, text.unnumbered)} | {getStatusLabel(order.status, t)}
-                          </Badge>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-sm">{text.lastScanEmpty}</p>
-                    )}
-
-                    {lastScanFeedback.invalidTokens.length > 0 ? (
-                      <div className="text-xs text-amber-700">
-                        {text.lastScanInvalid}: {lastScanFeedback.invalidTokens.join(", ")}
-                      </div>
-                    ) : null}
-
-                    {lastScanFeedback.skippedByLimit > 0 ? (
-                      <div className="text-xs text-amber-700">
-                        {formatText(text.lastScanLimit, {
-                          count: lastScanFeedback.skippedByLimit,
-                        })}
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-            ) : null}
-          </CardContent>
-        </Card>
-
-        <Card className="rounded-3xl border-border/70">
-          <CardHeader className="pb-3">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <CardTitle className="text-base">{text.boardTitle}</CardTitle>
-                <p className="mt-1 text-sm text-muted-foreground">{text.boardSubtitle}</p>
-              </div>
-
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Button variant="outline" size="sm" onClick={goPrev} disabled={!canPrev || isFetching}>
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <span>{text.page.replace("{page}", String(page))}</span>
-                <Button variant="outline" size="sm" onClick={goNext} disabled={!canNext || isFetching}>
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {!userResolved || isLoading ? (
-              <div className="space-y-3">
-                <Skeleton className="h-10 w-80" />
-                <Skeleton className="h-[540px] w-full" />
-              </div>
-            ) : !user?.warehouseId ? (
-              <div className="rounded-3xl border border-dashed border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">
-                {text.unlinkedWarehouse}
-              </div>
-            ) : (
-              <DispatchCenter
-                orders={filteredOrders}
-                role="warehouse"
-                onRefresh={handleRefresh}
-                detailsBasePath="/dashboard/warehouse/orders"
-                externalScanRequest={externalScanRequest}
-                onExternalScanProcessedAction={handleExternalScanProcessed}
-              />
-            )}
-          </CardContent>
-        </Card>
-
-        <div className="space-y-4">
-          <div className="grid gap-4 xl:grid-cols-2">
+        <Tabs defaultValue="floor" className="space-y-4">
+          <TabsList
+            className={`grid h-auto w-full grid-cols-2 rounded-2xl border bg-white p-1 shadow-sm shadow-black/5 ${isPickupPoint ? "md:grid-cols-5" : "md:grid-cols-4"}`}
+          >
+            <TabsTrigger
+              value="floor"
+              className="rounded-xl py-2 data-[state=active]:bg-slate-950 data-[state=active]:text-white"
+            >
+              Floor board
+            </TabsTrigger>
+            <TabsTrigger
+              value="orders"
+              className="rounded-xl py-2 data-[state=active]:bg-slate-950 data-[state=active]:text-white"
+            >
+              Orders
+            </TabsTrigger>
+            <TabsTrigger
+              value="cash"
+              className="rounded-xl py-2 data-[state=active]:bg-slate-950 data-[state=active]:text-white"
+            >
+              Cash custody
+            </TabsTrigger>
             {isPickupPoint ? (
-              <Card className="rounded-3xl border-border/70">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base">{text.ppHandoverTitle}</CardTitle>
-                  <p className="text-sm text-muted-foreground">{text.ppHandoverHint}</p>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <Input
-                    value={handoverToken}
-                    onChange={(event) => setHandoverToken(event.target.value)}
-                    placeholder={text.ppHandoverInputPlaceholder}
-                  />
-                  <Input
-                    value={handoverNote}
-                    onChange={(event) => setHandoverNote(event.target.value)}
-                    placeholder={text.ppHandoverNotePlaceholder}
-                  />
+              <TabsTrigger
+                value="handover"
+                className="rounded-xl py-2 data-[state=active]:bg-slate-950 data-[state=active]:text-white"
+              >
+                Pickup handover
+              </TabsTrigger>
+            ) : null}
+            <TabsTrigger
+              value="manifest"
+              className="rounded-xl py-2 data-[state=active]:bg-slate-950 data-[state=active]:text-white"
+            >
+              Manifest
+            </TabsTrigger>
+          </TabsList>
 
-                  {handoverMatchedOrder ? (
-                    <div className="rounded-3xl border border-border/70 bg-muted/20 p-3">
-                      <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                        {text.ppHandoverSelected}
-                      </p>
-                      <p className="mt-1 text-sm font-medium">
-                        {orderRef(handoverMatchedOrder, text.unnumbered)}
-                      </p>
-                      <div className="mt-2 flex items-center gap-2">
-                        <Badge variant={statusVariant(handoverMatchedOrder.status)}>
-                          {getStatusLabel(handoverMatchedOrder.status, t)}
-                        </Badge>
-                        <span className="text-xs text-muted-foreground">
-                          {text.ppHandoverReadyLabel}: {getStatusLabel("out_for_delivery", t)}
-                        </span>
+          <TabsContent value="floor" className="space-y-4">
+            <Card className="rounded-3xl border-border/70">
+              <CardContent className="p-5">
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <div className="rounded-2xl border border-border/70 bg-muted/25 p-2">
+                        <ScanLine className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium">{text.quickScan}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {text.quickScanHint}
+                        </p>
                       </div>
                     </div>
-                  ) : null}
 
-                  {handoverDueCash.length > 0 ? (
-                    <div className="rounded-3xl border border-amber-300/60 bg-amber-50 p-3 space-y-2">
-                      <p className="text-xs uppercase tracking-[0.18em] text-amber-900">
-                        {text.ppHandoverCashDue}
-                      </p>
-                      {handoverDueCash.map((item) => (
-                        <div
-                          key={item.kind}
-                          className="rounded-2xl border border-amber-300/50 bg-white/80 px-3 py-2"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <div>
-                              <p className="text-sm font-medium">{cashKindLabel(item.kind)}</p>
-                              <p className="text-xs text-muted-foreground">
-                                {formatCashAmount(item.expectedAmount, item.currency, locale)}
-                              </p>
-                            </div>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handoverCollectMutation.mutate(item)}
-                              disabled={handoverCollectMutation.isPending}
-                            >
-                              {handoverCollectMutation.isPending
-                                ? text.ppHandoverCollecting
-                                : formatText(text.ppHandoverCollect, {
-                                    kind: cashKindLabel(item.kind),
-                                  })}
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                      <p className="text-xs text-amber-900">{text.ppHandoverCashPending}</p>
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <Input
+                        value={quickScanValue}
+                        onChange={(event) =>
+                          setQuickScanValue(event.target.value)
+                        }
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            submitQuickScan();
+                          }
+                        }}
+                        placeholder={text.quickScanPlaceholder}
+                        autoFocus
+                      />
+                      <Button
+                        className="gap-2"
+                        onClick={submitQuickScan}
+                        disabled={!quickScanValue.trim()}
+                      >
+                        <ScanLine className="h-4 w-4" />
+                        {text.sendToBatch}
+                      </Button>
                     </div>
-                  ) : null}
+                  </div>
 
-                  <Button
-                    type="button"
-                    className="w-full gap-2"
-                    onClick={() => handoverMutation.mutate()}
-                    disabled={
-                      !handoverToken.trim() ||
-                      handoverMutation.isPending ||
-                      handoverCollectMutation.isPending ||
-                      handoverDueCash.length > 0
-                    }
-                  >
-                    <PackageCheck className="h-4 w-4" />
-                    {handoverMutation.isPending
-                      ? text.ppHandoverSubmitting
-                      : text.ppHandoverButton}
-                  </Button>
-                </CardContent>
-              </Card>
-            ) : null}
+                  <div className="rounded-3xl border border-border/70 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
+                    {text.floorControlHint}
+                  </div>
+                </div>
 
-            <Card className={`rounded-3xl border-border/70 ${isPickupPoint ? "" : "xl:col-span-2"}`}>
+                {lastScanFeedback ? (
+                  <div className="mt-4 rounded-3xl border border-emerald-300/40 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
+                    <div className="flex items-start gap-3">
+                      <div className="rounded-2xl bg-emerald-500/10 p-2">
+                        <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                      </div>
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-medium">{text.lastScan}</span>
+                          <Badge
+                            variant="outline"
+                            className="rounded-full bg-white/70"
+                          >
+                            {lastScanFeedback.raw}
+                          </Badge>
+                        </div>
+
+                        {lastScanFeedback.addedOrders.length > 0 ? (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-xs uppercase tracking-[0.18em] text-emerald-800/80">
+                              {text.lastScanAdded}
+                            </span>
+                            {lastScanFeedback.addedOrders.map((order) => (
+                              <Badge
+                                key={`${lastScanFeedback.requestId}-${order.id}`}
+                                variant={statusVariant(order.status)}
+                                className="rounded-full bg-white/80"
+                              >
+                                {orderRef(order, text.unnumbered)} |{" "}
+                                {getStatusLabel(order.status, t)}
+                              </Badge>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm">{text.lastScanEmpty}</p>
+                        )}
+
+                        {lastScanFeedback.invalidTokens.length > 0 ? (
+                          <div className="text-xs text-amber-700">
+                            {text.lastScanInvalid}:{" "}
+                            {lastScanFeedback.invalidTokens.join(", ")}
+                          </div>
+                        ) : null}
+
+                        {lastScanFeedback.skippedByLimit > 0 ? (
+                          <div className="text-xs text-amber-700">
+                            {formatText(text.lastScanLimit, {
+                              count: lastScanFeedback.skippedByLimit,
+                            })}
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="orders" className="space-y-4">
+            <Card className="rounded-3xl border-border/70">
               <CardHeader className="pb-3">
-                <CardTitle className="text-base">{text.cashQueueTitle}</CardTitle>
-                <p className="text-sm text-muted-foreground">{text.cashQueueHint}</p>
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <CardTitle className="text-base">
+                      {text.boardTitle}
+                    </CardTitle>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {text.boardSubtitle}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={goPrev}
+                      disabled={!canPrev || isFetching}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <span>{text.page.replace("{page}", String(page))}</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={goNext}
+                      disabled={!canNext || isFetching}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {!userResolved || isLoading ? (
+                  <div className="space-y-3">
+                    <Skeleton className="h-10 w-80" />
+                    <Skeleton className="h-[540px] w-full" />
+                  </div>
+                ) : !activeWarehouseId ? (
+                  <div className="rounded-3xl border border-dashed border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">
+                    {text.unlinkedWarehouse}
+                  </div>
+                ) : (
+                  <DispatchCenter
+                    orders={filteredOrders}
+                    scope="warehouse"
+                    onRefresh={handleRefresh}
+                    detailsBasePath="/dashboard/warehouse/orders"
+                    externalScanRequest={externalScanRequest}
+                    onExternalScanProcessedAction={handleExternalScanProcessed}
+                  />
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="rounded-3xl border-border/70">
+              <CardHeader className="pb-3">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <CardTitle className="text-base">ERP order list</CardTitle>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Shared shipment table with warehouse-safe actions and the
+                      same detail view as operations.
+                    </p>
+                  </div>
+                  <Badge variant="outline" className="w-fit rounded-full">
+                    {formatText(text.loaded, { count: orderTableRows.length })}
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {!userResolved || isLoading ? (
+                  <div className="space-y-3">
+                    <Skeleton className="h-10 w-80" />
+                    <Skeleton className="h-[420px] w-full" />
+                  </div>
+                ) : !activeWarehouseId ? (
+                  <div className="rounded-3xl border border-dashed border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">
+                    {text.unlinkedWarehouse}
+                  </div>
+                ) : (
+                  <OrdersTable
+                    data={orderTableRows}
+                    onRefresh={handleRefresh}
+                    capabilities={orderTableCapabilities}
+                    detailsBasePath="/dashboard/warehouse/orders"
+                  />
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {isPickupPoint ? (
+            <TabsContent value="handover" className="space-y-4">
+              <div className="space-y-4">
+                <div className="grid gap-4 xl:grid-cols-2">
+                  {isPickupPoint ? (
+                    <Card className="rounded-3xl border-border/70">
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-base">
+                          {text.ppHandoverTitle}
+                        </CardTitle>
+                        <p className="text-sm text-muted-foreground">
+                          {text.ppHandoverHint}
+                        </p>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        <Input
+                          value={handoverToken}
+                          onChange={(event) =>
+                            setHandoverToken(event.target.value)
+                          }
+                          placeholder={text.ppHandoverInputPlaceholder}
+                        />
+                        <Input
+                          value={handoverNote}
+                          onChange={(event) =>
+                            setHandoverNote(event.target.value)
+                          }
+                          placeholder={text.ppHandoverNotePlaceholder}
+                        />
+
+                        {handoverMatchedOrder ? (
+                          <div className="rounded-3xl border border-border/70 bg-muted/20 p-3">
+                            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                              {text.ppHandoverSelected}
+                            </p>
+                            <p className="mt-1 text-sm font-medium">
+                              {orderRef(handoverMatchedOrder, text.unnumbered)}
+                            </p>
+                            <div className="mt-2 flex items-center gap-2">
+                              <Badge
+                                variant={statusVariant(
+                                  handoverMatchedOrder.status,
+                                )}
+                              >
+                                {getStatusLabel(handoverMatchedOrder.status, t)}
+                              </Badge>
+                              <span className="text-xs text-muted-foreground">
+                                {text.ppHandoverReadyLabel}:{" "}
+                                {getStatusLabel("out_for_delivery", t)}
+                              </span>
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {handoverDueCash.length > 0 ? (
+                          <div className="rounded-3xl border border-amber-300/60 bg-amber-50 p-3 space-y-2">
+                            <p className="text-xs uppercase tracking-[0.18em] text-amber-900">
+                              {text.ppHandoverCashDue}
+                            </p>
+                            {handoverDueCash.map((item) => (
+                              <div
+                                key={item.kind}
+                                className="rounded-2xl border border-amber-300/50 bg-white/80 px-3 py-2"
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <div>
+                                    <p className="text-sm font-medium">
+                                      {cashKindLabel(item.kind)}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">
+                                      {formatCashAmount(
+                                        item.expectedAmount,
+                                        item.currency,
+                                        locale,
+                                      )}
+                                    </p>
+                                  </div>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() =>
+                                      handoverCollectMutation.mutate(item)
+                                    }
+                                    disabled={handoverCollectMutation.isPending}
+                                  >
+                                    {handoverCollectMutation.isPending
+                                      ? text.ppHandoverCollecting
+                                      : formatText(text.ppHandoverCollect, {
+                                          kind: cashKindLabel(item.kind),
+                                        })}
+                                  </Button>
+                                </div>
+                              </div>
+                            ))}
+                            <p className="text-xs text-amber-900">
+                              {text.ppHandoverCashPending}
+                            </p>
+                          </div>
+                        ) : null}
+
+                        <Button
+                          type="button"
+                          className="w-full gap-2"
+                          onClick={() => handoverMutation.mutate()}
+                          disabled={
+                            !handoverToken.trim() ||
+                            handoverMutation.isPending ||
+                            handoverCollectMutation.isPending ||
+                            handoverDueCash.length > 0
+                          }
+                        >
+                          <PackageCheck className="h-4 w-4" />
+                          {handoverMutation.isPending
+                            ? text.ppHandoverSubmitting
+                            : text.ppHandoverButton}
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  ) : null}
+                </div>
+              </div>
+            </TabsContent>
+          ) : null}
+
+          <TabsContent value="cash" className="space-y-4">
+            <Card className="rounded-3xl border-border/70">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">
+                  {text.cashQueueTitle}
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  {text.cashQueueHint}
+                </p>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="grid gap-2 sm:grid-cols-2">
@@ -1642,9 +2020,15 @@ export default function WarehouseDashboardPage() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">{text.cashQueueAll}</SelectItem>
-                        <SelectItem value="expected">{text.cashQueueExpected}</SelectItem>
-                        <SelectItem value="held">{text.cashQueueHeld}</SelectItem>
-                        <SelectItem value="settled">{text.cashQueueSettled}</SelectItem>
+                        <SelectItem value="expected">
+                          {text.cashQueueExpected}
+                        </SelectItem>
+                        <SelectItem value="held">
+                          {text.cashQueueHeld}
+                        </SelectItem>
+                        <SelectItem value="settled">
+                          {text.cashQueueSettled}
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -1701,9 +2085,15 @@ export default function WarehouseDashboardPage() {
                       {text.cashQueueSummaryExpected}
                     </p>
                     <p className="mt-1 text-sm font-semibold">
-                      {formatCashAmount(cashSummary.expectedAmount, "UZS", locale)}
+                      {formatCashAmount(
+                        cashSummary.expectedAmount,
+                        "UZS",
+                        locale,
+                      )}
                     </p>
-                    <p className="text-xs text-muted-foreground">{cashSummary.expectedCount}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {cashSummary.expectedCount}
+                    </p>
                   </div>
                   <div className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-2">
                     <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
@@ -1712,7 +2102,9 @@ export default function WarehouseDashboardPage() {
                     <p className="mt-1 text-sm font-semibold">
                       {formatCashAmount(cashSummary.heldAmount, "UZS", locale)}
                     </p>
-                    <p className="text-xs text-muted-foreground">{cashSummary.heldCount}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {cashSummary.heldCount}
+                    </p>
                   </div>
                   <div className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-2">
                     <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
@@ -1721,7 +2113,9 @@ export default function WarehouseDashboardPage() {
                     <p className="mt-1 text-sm font-semibold">
                       {formatCashAmount(cashSummary.totalAmount, "UZS", locale)}
                     </p>
-                    <p className="text-xs text-muted-foreground">{cashSummary.totalCount}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {cashSummary.totalCount}
+                    </p>
                   </div>
                 </div>
 
@@ -1733,7 +2127,9 @@ export default function WarehouseDashboardPage() {
                         <Skeleton className="h-14 w-full" />
                       </div>
                     ) : cashQueueItems.length === 0 ? (
-                      <div className="p-3 text-sm text-muted-foreground">{text.cashQueueNoItems}</div>
+                      <div className="p-3 text-sm text-muted-foreground">
+                        {text.cashQueueNoItems}
+                      </div>
                     ) : (
                       cashQueueItems.map((item) => (
                         <label
@@ -1749,7 +2145,9 @@ export default function WarehouseDashboardPage() {
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-1.5">
                               <Badge variant="outline" className="rounded-full">
-                                {item.orderNumber ? `#${item.orderNumber}` : text.unnumbered}
+                                {item.orderNumber
+                                  ? `#${item.orderNumber}`
+                                  : text.unnumbered}
                               </Badge>
                               <Badge variant={statusVariant(item.orderStatus)}>
                                 {getStatusLabel(item.orderStatus, t)}
@@ -1764,10 +2162,15 @@ export default function WarehouseDashboardPage() {
                             </div>
                             <p className="mt-1 text-sm font-medium">
                               {cashKindLabel(item.kind)} ·{" "}
-                              {formatCashAmount(item.amount, item.currency, locale)}
+                              {formatCashAmount(
+                                item.amount,
+                                item.currency,
+                                locale,
+                              )}
                             </p>
                             <p className="text-xs text-muted-foreground">
-                              {item.currentHolderLabel || "-"} · {item.ageHours}h
+                              {item.currentHolderLabel || "-"} · {item.ageHours}
+                              h
                             </p>
                           </div>
                         </label>
@@ -1777,7 +2180,11 @@ export default function WarehouseDashboardPage() {
                 </div>
 
                 <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                  <span>{formatText(text.cashQueueSelected, { count: cashSelectedIds.length })}</span>
+                  <span>
+                    {formatText(text.cashQueueSelected, {
+                      count: cashSelectedIds.length,
+                    })}
+                  </span>
                   <span>
                     {formatText(text.cashQueuePage, {
                       page: cashQueueMeta.page,
@@ -1790,8 +2197,12 @@ export default function WarehouseDashboardPage() {
                       variant="outline"
                       size="icon"
                       className="h-7 w-7"
-                      onClick={() => setCashPage((current) => Math.max(1, current - 1))}
-                      disabled={!cashQueueMeta.hasPrev || cashQueueQuery.isFetching}
+                      onClick={() =>
+                        setCashPage((current) => Math.max(1, current - 1))
+                      }
+                      disabled={
+                        !cashQueueMeta.hasPrev || cashQueueQuery.isFetching
+                      }
                     >
                       <ChevronLeft className="h-3.5 w-3.5" />
                     </Button>
@@ -1801,7 +2212,9 @@ export default function WarehouseDashboardPage() {
                       size="icon"
                       className="h-7 w-7"
                       onClick={() => setCashPage((current) => current + 1)}
-                      disabled={!cashQueueMeta.hasNext || cashQueueQuery.isFetching}
+                      disabled={
+                        !cashQueueMeta.hasNext || cashQueueQuery.isFetching
+                      }
                     >
                       <ChevronRight className="h-3.5 w-3.5" />
                     </Button>
@@ -1813,7 +2226,10 @@ export default function WarehouseDashboardPage() {
                     type="button"
                     variant="outline"
                     className="w-full gap-2"
-                    disabled={collectQueueMutation.isPending || selectedExpectedRows.length === 0}
+                    disabled={
+                      collectQueueMutation.isPending ||
+                      selectedExpectedRows.length === 0
+                    }
                     onClick={() => collectQueueMutation.mutate()}
                   >
                     <Wallet className="h-4 w-4" />
@@ -1821,7 +2237,10 @@ export default function WarehouseDashboardPage() {
                   </Button>
 
                   <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-                    <Select value={cashHandoffDriverId} onValueChange={setCashHandoffDriverId}>
+                    <Select
+                      value={cashHandoffDriverId}
+                      onValueChange={setCashHandoffDriverId}
+                    >
                       <SelectTrigger>
                         <SelectValue placeholder={text.cashQueuePickDriver} />
                       </SelectTrigger>
@@ -1836,7 +2255,10 @@ export default function WarehouseDashboardPage() {
                     <Button
                       type="button"
                       className="w-full gap-2 sm:w-auto"
-                      disabled={handoffQueueMutation.isPending || selectedHeldRows.length === 0}
+                      disabled={
+                        handoffQueueMutation.isPending ||
+                        selectedHeldRows.length === 0
+                      }
                       onClick={() => handoffQueueMutation.mutate()}
                     >
                       {text.cashQueueHandoffSelected}
@@ -1845,136 +2267,169 @@ export default function WarehouseDashboardPage() {
                 </div>
               </CardContent>
             </Card>
-          </div>
+          </TabsContent>
 
-          <div className="grid gap-4 xl:grid-cols-3">
-            <Card className="rounded-3xl border-border/70">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">{text.manifestTitle}</CardTitle>
-                <p className="text-sm text-muted-foreground">{text.manifestHint}</p>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {driversQuery.isLoading ? (
-                  <>
-                    <Skeleton className="h-10 w-full" />
-                    <Skeleton className="h-10 w-full" />
-                  </>
-                ) : manifestDrivers.length === 0 ? (
-                  <div className="rounded-3xl border border-dashed border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
-                    {text.manifestNoDrivers}
-                  </div>
-                ) : (
-                  <>
-                    <div className="space-y-2">
-                      <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                        {text.manifestDriver}
-                      </p>
-                      <Select value={manifestDriverId} onValueChange={setManifestDriverId}>
-                        <SelectTrigger>
-                          <SelectValue placeholder={text.manifestChooseDriver} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {manifestDrivers.map((driver) => (
-                            <SelectItem key={driver.id} value={driver.id}>
-                              {driver.name} - {driver.email}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+          <TabsContent value="manifest" className="space-y-4">
+            <div className="grid gap-4 xl:grid-cols-3">
+              <Card className="rounded-3xl border-border/70">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">
+                    {text.manifestTitle}
+                  </CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    {text.manifestHint}
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {driversQuery.isLoading ? (
+                    <>
+                      <Skeleton className="h-10 w-full" />
+                      <Skeleton className="h-10 w-full" />
+                    </>
+                  ) : manifestDrivers.length === 0 ? (
+                    <div className="rounded-3xl border border-dashed border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
+                      {text.manifestNoDrivers}
                     </div>
-
-                    <Button
-                      type="button"
-                      className="w-full gap-2"
-                      onClick={() => manifestMutation.mutate()}
-                      disabled={!manifestDriverId || manifestMutation.isPending}
-                    >
-                      <Printer className="h-4 w-4" />
-                      {manifestMutation.isPending ? text.manifestPrinting : text.manifestPrint}
-                    </Button>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card className="rounded-3xl border-border/70">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">{text.incomplete}</CardTitle>
-                <p className="text-sm text-muted-foreground">{text.incompleteHint}</p>
-              </CardHeader>
-              <CardContent>
-                {incompleteMultiPiece.length === 0 ? (
-                  <div className="rounded-3xl border border-dashed border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
-                    {text.incompleteEmpty}
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {incompleteMultiPiece.slice(0, 5).map((order) => {
-                      const parcels = order.parcels ?? [];
-                      const pieceTotal = Math.max(1, parcels[0]?.pieceTotal ?? 0, parcels.length);
-                      const knownCodes = parcels.filter((parcel) => parcel.parcelCode).length;
-
-                      return (
-                        <Link
-                          key={order.id}
-                          href={`/dashboard/warehouse?order=${order.id}`}
-                          className="block rounded-3xl border border-amber-300/40 bg-amber-50 p-4 text-amber-950 transition hover:bg-amber-100/80"
+                  ) : (
+                    <>
+                      <div className="space-y-2">
+                        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                          {text.manifestDriver}
+                        </p>
+                        <Select
+                          value={manifestDriverId}
+                          onValueChange={setManifestDriverId}
                         >
-                          <div className="flex items-center justify-between gap-3">
-                            <div>
-                              <p className="text-sm font-semibold">{orderRef(order, text.unnumbered)}</p>
-                              <p className="mt-1 text-xs opacity-80">{knownCodes}/{pieceTotal} scanned</p>
+                          <SelectTrigger>
+                            <SelectValue
+                              placeholder={text.manifestChooseDriver}
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {manifestDrivers.map((driver) => (
+                              <SelectItem key={driver.id} value={driver.id}>
+                                {driver.name} - {driver.email}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <Button
+                        type="button"
+                        className="w-full gap-2"
+                        onClick={() => manifestMutation.mutate()}
+                        disabled={
+                          !manifestDriverId || manifestMutation.isPending
+                        }
+                      >
+                        <Printer className="h-4 w-4" />
+                        {manifestMutation.isPending
+                          ? text.manifestPrinting
+                          : text.manifestPrint}
+                      </Button>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="rounded-3xl border-border/70">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">{text.incomplete}</CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    {text.incompleteHint}
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  {incompleteMultiPiece.length === 0 ? (
+                    <div className="rounded-3xl border border-dashed border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
+                      {text.incompleteEmpty}
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {incompleteMultiPiece.slice(0, 5).map((order) => {
+                        const parcels = order.parcels ?? [];
+                        const pieceTotal = Math.max(
+                          1,
+                          parcels[0]?.pieceTotal ?? 0,
+                          parcels.length,
+                        );
+                        const knownCodes = parcels.filter(
+                          (parcel) => parcel.parcelCode,
+                        ).length;
+
+                        return (
+                          <Link
+                            key={order.id}
+                            href={`/dashboard/warehouse?order=${order.id}`}
+                            className="block rounded-3xl border border-amber-300/40 bg-amber-50 p-4 text-amber-950 transition hover:bg-amber-100/80"
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <p className="text-sm font-semibold">
+                                  {orderRef(order, text.unnumbered)}
+                                </p>
+                                <p className="mt-1 text-xs opacity-80">
+                                  {knownCodes}/{pieceTotal} scanned
+                                </p>
+                              </div>
+                              <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
                             </div>
-                            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
-                          </div>
-                        </Link>
-                      );
-                    })}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
 
-            <Card className="rounded-3xl border-border/70">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">{text.liveView}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3 text-sm">
-                <div className="rounded-3xl border border-border/70 bg-muted/20 p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-muted-foreground">{text.page.replace("{page}", String(page))}</span>
-                    <Badge variant="outline" className="rounded-full">
-                      {formatText(text.loaded, { count: filteredOrders.length })}
-                    </Badge>
+              <Card className="rounded-3xl border-border/70">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">{text.liveView}</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm">
+                  <div className="rounded-3xl border border-border/70 bg-muted/20 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-muted-foreground">
+                        {text.page.replace("{page}", String(page))}
+                      </span>
+                      <Badge variant="outline" className="rounded-full">
+                        {formatText(text.loaded, {
+                          count: filteredOrders.length,
+                        })}
+                      </Badge>
+                    </div>
+                    <p className="mt-3 font-medium">
+                      {lastSyncedAt
+                        ? formatText(text.syncedAt, {
+                            time: lastSyncedAt.toLocaleTimeString(locale),
+                          })
+                        : text.notSynced}
+                    </p>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {isSearchMode ? text.searchMode : text.limitedView}
+                    </p>
                   </div>
-                  <p className="mt-3 font-medium">
-                    {lastSyncedAt
-                      ? formatText(text.syncedAt, {
-                          time: lastSyncedAt.toLocaleTimeString(locale),
-                        })
-                      : text.notSynced}
-                  </p>
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    {isSearchMode ? text.searchMode : text.limitedView}
-                  </p>
-                </div>
 
-                <div className="rounded-3xl border border-border/70 bg-muted/20 p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <span>{getStatusLabel("delivered", t)}</span>
-                    <span className="text-xl font-semibold">{deliveredToday}</span>
+                  <div className="rounded-3xl border border-border/70 bg-muted/20 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <span>{getStatusLabel("delivered", t)}</span>
+                      <span className="text-xl font-semibold">
+                        {deliveredToday}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {formatText(text.countOrders, {
+                        count: filteredOrders.length,
+                      })}
+                    </p>
                   </div>
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    {formatText(text.countOrders, { count: filteredOrders.length })}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+        </Tabs>
       </div>
     </PageShell>
   );
 }
-

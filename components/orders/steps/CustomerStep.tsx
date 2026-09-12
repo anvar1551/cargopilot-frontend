@@ -7,7 +7,10 @@ import { Building2, MapPin, Navigation, Phone, User } from "lucide-react";
 import { formatAddress, type Address } from "@/lib/addresses";
 import { forwardGeocodeMapbox } from "@/lib/mapbox";
 import { fetchPricingRegions } from "@/lib/pricing";
-import type { CreateOrderFormApi } from "@/components/orders/create-order-form.types";
+import type {
+  CreateOrderFormApi,
+  OrderCreationMode,
+} from "@/components/orders/create-order-form.types";
 
 import { useI18n } from "@/components/i18n/I18nProvider";
 import { AddressCombobox } from "@/components/combobox/AddressCombobox";
@@ -52,13 +55,13 @@ export function CustomerStep({
   lockedCustomerEntityLabel = null,
 }: {
   form: CreateOrderFormApi;
-  mode: "customer" | "manager";
+  mode: OrderCreationMode;
   canSaveAddresses: boolean;
   lockCustomerEntitySelection?: boolean;
   lockedCustomerEntityLabel?: string | null;
 }) {
   const { t } = useI18n();
-  const isManager = mode === "manager";
+  const isOperationsMode = mode === "operations";
 
   const pickupErr = form.formState.errors.addresses?.pickupAddress?.message as string | undefined;
   const dropoffErr = form.formState.errors.addresses?.dropoffAddress?.message as string | undefined;
@@ -228,7 +231,7 @@ export function CustomerStep({
     }
   };
 
-  const addressBookCustomerEntityId = isManager ? customerEntityId : undefined;
+  const addressBookCustomerEntityId = isOperationsMode ? customerEntityId : undefined;
 
   useEffect(() => {
     if (pickupId) return;
@@ -337,7 +340,7 @@ export function CustomerStep({
 
   return (
     <div className="space-y-4">
-      {isManager ? (
+      {isOperationsMode ? (
         <Card className="rounded-2xl border bg-linear-to-b from-primary/10 via-background to-background p-5">
           <div className="flex items-start justify-between gap-4">
             <div>

@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { clearAuth, getUser, roleToDashboardPath } from "@/lib/auth";
+import { clearAuth, dashboardPathForUser, getUser } from "@/lib/auth";
 import { useI18n } from "@/components/i18n/I18nProvider";
 import LanguageSwitcher from "@/components/i18n/LanguageSwitcher";
 
@@ -47,7 +47,7 @@ export default function UserMenu() {
     () => getUser(),
     () => null,
   );
-  const dashboardHref = roleToDashboardPath(user?.role ?? "customer");
+  const dashboardHref = dashboardPathForUser(user);
   const settingsHref = `${dashboardHref}/settings`;
 
   const onLogout = async () => {

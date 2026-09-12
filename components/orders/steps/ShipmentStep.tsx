@@ -27,22 +27,36 @@ import {
   DEFAULT_SERVICE_TYPE,
   SERVICE_TYPES,
 } from "@/lib/orders/service-types";
-const CURRENCIES = ["EUR", "USD", "UZS"] as const;
+const CURRENCIES = ["UZS", "USD", "CNY"] as const;
 const PAID_STATUS = ["NOT_PAID", "PAID", "PARTIAL"] as const;
+const TRANSPORT_MODES = [
+  "ROAD",
+  "AIR",
+  "SEA",
+  "RAIL",
+  "COURIER",
+  "MULTIMODAL",
+] as const;
 
 export function ShipmentStep({
   form,
   parcels,
   pricingQuote,
   pricingLoading,
+  availableTransportModes,
 }: {
   form: CreateOrderFormApi;
   parcels: CreateOrderParcelsFieldArray;
   pricingQuote?: PricingQuote;
   pricingLoading?: boolean;
+  availableTransportModes?: string[];
 }) {
   const { t } = useI18n();
   const codEnabled = form.watch("shipment.codEnabled") ?? false;
+  const transportOptions = (availableTransportModes?.length
+    ? availableTransportModes
+    : [...TRANSPORT_MODES]) as string[];
+  const transportModeLocked = transportOptions.length === 1;
 
   return (
     <div className="space-y-4">
@@ -52,7 +66,7 @@ export function ShipmentStep({
           {t("createOrder.shipment.title")}
         </h3>
 
-        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
           <div className="space-y-2">
             <Label>{t("createOrder.shipment.serviceType")}</Label>
             <div className="flex items-center gap-2 rounded-2xl border border-border/60 bg-background/60 px-3 py-2 focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/25">
@@ -113,6 +127,41 @@ export function ShipmentStep({
                 })}
               />
             </IconField>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Transport mode</Label>
+            <div className="flex items-center gap-2 rounded-2xl border border-border/60 bg-background/60 px-3 py-2 focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/25">
+              <Truck className="h-4 w-4 text-muted-foreground" />
+              <div className="flex-1">
+                <Select
+                  value={(form.watch("shipment.transportMode") as string | undefined) ?? "ROAD"}
+                  onValueChange={(value) =>
+                    form.setValue("shipment.transportMode", value as never, {
+                      shouldValidate: true,
+                      shouldDirty: true,
+                    })
+                  }
+                  disabled={transportModeLocked}
+                >
+                  <SelectTrigger className="rounded-2xl border-0 bg-transparent focus:ring-0">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {transportOptions.map((mode) => (
+                      <SelectItem key={mode} value={mode}>
+                        {mode}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            {transportModeLocked ? (
+              <p className="text-xs text-muted-foreground">
+                Auto-selected from available tariff rules.
+              </p>
+            ) : null}
           </div>
         </div>
 
@@ -374,7 +423,7 @@ export function ShipmentStep({
             <Label>{t("createOrder.shipment.currency")}</Label>
             <Select
               disabled={!codEnabled}
-              value={(form.watch("shipment.currency") as string | undefined) ?? "EUR"}
+              value={(form.watch("shipment.currency") as string | undefined) ?? "UZS"}
               onValueChange={(value) =>
                 form.setValue("shipment.currency", value as never, {
                   shouldValidate: true,

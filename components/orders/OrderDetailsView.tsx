@@ -2,21 +2,40 @@
 
 import Link from "next/link";
 import * as React from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { useI18n } from "@/components/i18n/I18nProvider";
-import { getUser } from "@/lib/auth";
+import { getPrimaryWarehouseId, getUser } from "@/lib/auth";
 import { getMapboxToken } from "@/lib/mapbox";
 import {
+  READ_ONLY_ORDER_CAPABILITIES,
+  type OrderActionCapabilities,
+} from "@/lib/orders/permissions";
+import {
+  bookCarrierForOrderLeg,
+  cancelCarrierForOrderLeg,
   collectOrderCash,
   fetchOrderProofLinks,
   fetchOrderById,
+  fetchOrderLegs,
   handoffOrderCash,
   settleOrderCash,
+  syncCarrierTrackingForOrderLeg,
+  type OrderLeg,
   type OrderProofBundle,
   type OrderProofLinksResponse,
 } from "@/lib/orders";
+import {
+  listIntegrationProviders,
+  type IntegrationProviderConfig,
+} from "@/lib/integrations";
+import {
+  listOrderPaymentIntents,
+  retryOrderPayment,
+  syncPaymentIntent,
+  type PaymentIntentSummary,
+} from "@/lib/paymentProviders";
 import { getInvoiceUrl, getOrderLabelUrls } from "@/lib/documents";
 import {
   getPaidByLabel,
@@ -37,6 +56,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -45,7 +73,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 
-import AssignDriverDialog from "@/components/manager/orders/AssignDriverDialog";
+import AssignDriverDialog from "@/components/orders/AssignDriverDialog";
 
 import {
   ArrowLeft,
@@ -210,6 +238,7 @@ type OrderDetails = {
   currency?: string | null;
   codAmount?: number | null;
   paymentType?: string | null;
+  paymentState?: string | null;
   deliveryChargePaidBy?: string | null;
   codPaidStatus?: string | null;
   serviceCharge?: number | null;
@@ -267,6 +296,14 @@ type OrderDetails = {
   } | null;
   labelKey?: string | null;
 };
+
+function currencyExponent(currency?: string | null) {
+  const normalized = String(currency ?? "").toUpperCase();
+  if (normalized === "UZS") return 2;
+  if (normalized === "USD") return 2;
+  if (normalized === "CNY") return 2;
+  return 2;
+}
 
 const STATUS_FLOW = [
   "pending",
@@ -335,6 +372,17 @@ function displayCashStatus(value: string | null | undefined, t: Translate) {
   return t(`orderDetails.cash.status.${value}`);
 }
 
+function displayPaymentState(value: string | null | undefined) {
+  const normalized = String(value ?? "").toUpperCase();
+  if (!normalized) return "-";
+  if (normalized === "UNPAID") return "Unpaid";
+  if (normalized === "PENDING") return "Pending";
+  if (normalized === "PAID") return "Paid";
+  if (normalized === "FAILED") return "Failed";
+  if (normalized === "REFUNDED") return "Refunded";
+  return prettyEnum(value);
+}
+
 function paymentStatusClasses(value?: string | null) {
   const status = toLower(value);
   if (status === "paid" || status === "settled") {
@@ -343,10 +391,37 @@ function paymentStatusClasses(value?: string | null) {
   if (status === "pending" || status === "expected" || status === "held") {
     return "border-amber-500/30 bg-amber-500/10 text-amber-700";
   }
-  if (status === "failed" || status === "cancelled" || status === "unpaid") {
+  if (status === "failed" || status === "canceled" || status === "cancelled" || status === "unpaid") {
     return "border-rose-500/30 bg-rose-500/10 text-rose-700";
   }
   return "border-border/60 bg-background text-foreground";
+}
+
+function carrierBookingStatusClasses(value?: string | null) {
+  const status = toLower(value);
+  if (status === "booked") return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700";
+  if (status === "requested") return "border-sky-500/30 bg-sky-500/10 text-sky-700";
+  if (status === "failed" || status === "cancelled") {
+    return "border-rose-500/30 bg-rose-500/10 text-rose-700";
+  }
+  return "border-slate-300 bg-slate-50 text-slate-700";
+}
+
+function displayCarrierBookingStatus(value?: string | null) {
+  return prettyEnum(value || "not_requested");
+}
+
+function getActorCompanyId(user: ReturnType<typeof getUser>) {
+  return (
+    user?.companyId ||
+    user?.scopes?.find((scope) => scope.scopeType === "company")?.scopeRefId ||
+    ""
+  );
+}
+
+function providerLabel(provider: IntegrationProviderConfig) {
+  const code = provider.providerCode.replaceAll("_", " ");
+  return `${prettyEnum(code)} (${provider.environment})`;
 }
 
 function cashHolderIcon(holderType?: string | null) {
@@ -383,8 +458,21 @@ function formatDateTime(value?: string | null) {
 function formatMoney(amount?: number | null, currency?: string | null) {
   const n = safeNumber(amount);
   if (n == null) return "-";
-  const cur = currency || "EUR";
+  const cur = currency || "UZS";
   return `${n.toFixed(2)} ${cur}`;
+}
+
+function formatMinorMoney(amountMinor?: string | number | null, currency?: string | null) {
+  if (amountMinor == null) return "-";
+  const amount = Number(amountMinor);
+  if (!Number.isFinite(amount)) return "-";
+  const exp = currencyExponent(currency);
+  return `${(amount / 10 ** exp).toFixed(2)} ${currency || "UZS"}`;
+}
+
+function canRetryPaymentIntent(intent?: PaymentIntentSummary | null) {
+  const status = String(intent?.status ?? "").toUpperCase();
+  return Boolean(intent) && !["SUCCEEDED", "REFUNDED", "PARTIALLY_REFUNDED"].includes(status);
 }
 
 function formatSize(bytes?: number | null) {
@@ -739,18 +827,30 @@ export default function OrderDetailsView({
   orderId,
   backHref,
   title = "Order Details",
-  showManagerActions = false,
+  capabilities,
   hideBackButton = false,
 }: {
   orderId: string;
   backHref: string;
   title?: string;
-  showManagerActions?: boolean;
+  capabilities?: Partial<OrderActionCapabilities>;
   hideBackButton?: boolean;
 }) {
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const currentUser = getUser();
+  const actorCompanyId = getActorCompanyId(currentUser);
+  const primaryWarehouseId = getPrimaryWarehouseId(currentUser);
+  const orderCapabilities = React.useMemo(
+    () => ({ ...READ_ONLY_ORDER_CAPABILITIES, ...capabilities }),
+    [capabilities],
+  );
+  const canAssignDriver = orderCapabilities.canAssignDriver;
+  const canManageCarrier = orderCapabilities.canBookCarrier;
+  const canReadPayments = orderCapabilities.canReadPayments;
+  const canRetryPayment = orderCapabilities.canRetryPayment;
+  const canSettleCash = orderCapabilities.canSettleCash;
+  const canHandleWarehouseCash = orderCapabilities.canHandleWarehouseCash;
 
   const {
     data: order,
@@ -776,6 +876,10 @@ export default function OrderDetailsView({
   );
   const [assignOpen, setAssignOpen] = React.useState(false);
   const [cashActionKey, setCashActionKey] = React.useState<string | null>(null);
+  const [selectedCarrierProviderByLeg, setSelectedCarrierProviderByLeg] =
+    React.useState<Record<string, string>>({});
+  const [cancelCarrierLeg, setCancelCarrierLeg] = React.useState<OrderLeg | null>(null);
+  const [cancelCarrierReason, setCancelCarrierReason] = React.useState("");
 
   const [eventKind, setEventKind] = React.useState<"all" | "status">("all");
   const [parcelFilter, setParcelFilter] = React.useState("all");
@@ -849,6 +953,43 @@ export default function OrderDetailsView({
     enabled: false,
     staleTime: 60_000,
   });
+
+  const {
+    data: orderLegs = [],
+    isFetching: isFetchingOrderLegs,
+  } = useQuery<OrderLeg[]>({
+    queryKey: ["order-legs", orderId],
+    queryFn: () => fetchOrderLegs(orderId),
+    enabled: Boolean(orderId) && canManageCarrier,
+    staleTime: 30_000,
+  });
+
+  const {
+    data: activeCarrierProviders = [],
+    isFetching: isFetchingCarrierProviders,
+  } = useQuery<IntegrationProviderConfig[]>({
+    queryKey: ["integration-providers", actorCompanyId, "carrier", "active"],
+    queryFn: () =>
+      listIntegrationProviders({
+        companyId: actorCompanyId || undefined,
+        domain: "carrier",
+        status: "active",
+      }),
+    enabled: canManageCarrier,
+    staleTime: 60_000,
+  });
+
+  const {
+    data: paymentIntents = [],
+    isFetching: isFetchingPaymentIntents,
+  } = useQuery<PaymentIntentSummary[]>({
+    queryKey: ["order-payment-intents", orderId],
+    queryFn: () => listOrderPaymentIntents(orderId),
+    enabled: Boolean(orderId) && canReadPayments,
+    staleTime: 30_000,
+  });
+
+  const latestPaymentIntent = paymentIntents[0] ?? null;
 
   const markProofAssetFailed = React.useCallback((assetKey: string | null) => {
     if (!assetKey) return;
@@ -926,9 +1067,93 @@ export default function OrderDetailsView({
 
   const refreshOrderQueries = React.useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["order", orderId] });
+    queryClient.invalidateQueries({ queryKey: ["order-legs", orderId] });
+    queryClient.invalidateQueries({ queryKey: ["order-payment-intents", orderId] });
     queryClient.invalidateQueries({ queryKey: ["orders"] });
-    queryClient.invalidateQueries({ queryKey: ["manager-analytics-summary"] });
+    queryClient.invalidateQueries({ queryKey: ["manager-analytics-v2-summary"] });
   }, [orderId, queryClient]);
+
+  const bookCarrierMutation = useMutation({
+    mutationFn: (payload: { legId: string; providerId: string }) =>
+      bookCarrierForOrderLeg({
+        orderId,
+        legId: payload.legId,
+        providerId: payload.providerId,
+      }),
+    onSuccess: (result) => {
+      toast.success(
+        result.outbox.status === "sent"
+          ? "Carrier booking already processed"
+          : "Carrier booking queued",
+      );
+      refreshOrderQueries();
+      queryClient.invalidateQueries({ queryKey: ["integration-outbox"] });
+    },
+    onError: (err: unknown) => {
+      toast.error(extractErrorMessage(err, "Failed to book carrier"));
+    },
+  });
+
+  const syncCarrierTrackingMutation = useMutation({
+    mutationFn: (payload: { legId: string }) =>
+      syncCarrierTrackingForOrderLeg({
+        orderId,
+        legId: payload.legId,
+      }),
+    onSuccess: () => {
+      toast.success("Carrier tracking sync queued");
+      refreshOrderQueries();
+      queryClient.invalidateQueries({ queryKey: ["integration-outbox"] });
+    },
+    onError: (err: unknown) => {
+      toast.error(extractErrorMessage(err, "Failed to sync carrier tracking"));
+    },
+  });
+
+  const cancelCarrierMutation = useMutation({
+    mutationFn: (payload: { legId: string; reason?: string | null }) =>
+      cancelCarrierForOrderLeg({
+        orderId,
+        legId: payload.legId,
+        reason: payload.reason,
+      }),
+    onSuccess: () => {
+      toast.success("Carrier cancellation queued");
+      setCancelCarrierLeg(null);
+      setCancelCarrierReason("");
+      refreshOrderQueries();
+      queryClient.invalidateQueries({ queryKey: ["integration-outbox"] });
+    },
+    onError: (err: unknown) => {
+      toast.error(extractErrorMessage(err, "Failed to cancel carrier booking"));
+    },
+  });
+
+  const syncPaymentMutation = useMutation({
+    mutationFn: (paymentIntentId: string) => syncPaymentIntent(paymentIntentId),
+    onSuccess: (result) => {
+      const status = result.paymentIntent.statusCanonical || result.providerStatus;
+      toast.success(`Payment synced: ${displayPaymentState(status)}`);
+      refreshOrderQueries();
+    },
+    onError: (err: unknown) => {
+      toast.error(extractErrorMessage(err, "Failed to sync payment status"));
+    },
+  });
+
+  const retryPaymentMutation = useMutation({
+    mutationFn: () => retryOrderPayment({ orderId }),
+    onSuccess: (result) => {
+      toast.success("Payment retry created");
+      refreshOrderQueries();
+      if (result.checkoutUrl) {
+        window.open(result.checkoutUrl, "_blank", "noopener,noreferrer");
+      }
+    },
+    onError: (err: unknown) => {
+      toast.error(extractErrorMessage(err, "Failed to retry payment"));
+    },
+  });
 
   const runCashAction = React.useCallback(
     async (
@@ -1323,7 +1548,7 @@ export default function OrderDetailsView({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {showManagerActions ? (
+            {canAssignDriver ? (
               <>
                 <Button
                   className="gap-2"
@@ -1754,6 +1979,251 @@ export default function OrderDetailsView({
 
                 <Separator />
 
+                {canManageCarrier ? (
+                  <div className="rounded-2xl border border-border/70 bg-linear-to-br from-slate-50 via-white to-cyan-50/70 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="inline-flex items-center gap-2 rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-medium text-cyan-800">
+                          <Truck className="h-3.5 w-3.5" />
+                          Carrier integrations
+                        </div>
+                        <h3 className="mt-3 text-base font-semibold">Book external carriers by leg</h3>
+                        <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+                          Carrier booking is attached to each route leg. Use this only for legs handled by external partners; internal fleet legs can stay unbooked.
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-9 gap-2 rounded-xl"
+                        onClick={() => {
+                          queryClient.invalidateQueries({ queryKey: ["order-legs", orderId] });
+                          queryClient.invalidateQueries({
+                            queryKey: ["integration-providers", actorCompanyId, "carrier", "active"],
+                          });
+                        }}
+                      >
+                        <RefreshCw className="h-4 w-4" />
+                        Refresh
+                      </Button>
+                    </div>
+
+                    {!actorCompanyId ? (
+                      <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                        Active company scope is missing from the session. Re-login with a company membership before booking carriers.
+                      </div>
+                    ) : null}
+
+                    {isFetchingOrderLegs ? (
+                      <div className="mt-4 inline-flex items-center gap-2 rounded-full border bg-background px-3 py-1.5 text-sm text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Loading route legs...
+                      </div>
+                    ) : orderLegs.length === 0 ? (
+                      <div className="mt-4 rounded-xl border border-dashed border-border/80 bg-background/70 p-4 text-sm text-muted-foreground">
+                        No route legs exist yet for this order. Legs are created from pricing/routing rules before carrier booking.
+                      </div>
+                    ) : (
+                      <div className="mt-4 grid gap-3">
+                        {orderLegs.map((leg) => {
+                          const selectedProviderId =
+                            selectedCarrierProviderByLeg[leg.id] ||
+                            leg.carrierProviderId ||
+                            (activeCarrierProviders.length === 1 ? activeCarrierProviders[0].id : "");
+                          const bookingStatus = leg.carrierBookingStatus || "not_requested";
+                          const isBookingCurrentLeg =
+                            bookCarrierMutation.isPending &&
+                            bookCarrierMutation.variables?.legId === leg.id;
+                          const isSyncingCurrentLeg =
+                            syncCarrierTrackingMutation.isPending &&
+                            syncCarrierTrackingMutation.variables?.legId === leg.id;
+                          const isCancellingCurrentLeg =
+                            cancelCarrierMutation.isPending &&
+                            cancelCarrierMutation.variables?.legId === leg.id;
+                          const selectedProvider = activeCarrierProviders.find(
+                            (provider) => provider.id === selectedProviderId,
+                          );
+                          const canBook =
+                            Boolean(selectedProvider) &&
+                            !isBookingCurrentLeg &&
+                            !["requested", "booked"].includes(toLower(bookingStatus));
+                          const hasCarrierTrackingIdentity = Boolean(
+                            leg.carrierRef || leg.carrierTrackingNumber,
+                          );
+                          const canSyncCarrierTracking =
+                            hasCarrierTrackingIdentity &&
+                            !isSyncingCurrentLeg &&
+                            !isCancellingCurrentLeg;
+                          const canCancelCarrier =
+                            toLower(bookingStatus) === "booked" &&
+                            Boolean(leg.carrierRef) &&
+                            !isCancellingCurrentLeg &&
+                            !isSyncingCurrentLeg;
+                          const hasSelectedProviderOption = activeCarrierProviders.some(
+                            (provider) => provider.id === selectedProviderId,
+                          );
+
+                          return (
+                            <div
+                              key={leg.id}
+                              className="rounded-2xl border border-border/70 bg-background/85 p-4 shadow-sm"
+                            >
+                              <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                                <div className="min-w-0 space-y-3">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <Badge variant="outline" className="rounded-full">
+                                      Leg {leg.sequence}
+                                    </Badge>
+                                    <Badge variant="secondary" className="rounded-full">
+                                      {prettyEnum(leg.mode)}
+                                    </Badge>
+                                    <Badge
+                                      variant="outline"
+                                      className={cn(
+                                        "rounded-full border px-2 py-0.5 text-xs",
+                                        carrierBookingStatusClasses(bookingStatus),
+                                      )}
+                                    >
+                                      {displayCarrierBookingStatus(bookingStatus)}
+                                    </Badge>
+                                  </div>
+
+                                  <div className="grid gap-2 text-sm sm:grid-cols-2 xl:grid-cols-4">
+                                    <div>
+                                      <p className="text-xs text-muted-foreground">Route</p>
+                                      <p className="font-medium">
+                                        {leg.fromCountry || "-"} {"->"} {leg.toCountry || "-"}
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <p className="text-xs text-muted-foreground">Partner</p>
+                                      <p className="font-medium">
+                                        {selectedProvider ? providerLabel(selectedProvider) : leg.carrierCode || "-"}
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <p className="text-xs text-muted-foreground">Carrier ref</p>
+                                      <p className="font-mono text-xs">{leg.carrierRef || "-"}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-xs text-muted-foreground">Tracking number</p>
+                                      <p className="font-mono text-xs">{leg.carrierTrackingNumber || "-"}</p>
+                                    </div>
+                                  </div>
+
+                                  {leg.carrierBookingError ? (
+                                    <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+                                      {leg.carrierBookingError}
+                                    </div>
+                                  ) : null}
+                                </div>
+
+                                <div className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap xl:w-auto xl:min-w-[560px] xl:justify-end">
+                                  <Select
+                                    value={selectedProviderId || "none"}
+                                    onValueChange={(value) =>
+                                      setSelectedCarrierProviderByLeg((prev) => ({
+                                        ...prev,
+                                        [leg.id]: value === "none" ? "" : value,
+                                      }))
+                                    }
+                                    disabled={
+                                      isFetchingCarrierProviders ||
+                                      activeCarrierProviders.length === 0 ||
+                                      ["requested", "booked"].includes(toLower(bookingStatus))
+                                    }
+                                  >
+                                    <SelectTrigger className="h-10 flex-1 rounded-xl">
+                                      <SelectValue placeholder="Select carrier provider" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="none">Select carrier provider</SelectItem>
+                                      {selectedProviderId && !hasSelectedProviderOption ? (
+                                        <SelectItem value={selectedProviderId}>
+                                          {leg.carrierCode || "Current provider"} (not active)
+                                        </SelectItem>
+                                      ) : null}
+                                      {activeCarrierProviders.map((provider) => (
+                                        <SelectItem key={provider.id} value={provider.id}>
+                                          {providerLabel(provider)}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+
+                                  <Button
+                                    type="button"
+                                    className="h-10 rounded-xl"
+                                    disabled={!canBook}
+                                    onClick={() => {
+                                      if (!selectedProviderId) return;
+                                      bookCarrierMutation.mutate({
+                                        legId: leg.id,
+                                        providerId: selectedProviderId,
+                                      });
+                                    }}
+                                  >
+                                    {isBookingCurrentLeg ? (
+                                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <Truck className="mr-2 h-4 w-4" />
+                                    )}
+                                    {toLower(bookingStatus) === "failed" ? "Retry booking" : "Book carrier"}
+                                  </Button>
+
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    className="h-10 rounded-xl"
+                                    disabled={!canSyncCarrierTracking}
+                                    onClick={() =>
+                                      syncCarrierTrackingMutation.mutate({ legId: leg.id })
+                                    }
+                                  >
+                                    {isSyncingCurrentLeg ? (
+                                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <RefreshCw className="mr-2 h-4 w-4" />
+                                    )}
+                                    Sync tracking
+                                  </Button>
+
+                                  <Button
+                                    type="button"
+                                    variant="destructive"
+                                    className="h-10 rounded-xl"
+                                    disabled={!canCancelCarrier}
+                                    onClick={() => {
+                                      setCancelCarrierLeg(leg);
+                                      setCancelCarrierReason("");
+                                    }}
+                                  >
+                                    {isCancellingCurrentLeg ? (
+                                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <CircleAlert className="mr-2 h-4 w-4" />
+                                    )}
+                                    Cancel carrier
+                                  </Button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {!isFetchingCarrierProviders && activeCarrierProviders.length === 0 ? (
+                      <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                        No active carrier providers found for this company. Create one in Billing & Pricing {"->"} Integrations first.
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {canManageCarrier ? <Separator /> : null}
+
                 {parcels.length ? (
                   <div className="grid gap-3 xl:grid-cols-2">
                     {parcels.map((p) => (
@@ -1814,7 +2284,7 @@ export default function OrderDetailsView({
                   <CardTitle className="text-base">{t("orderDetails.paymentAndPlanning")}</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4 text-sm">
-                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
                     <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
                       <div className="flex items-center justify-between gap-3">
                         <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
@@ -1851,6 +2321,19 @@ export default function OrderDetailsView({
 
                     <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
                       <p className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                        <BadgeDollarSign className="h-4 w-4" />
+                        Payment state
+                      </p>
+                      <Badge
+                        variant="outline"
+                        className={cn("mt-2 rounded-full border px-2 py-0.5 text-xs", paymentStatusClasses(order.paymentState))}
+                      >
+                        {displayPaymentState(order.paymentState)}
+                      </Badge>
+                    </div>
+
+                    <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+                      <p className="inline-flex items-center gap-2 text-xs text-muted-foreground">
                         <Banknote className="h-4 w-4" />
                         {t("orderDetails.cod")}
                       </p>
@@ -1877,6 +2360,113 @@ export default function OrderDetailsView({
                       </Badge>
                     </div>
                   </div>
+
+                  {canReadPayments || canRetryPayment ? (
+                    <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                            <RefreshCw className="h-4 w-4" />
+                            Provider payment recovery
+                          </p>
+                          {latestPaymentIntent ? (
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                              <Badge variant="outline" className="rounded-full">
+                                {latestPaymentIntent.provider}
+                              </Badge>
+                              <Badge
+                                variant="outline"
+                                className={cn(
+                                  "rounded-full border px-2 py-0.5 text-xs",
+                                  paymentStatusClasses(latestPaymentIntent.statusCanonical),
+                                )}
+                              >
+                                {displayPaymentState(latestPaymentIntent.statusCanonical)}
+                              </Badge>
+                              <span className="text-sm font-medium">
+                                {formatMinorMoney(
+                                  latestPaymentIntent.amountMinor,
+                                  latestPaymentIntent.currency,
+                                )}
+                              </span>
+                            </div>
+                          ) : (
+                            <p className="mt-2 text-sm text-muted-foreground">
+                              {isFetchingPaymentIntents
+                                ? "Loading payment intents..."
+                                : "No online payment intent exists for this order."}
+                            </p>
+                          )}
+                        </div>
+
+                        {latestPaymentIntent ? (
+                          <div className="flex flex-wrap items-center gap-2">
+                            {latestPaymentIntent.providerCheckoutUrl ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-9 gap-2 rounded-xl"
+                                onClick={() =>
+                                  window.open(
+                                    latestPaymentIntent.providerCheckoutUrl!,
+                                    "_blank",
+                                    "noopener,noreferrer",
+                                  )
+                                }
+                              >
+                                <ExternalLink className="h-4 w-4" />
+                                Open checkout
+                              </Button>
+                            ) : null}
+                            {canReadPayments ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-9 gap-2 rounded-xl"
+                                onClick={() => syncPaymentMutation.mutate(latestPaymentIntent.id)}
+                                disabled={syncPaymentMutation.isPending}
+                              >
+                                {syncPaymentMutation.isPending ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <RefreshCw className="h-4 w-4" />
+                                )}
+                                Sync status
+                              </Button>
+                            ) : null}
+                            {canRetryPayment ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                className="h-9 gap-2 rounded-xl"
+                                onClick={() => retryPaymentMutation.mutate()}
+                                disabled={
+                                  retryPaymentMutation.isPending ||
+                                  !canRetryPaymentIntent(latestPaymentIntent)
+                                }
+                              >
+                                {retryPaymentMutation.isPending ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <CreditCard className="h-4 w-4" />
+                                )}
+                                Retry payment
+                              </Button>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                      {latestPaymentIntent?.provider === "PAYME" ||
+                      latestPaymentIntent?.provider === "UZUM" ? (
+                        <p className="mt-3 text-xs text-muted-foreground">
+                          This provider is webhook-first in the current setup; sync records an audit
+                          attempt and keeps the status pending until provider callback arrives.
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
 
                   <div className="grid gap-3 xl:grid-cols-2">
                     <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
@@ -1929,16 +2519,16 @@ export default function OrderDetailsView({
                       <div className="mt-3 space-y-3">
                         {cashCollections.map((collection) => {
                           const latestEvent = collection.events?.[collection.events.length - 1] ?? null;
-                          const isWarehouseUser =
-                            currentUser?.role === "warehouse" &&
-                            Boolean(currentUser.warehouseId) &&
-                            order?.currentWarehouse?.id === currentUser.warehouseId;
+                          const isScopedWarehouseUser =
+                            canHandleWarehouseCash &&
+                            Boolean(primaryWarehouseId) &&
+                            order?.currentWarehouse?.id === primaryWarehouseId;
                           const canAcceptToWarehouse =
-                            isWarehouseUser &&
+                            isScopedWarehouseUser &&
                             (collection.status === "expected" ||
                               collection.currentHolderType === "driver");
                           const canSettleToFinance =
-                            currentUser?.role === "manager" &&
+                            canSettleCash &&
                             collection.status === "held";
                           return (
                             <div
@@ -2023,7 +2613,7 @@ export default function OrderDetailsView({
                                                 orderId,
                                                 kind: (collection.kind as "cod" | "service_charge") ?? "cod",
                                                 toHolderType: "warehouse",
-                                                toWarehouseId: currentUser?.warehouseId ?? null,
+                                                toWarehouseId: primaryWarehouseId ?? null,
                                               }),
                                             t("orderDetails.cash.actions.accept"),
                                             t("orderDetails.cash.errors.accept"),
@@ -2640,6 +3230,87 @@ export default function OrderDetailsView({
             </Card>
           </TabsContent>
         </Tabs>
+
+        <Dialog
+          open={Boolean(cancelCarrierLeg)}
+          onOpenChange={(open) => {
+            if (!open && !cancelCarrierMutation.isPending) {
+              setCancelCarrierLeg(null);
+              setCancelCarrierReason("");
+            }
+          }}
+        >
+          <DialogContent className="sm:max-w-xl">
+            <DialogHeader>
+              <DialogTitle>Cancel carrier booking</DialogTitle>
+              <DialogDescription>
+                This queues a cancellation request to the external carrier for leg{" "}
+                {cancelCarrierLeg?.sequence ?? "-"}.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-3">
+              <div className="rounded-2xl border bg-muted/30 p-3 text-sm">
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Carrier</p>
+                    <p className="font-medium">{cancelCarrierLeg?.carrierCode || "-"}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Carrier ref</p>
+                    <p className="font-mono text-xs">{cancelCarrierLeg?.carrierRef || "-"}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium" htmlFor="carrier-cancel-reason">
+                  Reason
+                </label>
+                <Textarea
+                  id="carrier-cancel-reason"
+                  value={cancelCarrierReason}
+                  onChange={(event) => setCancelCarrierReason(event.target.value)}
+                  placeholder="Optional reason sent to the carrier"
+                  disabled={cancelCarrierMutation.isPending}
+                />
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={cancelCarrierMutation.isPending}
+                onClick={() => {
+                  setCancelCarrierLeg(null);
+                  setCancelCarrierReason("");
+                }}
+              >
+                Keep booking
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={!cancelCarrierLeg || cancelCarrierMutation.isPending}
+                onClick={() => {
+                  if (!cancelCarrierLeg) return;
+                  cancelCarrierMutation.mutate({
+                    legId: cancelCarrierLeg.id,
+                    reason: cancelCarrierReason.trim() || null,
+                  });
+                }}
+              >
+                {cancelCarrierMutation.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <CircleAlert className="mr-2 h-4 w-4" />
+                )}
+                Queue cancellation
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

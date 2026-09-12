@@ -5,15 +5,16 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { useI18n } from "@/components/i18n/I18nProvider";
-import OrdersTable from "@/components/manager/orders/OrdersTable";
+import OrdersTable from "@/components/orders/OrderTable";
 import PageShell from "@/components/layout/PageShell";
-import type { ManagerOrderRow } from "@/components/manager/orders/columns";
+import type { OrderTableRow } from "@/components/orders/OrderTable";
 
-import { exportOrdersCsv, fetchOrders } from "@/lib/orders";
+import { deleteOrder, exportOrdersCsv, fetchOrders } from "@/lib/orders";
+import { getErpOrderCapabilities } from "@/lib/orders/permissions";
+import { getUser } from "@/lib/auth";
 import { getStatusLabel } from "@/lib/i18n/labels";
 import { fetchDrivers } from "@/lib/manager";
 import { fetchWarehouses } from "@/lib/warehouses";
-import { usePageVisibility } from "@/lib/usePageVisibility";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -31,18 +33,21 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 
 import {
+  AlertTriangle,
   ArrowLeft,
   ArrowRight,
   Download,
   Filter,
+  Loader2,
   Package,
   RefreshCw,
   Save,
+  Trash2,
   X,
 } from "lucide-react";
 
 type OrdersResponseLike = {
-  orders: ManagerOrderRow[];
+  orders: OrderTableRow[];
   total: number;
   page: number;
   limit: number;
@@ -146,7 +151,8 @@ function triggerCsvDownload(blob: Blob, fileName: string) {
 
 export default function ManagerOrdersPage() {
   const { t } = useI18n();
-  const isPageVisible = usePageVisibility();
+  const actor = useMemo(() => getUser(), []);
+  const orderCapabilities = useMemo(() => getErpOrderCapabilities(actor), [actor]);
 
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [presetName, setPresetName] = useState("");
@@ -164,6 +170,8 @@ export default function ManagerOrdersPage() {
   const [cursorStack, setCursorStack] = useState<Array<string | null>>([null]);
   const [cursorIndex, setCursorIndex] = useState(0);
   const [isFiltersOpen, setFiltersOpen] = useState(false);
+  const [orderPendingDelete, setOrderPendingDelete] =
+    useState<OrderTableRow | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -176,7 +184,7 @@ export default function ManagerOrdersPage() {
   const filterSignature = JSON.stringify(filters);
 
   const driversQuery = useQuery({
-    queryKey: ["manager-drivers", "orders-filters"],
+    queryKey: ["operations-drivers", "orders-filters"],
     queryFn: fetchDrivers,
   });
 
@@ -185,7 +193,7 @@ export default function ManagerOrdersPage() {
     queryFn: fetchWarehouses,
   });
 
-  const ordersQuery = useQuery<OrdersResponseLike | ManagerOrderRow[]>({
+  const ordersQuery = useQuery<OrdersResponseLike | OrderTableRow[]>({
     queryKey: [
       "orders-cursor",
       cursorStack[cursorIndex] ?? null,
@@ -203,9 +211,8 @@ export default function ManagerOrdersPage() {
         assignedDriverId: filters.assignedDriverId || undefined,
         warehouseId: filters.warehouseId || undefined,
         region: filters.region.trim() || undefined,
-      }),
+    }),
     placeholderData: (prev) => prev,
-    refetchInterval: isPageVisible ? 90_000 : false,
   });
 
   const exportMutation = useMutation({
@@ -231,6 +238,26 @@ export default function ManagerOrdersPage() {
         error && typeof error === "object" && "message" in error
           ? String((error as { message?: string }).message || t("managerOrdersPage.csvFailed"))
           : t("managerOrdersPage.csvFailed");
+      toast.error(message);
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (orderId: string) => deleteOrder(orderId),
+    onSuccess: async (result) => {
+      toast.success(
+        result.orderNumber
+          ? `Order #${result.orderNumber} deleted`
+          : "Order deleted",
+      );
+      setOrderPendingDelete(null);
+      await ordersQuery.refetch();
+    },
+    onError: (error: unknown) => {
+      const message =
+        error && typeof error === "object" && "message" in error
+          ? String((error as { message?: string }).message || "Failed to delete order")
+          : "Failed to delete order";
       toast.error(message);
     },
   });
@@ -365,7 +392,7 @@ export default function ManagerOrdersPage() {
                   onClick={() => {
                     void exportMutation.mutateAsync();
                   }}
-                  disabled={exportMutation.isPending}
+                  disabled={!orderCapabilities.canExport || exportMutation.isPending}
                 >
                   <Download className="h-4 w-4" />
                   {exportMutation.isPending
@@ -412,7 +439,10 @@ export default function ManagerOrdersPage() {
             ) : (
               <OrdersTable
                 data={orders}
+                capabilities={orderCapabilities}
+                detailsBasePath="/dashboard/manager/orders"
                 hideQuickFilters
+                onDeleteOrder={orderCapabilities.canDelete ? setOrderPendingDelete : undefined}
                 onRefresh={() => {
                   void handleRefresh();
                 }}
@@ -605,6 +635,68 @@ export default function ManagerOrdersPage() {
                 </div>
               ) : null}
             </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={Boolean(orderPendingDelete)}
+          onOpenChange={(open) => {
+            if (!open && !deleteMutation.isPending) {
+              setOrderPendingDelete(null);
+            }
+          }}
+        >
+          <DialogContent className="sm:max-w-[520px]">
+            <DialogHeader>
+              <div className="mb-2 inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-red-50 text-red-600">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <DialogTitle>Delete order permanently?</DialogTitle>
+              <DialogDescription>
+                This removes the order and connected parcels, tracking, cash custody,
+                payment records, label job, documents, route legs, and carrier integration
+                commands. This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="rounded-2xl border border-red-100 bg-red-50/70 p-4 text-sm">
+              <div className="font-semibold text-red-950">
+                {orderPendingDelete?.orderNumber
+                  ? `#${orderPendingDelete.orderNumber}`
+                  : orderPendingDelete?.id ?? "Selected order"}
+              </div>
+              <div className="mt-1 text-red-800">
+                {orderPendingDelete?.pickupAddress || "-"} {"->"}{" "}
+                {orderPendingDelete?.dropoffAddress || "-"}
+              </div>
+            </div>
+
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={deleteMutation.isPending}
+                onClick={() => setOrderPendingDelete(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={!orderPendingDelete || deleteMutation.isPending}
+                onClick={() => {
+                  if (!orderPendingDelete) return;
+                  deleteMutation.mutate(orderPendingDelete.id);
+                }}
+              >
+                {deleteMutation.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Trash2 className="mr-2 h-4 w-4" />
+                )}
+                Delete order
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>

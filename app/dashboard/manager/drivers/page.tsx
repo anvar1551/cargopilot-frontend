@@ -8,7 +8,6 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchDrivers, type DriverLite } from "@/lib/manager";
 import { fetchDriverWorkloads, type DriverWorkload } from "@/lib/orders";
 import { fetchWarehouses, type Warehouse } from "@/lib/warehouses";
-import { usePageVisibility } from "@/lib/usePageVisibility";
 
 import CreateUserDialog from "@/components/manager/users/CreateUserDialog";
 import DriverManifestButton from "@/components/manager/drivers/DriverManifestButton";
@@ -190,7 +189,6 @@ function StatTile({
 
 export default function ManagerDriversPage() {
   const { locale } = useI18n();
-  const isPageVisible = usePageVisibility();
   const text = copy[locale];
   const [q, setQ] = useState("");
   const [warehouseFilter, setWarehouseFilter] = useState<
@@ -201,13 +199,11 @@ export default function ManagerDriversPage() {
   const driversQuery = useQuery<DriverLite[]>({
     queryKey: ["manager-drivers-page"],
     queryFn: fetchDrivers,
-    refetchInterval: isPageVisible ? 90_000 : false,
   });
 
   const workloadsQuery = useQuery<DriverWorkload[]>({
     queryKey: ["manager-drivers-workloads"],
     queryFn: fetchDriverWorkloads,
-    refetchInterval: isPageVisible ? 90_000 : false,
   });
 
   const warehousesQuery = useQuery<Warehouse[]>({
