@@ -136,11 +136,13 @@
     },
     billing: {
       group: "Биллинг и тарифы",
+      finance: "Финансовый контроль",
       pricing: "Тарифы",
       providers: "Платежные провайдеры",
       integrations: "Интеграции",
     },
     billingDesc: {
+      finance: "Кредиторская задолженность, казначейство и сверка",
       pricing: "Тарифы, SLA и матрица зон",
       providers: "Ключи провайдеров и активация",
       integrations: "Перевозчики, SMS, вебхуки и повторы",
@@ -186,6 +188,7 @@
       lastSeen: "Последний сигнал",
       warehouse: "Склад",
       coordinates: "Координаты",
+      awaitingGps: "Ожидание GPS",
       focus: "Фокус",
     },
     stats: {

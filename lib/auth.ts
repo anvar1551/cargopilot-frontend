@@ -371,7 +371,12 @@ export function dashboardPathForUser(
     hasPermission(user, "drivers.manage") ||
     hasPermission(user, "shipment.assignCourier") ||
     hasPermission(user, "support.assign") ||
-    hasPermission(user, "finance.viewLedger")
+    hasPermission(user, "finance.viewLedger") ||
+    hasPermission(user, "finance.payables.read") ||
+    hasPermission(user, "finance.receivables.read") ||
+    hasPermission(user, "finance.treasury.read") ||
+    hasPermission(user, "finance.bankReconciliation.read") ||
+    hasPermission(user, "finance.reports.read")
   ) {
     return "/dashboard/manager";
   }

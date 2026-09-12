@@ -212,7 +212,7 @@ function driverLabel(driver: ManagerLiveMapDriver) {
 }
 
 function driverDisplay(driver: ManagerLiveMapDriver, tick: number) {
-  if (driver.status === "offline") {
+  if (driver.status === "offline" || driver.lat == null || driver.lng == null) {
     return { ...driver, headingDeg: driver.headingDeg };
   }
   const phase = (tick + driver.seed) / 8;
@@ -907,22 +907,33 @@ export default function ManagerLiveMapPage() {
   >(() => {
     return {
       type: "FeatureCollection",
-      features: filteredDrivers.map((driver) =>
-        makeDriverFeature({
-          id: driver.id,
-          coordinates: [driver.lng, driver.lat],
-          status: driver.status,
-          label: driverLabel(driver),
-          headingDeg: driver.headingDeg ?? 0,
-        }),
-      ),
+      features: filteredDrivers
+        .filter(
+          (driver) =>
+            isFiniteCoord(driver.lat) && isFiniteCoord(driver.lng),
+        )
+        .map((driver) =>
+          makeDriverFeature({
+            id: driver.id,
+            coordinates: [driver.lng as number, driver.lat as number],
+            status: driver.status,
+            label: driverLabel(driver),
+            headingDeg: driver.headingDeg ?? 0,
+          }),
+        ),
     };
   }, [filteredDrivers]);
 
   const selectedDriverFeature = React.useMemo<
     FeatureCollection<PointFeature<Record<string, unknown>>>
   >(() => {
-    if (!selectedDriver) return EMPTY_POINTS;
+    if (
+      !selectedDriver ||
+      !isFiniteCoord(selectedDriver.lat) ||
+      !isFiniteCoord(selectedDriver.lng)
+    ) {
+      return EMPTY_POINTS;
+    }
     return {
       type: "FeatureCollection",
       features: [
@@ -930,7 +941,7 @@ export default function ManagerLiveMapPage() {
           type: "Feature",
           geometry: {
             type: "Point",
-            coordinates: [selectedDriver.lng, selectedDriver.lat],
+            coordinates: [selectedDriver.lng as number, selectedDriver.lat as number],
           },
           properties: {
             id: selectedDriver.id,
@@ -1132,9 +1143,17 @@ export default function ManagerLiveMapPage() {
   }, [allVisibleCoords]);
 
   const centerOnSelectedDriver = React.useCallback(() => {
-    if (!selectedDriver || !mapRef.current || !isMapReadyRef.current) return;
+    if (
+      !selectedDriver ||
+      !isFiniteCoord(selectedDriver.lat) ||
+      !isFiniteCoord(selectedDriver.lng) ||
+      !mapRef.current ||
+      !isMapReadyRef.current
+    ) {
+      return;
+    }
     mapRef.current.flyTo({
-      center: [selectedDriver.lng, selectedDriver.lat],
+      center: [selectedDriver.lng as number, selectedDriver.lat as number],
       zoom: 13.2,
       duration: 240,
     });
@@ -1721,11 +1740,11 @@ export default function ManagerLiveMapPage() {
     const target = filteredDrivers.find(
       (driver) => driver.id === selectedDriverId,
     );
-    if (!target) return;
+    if (!target || !isFiniteCoord(target.lat) || !isFiniteCoord(target.lng)) return;
 
     lastAutoFocusedDriverIdRef.current = selectedDriverId;
     mapRef.current.flyTo({
-      center: [target.lng, target.lat],
+      center: [target.lng as number, target.lat as number],
       zoom: 12.2,
       duration: 260,
     });
@@ -2038,8 +2057,9 @@ export default function ManagerLiveMapPage() {
                                     {t("managerLiveMap.panel.coordinates")}
                                   </p>
                                   <p className="mt-1 font-medium text-foreground">
-                                    {driver.lat.toFixed(5)},{" "}
-                                    {driver.lng.toFixed(5)}
+                                    {driver.lat != null && driver.lng != null
+                                      ? `${driver.lat.toFixed(5)}, ${driver.lng.toFixed(5)}`
+                                      : t("managerLiveMap.panel.awaitingGps")}
                                   </p>
                                 </div>
                                 <div className="rounded-lg border border-border/60 bg-white/75 px-2.5 py-2">

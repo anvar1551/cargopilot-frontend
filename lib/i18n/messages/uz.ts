@@ -135,11 +135,13 @@ export const uz = {
     },
     billing: {
       group: "Billing va tariflar",
+      finance: "Moliya nazorati",
       pricing: "Tariflar",
       providers: "To'lov provayderlari",
       integrations: "Integratsiyalar",
     },
     billingDesc: {
+      finance: "Kreditorlik, g'aznachilik va solishtirish",
       pricing: "Tarif, SLA va zona qoidalari",
       providers: "Provayder kalitlari va aktivatsiya",
       integrations: "Tashuvchi, SMS, webhook va retrylar",
@@ -185,6 +187,7 @@ export const uz = {
       lastSeen: "Oxirgi signal",
       warehouse: "Ombor",
       coordinates: "Koordinatalar",
+      awaitingGps: "GPS kutilmoqda",
       focus: "Fokus",
     },
     stats: {

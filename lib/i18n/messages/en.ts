@@ -134,11 +134,13 @@ export const en = {
     },
     billing: {
       group: "Billing & Pricing",
+      finance: "Finance Control",
       pricing: "Pricing",
       providers: "Payment Providers",
       integrations: "Integrations",
     },
     billingDesc: {
+      finance: "Payables, treasury, and reconciliation",
       pricing: "Tariffs, SLA, and zone rules",
       providers: "Provider credentials and activation",
       integrations: "Carriers, SMS, webhooks, and retries",
@@ -183,6 +185,7 @@ export const en = {
       lastSeen: "Last seen",
       warehouse: "Warehouse",
       coordinates: "Coordinates",
+      awaitingGps: "Awaiting GPS",
       focus: "Focus",
     },
     stats: {

@@ -441,6 +441,10 @@ export default function SupportDashboard() {
   const queryClient = useQueryClient();
   const currentUser = useMemo(() => getUser(), []);
   const canConfigureSupport = hasPermission(currentUser, "support.configure");
+  const canAssignSupport = hasPermission(currentUser, "support.assign");
+  const canUpdateSupport = hasPermission(currentUser, "support.update");
+  const canEscalateSupport = hasPermission(currentUser, "support.escalate");
+  const canResolveSupport = hasPermission(currentUser, "support.resolve");
   const companyId = currentUser?.companyId ?? null;
   const [supportView, setSupportView] = useState<SupportView>("tickets");
   const [activeId, setActiveId] = useState("");
@@ -458,7 +462,7 @@ export default function SupportDashboard() {
     title: "",
     summary: "",
     priority: "normal" as SupportTicketPriority,
-    ownerId: "",
+    ownerId: "__auto",
   });
   const [queueForm, setQueueForm] = useState<QueueForm>(emptyQueueForm);
   const [ruleForm, setRuleForm] = useState<RuleForm>(emptyRuleForm);
@@ -470,8 +474,9 @@ export default function SupportDashboard() {
   const debouncedQuery = useDebounce(query, 350);
 
   const assigneesQuery = useQuery({
-    queryKey: ["manager-support-assignees"],
+    queryKey: ["manager-support-assignees", companyId],
     queryFn: fetchSupportAssignees,
+    enabled: Boolean(companyId),
     staleTime: 60_000,
     placeholderData: (prev) => prev,
     refetchOnWindowFocus: false,
@@ -496,6 +501,15 @@ export default function SupportDashboard() {
     placeholderData: (prev) => prev,
     refetchOnWindowFocus: false,
   });
+  const assigneeNamesById = useMemo(
+    () => new Map(
+      (assigneesQuery.data ?? []).map((assignee) => [
+        assignee.id,
+        assignee.name || assignee.email,
+      ]),
+    ),
+    [assigneesQuery.data],
+  );
 
   const supportTicketsQuery = useInfiniteQuery({
     queryKey: ["manager-support-tickets", statusFilter, scopeFilter, priorityFilter, sourceFilter, debouncedQuery],
@@ -757,15 +771,22 @@ export default function SupportDashboard() {
         summary: payload.summary.trim() || null,
         priority: payload.priority,
         source: "manager",
-        ownerId: payload.ownerId === "__unassigned" ? null : payload.ownerId || currentUser?.id || null,
+        ownerId: canAssignSupport
+          ? payload.ownerId === "__auto"
+            ? undefined
+            : payload.ownerId === "__unassigned"
+              ? null
+              : payload.ownerId
+          : undefined,
       }),
     onSuccess: (ticket, variables) => {
       setOptimisticTickets((current) => current.filter((item) => item.id !== variables.tempId));
       setActiveId(ticket.id);
       setNewTicketOpen(false);
-      setNewTicket({ orderNumber: "", title: "", summary: "", priority: "normal", ownerId: "" });
+      setNewTicket({ orderNumber: "", title: "", summary: "", priority: "normal", ownerId: "__auto" });
       queryClient.setQueryData(["manager-support-ticket", ticket.id], ticket);
       void queryClient.invalidateQueries({ queryKey: ["manager-support-tickets"] });
+      void queryClient.invalidateQueries({ queryKey: ["support", "summary"] });
     },
     onError: (_err, variables) => {
       setOptimisticTickets((current) => current.filter((item) => item.id !== variables.tempId));
@@ -833,6 +854,7 @@ export default function SupportDashboard() {
     return subscribeSupportStream({
       onRefresh: (event) => {
         void queryClient.invalidateQueries({ queryKey: ["manager-support-tickets"] });
+        void queryClient.invalidateQueries({ queryKey: ["support", "summary"] });
         if (event.ticketId) {
           void queryClient.invalidateQueries({ queryKey: ["manager-support-ticket", event.ticketId] });
         }
@@ -854,7 +876,7 @@ export default function SupportDashboard() {
 
   const submitNote = () => {
     const trimmed = note.trim();
-    if (!trimmed || !activeTicket.id || noteMutation.isPending) return;
+    if (!canUpdateSupport || !trimmed || !activeTicket.id || noteMutation.isPending) return;
     setLocalNotes((current) => ({
       ...current,
       [activeTicket.id]: [...(current[activeTicket.id] ?? []), trimmed],
@@ -865,7 +887,7 @@ export default function SupportDashboard() {
 
   const submitReply = () => {
     const trimmed = reply.trim();
-    if (!trimmed || !activeTicket.id) return;
+    if (!canUpdateSupport || !trimmed || !activeTicket.id || messageMutation.isPending) return;
     pushOptimisticTimeline(activeTicket.id, "Message queued from support", "good");
     messageMutation.mutate({ ticketId: activeTicket.id, body: trimmed });
     setReply("");
@@ -874,7 +896,11 @@ export default function SupportDashboard() {
   const submitNewTicket = () => {
     if (!newTicket.title.trim() || createMutation.isPending) return;
     const tempId = `temp-${Date.now()}`;
-    const ownerId = newTicket.ownerId === "__unassigned" ? null : newTicket.ownerId || currentUser?.id || null;
+    const ownerId = canAssignSupport
+      && newTicket.ownerId !== "__auto"
+      && newTicket.ownerId !== "__unassigned"
+        ? newTicket.ownerId
+        : null;
     const owner = ownerId
       ? assigneesQuery.data?.find((item) => item.id === ownerId)
       : null;
@@ -1069,27 +1095,36 @@ export default function SupportDashboard() {
                       <SelectItem value="urgent">Urgent</SelectItem>
                     </SelectContent>
                   </Select>
-                  <Select
-                    value={newTicket.ownerId || currentUser?.id || "__unassigned"}
-                    onValueChange={(value) =>
-                      setNewTicket((current) => ({ ...current, ownerId: value }))
-                    }
-                  >
-                    <SelectTrigger className="h-10 w-full rounded-lg bg-white">
-                      <SelectValue placeholder="Assign to" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__unassigned">Unassigned</SelectItem>
-                      {currentUser ? <SelectItem value={currentUser.id}>Assign to me</SelectItem> : null}
-                      {assigneesQuery.data
-                        ?.filter((assignee) => assignee.id !== currentUser?.id)
-                        .map((assignee) => (
-                          <SelectItem key={assignee.id} value={assignee.id}>
-                            {assignee.name || assignee.email}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
+                  {canAssignSupport ? (
+                    <Select
+                      value={newTicket.ownerId}
+                      onValueChange={(value) =>
+                        setNewTicket((current) => ({ ...current, ownerId: value }))
+                      }
+                    >
+                      <SelectTrigger className="h-10 w-full rounded-lg bg-white">
+                        <SelectValue placeholder="Assignment" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__auto">Auto-route by rules</SelectItem>
+                        <SelectItem value="__unassigned">Leave unassigned</SelectItem>
+                        {currentUser && assigneesQuery.data?.some((item) => item.id === currentUser.id) ? (
+                          <SelectItem value={currentUser.id}>Assign to me</SelectItem>
+                        ) : null}
+                        {assigneesQuery.data
+                          ?.filter((assignee) => assignee.id !== currentUser?.id)
+                          .map((assignee) => (
+                            <SelectItem key={assignee.id} value={assignee.id}>
+                              {assignee.name || assignee.email} ({assignee.email})
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <div className="rounded-lg border bg-white px-3 py-2 text-xs text-slate-500">
+                      Assignment follows queue rules
+                    </div>
+                  )}
                   <Button
                     type="button"
                     className="h-10 rounded-lg bg-slate-950 hover:bg-slate-800"
@@ -1338,7 +1373,12 @@ export default function SupportDashboard() {
                   <Select
                     value={activeTicket.ownerId || "__unassigned"}
                     onValueChange={assignActiveTicket}
-                    disabled={!activeTicket.id || activeTicket.id.startsWith("temp-") || assignMutation.isPending}
+                    disabled={
+                      !canAssignSupport
+                      || !activeTicket.id
+                      || activeTicket.id.startsWith("temp-")
+                      || assignMutation.isPending
+                    }
                   >
                     <SelectTrigger className="h-9 w-[11rem] rounded-lg bg-white">
                       <SelectValue placeholder="Assign" />
@@ -1383,7 +1423,12 @@ export default function SupportDashboard() {
                     size="sm"
                     variant="outline"
                     className="h-9 rounded-lg gap-2"
-                    disabled={!activeTicket.id || activeTicket.status === "escalated" || escalateMutation.isPending}
+                    disabled={
+                      !canEscalateSupport
+                      || !activeTicket.id
+                      || activeTicket.status === "escalated"
+                      || escalateMutation.isPending
+                    }
                     onClick={() => {
                       if (!activeTicket.id) return;
                       setLocalStatuses((current) => ({ ...current, [activeTicket.id]: "escalated" }));
@@ -1404,10 +1449,15 @@ export default function SupportDashboard() {
                   </span>
                   {statusFilters
                     .filter((filter): filter is TicketStatus => filter !== "all")
-                    .map((status) => (
-                      <button
+                    .map((status) => {
+                      const canSetStatus = canUpdateSupport
+                        && (status !== "resolved" || canResolveSupport)
+                        && (status !== "escalated" || canEscalateSupport);
+                      return (
+                        <button
                         key={status}
                         type="button"
+                        disabled={!canSetStatus || statusMutation.isPending}
                         onClick={() =>
                           activeTicket.id
                             ? (setLocalStatuses((current) => ({
@@ -1423,7 +1473,7 @@ export default function SupportDashboard() {
                             : undefined
                         }
                         className={cn(
-                          "rounded-lg border px-3 py-1.5 text-xs font-semibold transition",
+                          "rounded-lg border px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-45",
                           activeTicket.status === status
                             ? "border-slate-950 bg-slate-950 text-white shadow-sm"
                             : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-950",
@@ -1431,7 +1481,8 @@ export default function SupportDashboard() {
                       >
                         {statusLabels[status]}
                       </button>
-                    ))}
+                      );
+                    })}
                 </div>
               </div>
             </div>
@@ -1459,7 +1510,7 @@ export default function SupportDashboard() {
                     <Button
                       type="button"
                       className="h-10 rounded-lg bg-slate-950 hover:bg-slate-800"
-                      disabled={!activeTicket.id || !reply.trim() || messageMutation.isPending}
+                      disabled={!canUpdateSupport || !activeTicket.id || !reply.trim() || messageMutation.isPending}
                       onClick={submitReply}
                     >
                       {messageMutation.isPending ? "Sending..." : "Send update"}
@@ -1675,7 +1726,7 @@ export default function SupportDashboard() {
                     type="button"
                     onClick={submitNote}
                     size="sm"
-                    disabled={!note.trim() || noteMutation.isPending}
+                    disabled={!canUpdateSupport || !note.trim() || noteMutation.isPending}
                     className="h-9 w-full rounded-lg gap-2"
                   >
                     <UserRound className="h-4 w-4" />
@@ -1803,7 +1854,11 @@ export default function SupportDashboard() {
                           <div className="truncate font-semibold">{queue.name}</div>
                           <div className="truncate text-xs text-slate-500">{queue.code}</div>
                         </div>
-                        <div className="truncate text-slate-600">{queue.defaultOwnerId || "No default owner"}</div>
+                        <div className="truncate text-slate-600">
+                          {queue.defaultOwnerId
+                            ? assigneeNamesById.get(queue.defaultOwnerId) || "Unavailable operator"
+                            : "No default owner"}
+                        </div>
                         <div className="flex flex-wrap gap-1">
                           <SupportChip className={queue.isActive ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-50 text-slate-500"}>
                             {queue.isActive ? "Active" : "Paused"}

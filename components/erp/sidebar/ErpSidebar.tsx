@@ -1,6 +1,8 @@
 "use client";
 
+import { useSyncExternalStore } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 
 import { useI18n } from "@/components/i18n/I18nProvider";
@@ -18,6 +20,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { getUser, hasPermission } from "@/lib/auth";
+import { useSupportSummary } from "@/lib/use-support-summary";
 import { useErpSidebarStore } from "@/store/useErpSidebarStore";
 
 import {
@@ -27,6 +31,7 @@ import {
   ChevronDown,
   CircleHelp,
   Headset,
+  Landmark,
   LayoutDashboard,
   Map,
   Package,
@@ -46,6 +51,7 @@ type NavItem = {
   href: string;
   icon: React.ComponentType<{ className?: string }>;
   disabled?: boolean;
+  requiredPermissions?: string[];
 };
 
 type NavGroup = {
@@ -127,22 +133,78 @@ const NAV_GROUPS: NavGroup[] = [
 ];
 
 const BILLING_ITEMS: NavItem[] = [
-  { labelKey: "managerSidebar.billing.pricing", href: "/dashboard/manager/pricing", icon: CreditCard },
-  { labelKey: "managerSidebar.billing.providers", href: "/dashboard/manager/payment-providers", icon: CreditCard },
-  { labelKey: "managerSidebar.billing.integrations", href: "/dashboard/manager/integrations", icon: PlugZap },
+  {
+    labelKey: "managerSidebar.billing.finance",
+    href: "/dashboard/manager/finance",
+    icon: Landmark,
+    requiredPermissions: [
+      "finance.settings.read",
+      "finance.accounts.read",
+      "finance.periods.read",
+      "finance.journals.read",
+      "finance.postingRules.read",
+      "finance.exceptions.read",
+      "finance.payables.read",
+      "finance.settlements.read",
+      "finance.treasury.read",
+      "finance.bankReconciliation.read",
+      "finance.receivables.read",
+      "finance.reports.read",
+    ],
+  },
+  {
+    labelKey: "managerSidebar.billing.pricing",
+    href: "/dashboard/manager/pricing",
+    icon: CreditCard,
+  },
+  {
+    labelKey: "managerSidebar.billing.providers",
+    href: "/dashboard/manager/payment-providers",
+    icon: CreditCard,
+  },
+  {
+    labelKey: "managerSidebar.billing.integrations",
+    href: "/dashboard/manager/integrations",
+    icon: PlugZap,
+  },
 ];
 
 const BUSINESS_ITEMS: NavItem[] = [
-  { labelKey: "managerSidebar.business.overview", href: "/dashboard/manager/business", icon: Building2 },
-  { labelKey: "managerSidebar.business.customers", href: "/dashboard/manager/business/customers", icon: Building2 },
-  { labelKey: "managerSidebar.business.companies", href: "/dashboard/manager/business/companies", icon: Building },
-  { labelKey: "managerSidebar.business.branches", href: "/dashboard/manager/business/branches", icon: Building2 },
-  { labelKey: "managerSidebar.business.agents", href: "/dashboard/manager/business/agents", icon: Users },
-  { labelKey: "managerSidebar.business.pickupPoints", href: "/dashboard/manager/business/pickup-points", icon: Building2 },
+  {
+    labelKey: "managerSidebar.business.overview",
+    href: "/dashboard/manager/business",
+    icon: Building2,
+  },
+  {
+    labelKey: "managerSidebar.business.customers",
+    href: "/dashboard/manager/business/customers",
+    icon: Building2,
+  },
+  {
+    labelKey: "managerSidebar.business.companies",
+    href: "/dashboard/manager/business/companies",
+    icon: Building,
+  },
+  {
+    labelKey: "managerSidebar.business.branches",
+    href: "/dashboard/manager/business/branches",
+    icon: Building2,
+  },
+  {
+    labelKey: "managerSidebar.business.agents",
+    href: "/dashboard/manager/business/agents",
+    icon: Users,
+  },
+  {
+    labelKey: "managerSidebar.business.pickupPoints",
+    href: "/dashboard/manager/business/pickup-points",
+    icon: Building2,
+  },
 ];
 
 function isActive(pathname: string, href: string) {
-  if (href === "/dashboard/manager" || href === "/dashboard/manager/business") return pathname === href;
+  if (href === "/dashboard/manager" || href === "/dashboard/manager/business")
+    return pathname === href;
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
@@ -151,11 +213,13 @@ function NavLink({
   collapsed,
   active,
   label,
+  badgeCount,
 }: {
   item: NavItem;
   collapsed: boolean;
   active: boolean;
   label: string;
+  badgeCount?: number;
 }) {
   const Icon = item.icon;
 
@@ -177,14 +241,23 @@ function NavLink({
           active ? "text-cyan-300" : "text-slate-300 group-hover:text-white",
         )}
       >
-        <Icon className={cn("h-4 w-4", active ? "text-cyan-300" : "text-slate-300 group-hover:text-white")} />
+        <Icon
+          className={cn(
+            "h-4 w-4",
+            active ? "text-cyan-300" : "text-slate-300 group-hover:text-white",
+          )}
+        />
       </span>
 
-      {!collapsed ? <span className="truncate text-sm font-medium">{label}</span> : null}
+      {!collapsed ? (
+        <span className="truncate text-sm font-medium">{label}</span>
+      ) : null}
 
-      {!collapsed && item.href.endsWith("/support") ? (
+      {!collapsed &&
+      item.href.endsWith("/support") &&
+      Number(badgeCount) > 0 ? (
         <span className="ml-auto rounded-md bg-cyan-400 px-1.5 py-0.5 text-[11px] font-semibold text-slate-950">
-          4
+          {Number(badgeCount) > 99 ? "99+" : badgeCount}
         </span>
       ) : null}
     </Link>
@@ -206,6 +279,25 @@ export default function ErpSidebar() {
   const pathname = usePathname();
   const { isCollapsed, toggle } = useErpSidebarStore();
   const { t } = useI18n();
+  const user = useSyncExternalStore(
+    () => () => {},
+    () => getUser(),
+    () => null,
+  );
+  const canViewSupport = hasPermission(user, "support.view");
+  const supportSummaryQuery = useSupportSummary({
+    enabled: canViewSupport,
+    userId: user?.id,
+    realtime: true,
+  });
+  const supportOpenCount = supportSummaryQuery.data?.open ?? 0;
+  const visibleBillingItems = BILLING_ITEMS.filter(
+    (item) =>
+      !item.requiredPermissions?.length ||
+      item.requiredPermissions.some((permission) =>
+        hasPermission(user, permission),
+      ),
+  );
 
   return (
     <TooltipProvider delayDuration={120}>
@@ -228,10 +320,15 @@ export default function ErpSidebar() {
               isCollapsed ? "justify-center" : "gap-3",
             )}
           >
-            <img
+            <Image
               src="/cargopilot-logo-transparent.png"
               alt=""
-              className={cn("shrink-0 object-contain drop-shadow-[0_10px_16px_rgba(20,184,166,0.25)]", isCollapsed ? "h-10 w-10" : "h-11 w-11")}
+              width={44}
+              height={44}
+              className={cn(
+                "shrink-0 object-contain drop-shadow-[0_10px_16px_rgba(20,184,166,0.25)]",
+                isCollapsed ? "h-10 w-10" : "h-11 w-11",
+              )}
             />
             {!isCollapsed ? (
               <span className="truncate text-[25px] font-extrabold tracking-[-0.045em]">
@@ -243,26 +340,38 @@ export default function ErpSidebar() {
           <div
             className={cn(
               "rounded-xl border border-white/10 bg-white/[0.055]",
-              isCollapsed ? "flex h-10 w-10 items-center justify-center" : "flex h-10 items-center justify-end px-2",
+              isCollapsed
+                ? "flex h-10 w-10 items-center justify-center"
+                : "flex h-10 items-center justify-end px-2",
             )}
           >
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                onClick={toggle}
-                className="h-8 w-8 rounded-md text-slate-300 hover:bg-white/10 hover:text-white"
-                aria-label={isCollapsed ? t("managerSidebar.expand") : t("managerSidebar.collapse")}
-              >
-                {isCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right">
-              {isCollapsed ? t("managerSidebar.expand") : t("managerSidebar.collapse")}
-            </TooltipContent>
-          </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={toggle}
+                  className="h-8 w-8 rounded-md text-slate-300 hover:bg-white/10 hover:text-white"
+                  aria-label={
+                    isCollapsed
+                      ? t("managerSidebar.expand")
+                      : t("managerSidebar.collapse")
+                  }
+                >
+                  {isCollapsed ? (
+                    <PanelLeftOpen className="h-4 w-4" />
+                  ) : (
+                    <PanelLeftClose className="h-4 w-4" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right">
+                {isCollapsed
+                  ? t("managerSidebar.expand")
+                  : t("managerSidebar.collapse")}
+              </TooltipContent>
+            </Tooltip>
           </div>
         </div>
 
@@ -278,7 +387,9 @@ export default function ErpSidebar() {
                     <span className="flex h-6 w-6 items-center justify-center rounded-md text-cyan-300">
                       <Building2 className="h-4 w-4" />
                     </span>
-                    <span className="flex-1 truncate text-sm font-medium">{t("managerSidebar.business.group")}</span>
+                    <span className="flex-1 truncate text-sm font-medium">
+                      {t("managerSidebar.business.group")}
+                    </span>
                     <ChevronDown className="h-4 w-4 text-slate-300" />
                   </button>
                 </DropdownMenuTrigger>
@@ -288,7 +399,8 @@ export default function ErpSidebar() {
                   className="w-72 rounded-2xl border border-slate-700 bg-gradient-to-br from-slate-900 via-slate-800 to-cyan-900 p-2 text-slate-100 shadow-2xl"
                 >
                   {BUSINESS_ITEMS.map((item) => {
-                    const active = !item.disabled && isActive(pathname, item.href);
+                    const active =
+                      !item.disabled && isActive(pathname, item.href);
                     const Icon = item.icon;
 
                     if (item.disabled) {
@@ -300,9 +412,14 @@ export default function ErpSidebar() {
                           <div className="flex w-full items-start gap-2.5">
                             <Icon className="mt-0.5 h-4 w-4 shrink-0 text-slate-300" />
                             <div className="min-w-0">
-                              <p className="truncate text-sm font-medium text-slate-200">{t(item.labelKey)}</p>
+                              <p className="truncate text-sm font-medium text-slate-200">
+                                {t(item.labelKey)}
+                              </p>
                               <p className="truncate text-xs text-slate-400">
-                                {t(`managerSidebar.businessDesc.${item.labelKey.split(".").pop()}`)} - coming soon
+                                {t(
+                                  `managerSidebar.businessDesc.${item.labelKey.split(".").pop()}`,
+                                )}{" "}
+                                - coming soon
                               </p>
                             </div>
                           </div>
@@ -316,14 +433,30 @@ export default function ErpSidebar() {
                         asChild
                         className={cn(
                           "rounded-xl px-2 py-2 focus:bg-white/10",
-                          active ? "bg-cyan-500/15 text-cyan-200" : "text-slate-100",
+                          active
+                            ? "bg-cyan-500/15 text-cyan-200"
+                            : "text-slate-100",
                         )}
                       >
-                        <Link href={item.href} className="flex w-full items-start gap-2.5">
-                          <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", active ? "text-cyan-300" : "text-slate-300")} />
+                        <Link
+                          href={item.href}
+                          className="flex w-full items-start gap-2.5"
+                        >
+                          <Icon
+                            className={cn(
+                              "mt-0.5 h-4 w-4 shrink-0",
+                              active ? "text-cyan-300" : "text-slate-300",
+                            )}
+                          />
                           <div className="min-w-0">
-                            <p className="truncate text-sm font-medium">{t(item.labelKey)}</p>
-                            <p className="truncate text-xs text-slate-400">{t(`managerSidebar.businessDesc.${item.labelKey.split(".").pop()}`)}</p>
+                            <p className="truncate text-sm font-medium">
+                              {t(item.labelKey)}
+                            </p>
+                            <p className="truncate text-xs text-slate-400">
+                              {t(
+                                `managerSidebar.businessDesc.${item.labelKey.split(".").pop()}`,
+                              )}
+                            </p>
                           </div>
                         </Link>
                       </DropdownMenuItem>
@@ -345,7 +478,9 @@ export default function ErpSidebar() {
                     <span className="flex h-6 w-6 items-center justify-center rounded-md text-cyan-300">
                       <CreditCard className="h-4 w-4" />
                     </span>
-                    <span className="flex-1 truncate text-sm font-medium">{t("managerSidebar.billing.group")}</span>
+                    <span className="flex-1 truncate text-sm font-medium">
+                      {t("managerSidebar.billing.group")}
+                    </span>
                     <ChevronDown className="h-4 w-4 text-slate-300" />
                   </button>
                 </DropdownMenuTrigger>
@@ -354,7 +489,7 @@ export default function ErpSidebar() {
                   side="right"
                   className="w-72 rounded-2xl border border-slate-700 bg-gradient-to-br from-slate-900 via-slate-800 to-cyan-900 p-2 text-slate-100 shadow-2xl"
                 >
-                  {BILLING_ITEMS.map((item) => {
+                  {visibleBillingItems.map((item) => {
                     const active = isActive(pathname, item.href);
                     const Icon = item.icon;
                     return (
@@ -363,14 +498,30 @@ export default function ErpSidebar() {
                         asChild
                         className={cn(
                           "rounded-xl px-2 py-2 focus:bg-white/10",
-                          active ? "bg-cyan-500/15 text-cyan-200" : "text-slate-100",
+                          active
+                            ? "bg-cyan-500/15 text-cyan-200"
+                            : "text-slate-100",
                         )}
                       >
-                        <Link href={item.href} className="flex w-full items-start gap-2.5">
-                          <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", active ? "text-cyan-300" : "text-slate-300")} />
+                        <Link
+                          href={item.href}
+                          className="flex w-full items-start gap-2.5"
+                        >
+                          <Icon
+                            className={cn(
+                              "mt-0.5 h-4 w-4 shrink-0",
+                              active ? "text-cyan-300" : "text-slate-300",
+                            )}
+                          />
                           <div className="min-w-0">
-                            <p className="truncate text-sm font-medium">{t(item.labelKey)}</p>
-                            <p className="truncate text-xs text-slate-400">{t(`managerSidebar.billingDesc.${item.labelKey.split(".").pop()}`)}</p>
+                            <p className="truncate text-sm font-medium">
+                              {t(item.labelKey)}
+                            </p>
+                            <p className="truncate text-xs text-slate-400">
+                              {t(
+                                `managerSidebar.billingDesc.${item.labelKey.split(".").pop()}`,
+                              )}
+                            </p>
                           </div>
                         </Link>
                       </DropdownMenuItem>
@@ -382,7 +533,10 @@ export default function ErpSidebar() {
           ) : null}
 
           {NAV_GROUPS.map((group) => (
-            <div key={group.labelKey} className="space-y-1 border-b border-slate-700/50 pb-3 last:border-b-0">
+            <div
+              key={group.labelKey}
+              className="space-y-1 border-b border-slate-700/50 pb-3 last:border-b-0"
+            >
               <div className="space-y-1">
                 {group.items.map((item) => (
                   <NavLink
@@ -391,6 +545,11 @@ export default function ErpSidebar() {
                     collapsed={isCollapsed}
                     active={isActive(pathname, item.href)}
                     label={t(item.labelKey)}
+                    badgeCount={
+                      item.href.endsWith("/support")
+                        ? supportOpenCount
+                        : undefined
+                    }
                   />
                 ))}
               </div>

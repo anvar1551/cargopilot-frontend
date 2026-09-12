@@ -3,10 +3,11 @@
 import * as React from "react";
 import { useSyncExternalStore } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Bell, Menu, MessageSquare } from "lucide-react";
-import { dashboardPathForUser, getUser } from "@/lib/auth";
+import { dashboardPathForUser, getUser, hasPermission } from "@/lib/auth";
 import { useI18n } from "@/components/i18n/I18nProvider";
 
 import UserMenu from "@/components/user/UserMenu";
@@ -14,6 +15,7 @@ import { fetchUnreadNotificationCount } from "@/lib/notifications";
 import { useRealtimeFallbackInterval } from "@/lib/use-realtime-fallback";
 import { cn } from "@/lib/utils";
 import { useErpSidebarStore } from "@/store/useErpSidebarStore";
+import { useSupportSummary } from "@/lib/use-support-summary";
 
 type TopbarProps = {
   title?: string;
@@ -63,6 +65,11 @@ export default function AppTopbar({
     retry: false,
   });
   const unreadCount = unreadNotificationsQuery.data ?? 0;
+  const supportSummaryQuery = useSupportSummary({
+    enabled: isErpWorkspacePath && hasPermission(user, "support.view"),
+    userId: user?.id,
+  });
+  const supportOpenCount = supportSummaryQuery.data?.open ?? 0;
 
   if (isErpWorkspacePath) {
     return (
@@ -81,9 +88,11 @@ export default function AppTopbar({
               href="/dashboard/manager"
               className="inline-flex min-w-0 items-center gap-2.5"
             >
-              <img
+              <Image
                 src="/cargopilot-logo-transparent.png"
                 alt=""
+                width={36}
+                height={36}
                 className="h-9 w-9 shrink-0 object-contain"
               />
               <span className="truncate text-xl font-semibold tracking-tight text-slate-950">
@@ -103,9 +112,18 @@ export default function AppTopbar({
                 </span>
               ) : null}
             </button>
-            <button type="button" className="text-slate-600">
+            <Link
+              href="/dashboard/manager/support"
+              className="relative text-slate-600 transition hover:text-slate-950"
+              aria-label="Open support desk"
+            >
               <MessageSquare className="h-5 w-5" />
-            </button>
+              {supportOpenCount > 0 ? (
+                <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-cyan-500 px-1 text-[10px] font-semibold text-slate-950">
+                  {supportOpenCount > 99 ? "99+" : supportOpenCount}
+                </span>
+              ) : null}
+            </Link>
             <div className="hidden h-8 w-px bg-border sm:block" />
             <UserMenu />
           </div>

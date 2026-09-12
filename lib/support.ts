@@ -112,7 +112,6 @@ export type SupportAssignee = {
   id: string;
   name: string;
   email: string;
-  role: "manager";
 };
 
 export type SupportQueue = {
@@ -171,6 +170,11 @@ export async function fetchSupportTicket(id: string) {
 export async function fetchSupportAssignees() {
   const res = await api.get<{ items: SupportAssignee[] }>("/api/support/assignees");
   return res.data.items;
+}
+
+export async function fetchSupportSummary() {
+  const res = await api.get<SupportSummary>("/api/support/summary");
+  return res.data;
 }
 
 export async function fetchSupportQueues(companyId?: string | null) {
