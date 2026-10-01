@@ -16,7 +16,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { tryRefreshSession } from "@/lib/api";
-import { clearAuth, getUser, hasActiveSession } from "@/lib/auth";
+import { getUser, hasActiveSession } from "@/lib/auth";
 import {
   getErpOrderCapabilities,
   getWarehouseOrderCapabilities,
@@ -41,6 +41,7 @@ export default function DashboardShell({ children }: { children: ReactNode }) {
   const isMobileOpen = useErpSidebarStore((s) => s.isMobileOpen);
   const setMobileOpen = useErpSidebarStore((s) => s.setMobileOpen);
   const currentUser = getUser();
+  const [sessionReady, setSessionReady] = useState(false);
 
   const closeOrderModal = () => {
     setActiveOrderModalId(null);
@@ -84,10 +85,10 @@ export default function DashboardShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     const ensureSession = async () => {
-      if (hasActiveSession()) return;
-      const refreshed = await tryRefreshSession();
-      if (cancelled || refreshed) return;
-      clearAuth();
+      if (hasActiveSession()) { setSessionReady(true); return; }
+      const refreshed = await tryRefreshSession().catch(() => false);
+      if (cancelled) return;
+      if (refreshed) { setSessionReady(true); return; }
       if (pathname !== "/login") {
         const next = encodeURIComponent(pathname || "/dashboard");
         router.replace(`/login?next=${next}`);
@@ -107,6 +108,7 @@ export default function DashboardShell({ children }: { children: ReactNode }) {
     setMobileOpen(false);
   }, [pathname, setMobileOpen]);
 
+  if (!sessionReady || !currentUser) return null;
   return (
     <div className="min-h-dvh bg-muted/30">
       {isErpWorkspace ? (

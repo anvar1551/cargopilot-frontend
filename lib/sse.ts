@@ -1,5 +1,5 @@
 import { api, tryRefreshSession } from "@/lib/api";
-import { getToken } from "@/lib/auth";
+import { getToken, authEpoch, authContext, subscribeAuth } from "@/lib/auth";
 
 type SseFrame = {
   event: string;
@@ -91,6 +91,10 @@ function shouldReconnectForStatus(status: number) {
 
 export function subscribeAuthenticatedSse(args: SubscribeAuthenticatedSseArgs) {
   if (typeof window === "undefined") return () => undefined;
+  const epoch = authEpoch();
+  const context = authContext();
+  if (!context) return () => undefined;
+  const cursorKey = `${args.lastEventIdKey}:${context}`;
 
   const endpoint = buildApiUrl(args.path);
   const abortController = new AbortController();
@@ -102,6 +106,12 @@ export function subscribeAuthenticatedSse(args: SubscribeAuthenticatedSseArgs) {
   let closed = false;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let attempt = 0;
+  const stop = () => {
+    closed = true;
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    abortController.abort();
+  };
+  const unsubscribe = subscribeAuth(() => { if (epoch !== authEpoch()) stop(); });
 
   const scheduleReconnect = (delayMs?: number) => {
     if (closed || reconnectTimer) return;
@@ -122,7 +132,7 @@ export function subscribeAuthenticatedSse(args: SubscribeAuthenticatedSseArgs) {
   };
 
   const connect = async () => {
-    if (closed) return;
+    if (closed || epoch !== authEpoch()) return;
 
     try {
       let token = getToken();
@@ -133,7 +143,8 @@ export function subscribeAuthenticatedSse(args: SubscribeAuthenticatedSseArgs) {
       }
       if (!token) throw new Error("SSE_AUTH_MISSING");
 
-      const lastEventId = readLastEventId(args.lastEventIdKey);
+      if (epoch !== authEpoch()) return;
+      const lastEventId = readLastEventId(cursorKey);
       const headers: Record<string, string> = {
         Accept: "text/event-stream",
         Authorization: `Bearer ${token}`,
@@ -147,6 +158,7 @@ export function subscribeAuthenticatedSse(args: SubscribeAuthenticatedSseArgs) {
         cache: "no-store",
         signal: abortController.signal,
       });
+      if (closed || epoch !== authEpoch()) return;
 
       if (response.status === 401) {
         const refreshed = await tryRefreshSession();
@@ -171,6 +183,7 @@ export function subscribeAuthenticatedSse(args: SubscribeAuthenticatedSseArgs) {
 
       while (!closed) {
         const { done, value } = await reader.read();
+        if (closed || epoch !== authEpoch()) return;
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
         let delimiterIndex = buffer.search(/\r?\n\r?\n/);
@@ -182,7 +195,7 @@ export function subscribeAuthenticatedSse(args: SubscribeAuthenticatedSseArgs) {
           buffer = buffer.slice(delimiterIndex + consumedLength);
 
           const frame = parseSseFrame(frameRaw);
-          if (frame.id) writeLastEventId(args.lastEventIdKey, frame.id);
+          if (frame.id) writeLastEventId(cursorKey, frame.id);
           if (frame.event === "ready") {
             args.onReady?.(safeJsonParse(frame.data));
           } else {
@@ -217,8 +230,6 @@ export function subscribeAuthenticatedSse(args: SubscribeAuthenticatedSseArgs) {
   void connect();
 
   return () => {
-    closed = true;
-    if (reconnectTimer) clearTimeout(reconnectTimer);
-    abortController.abort();
+    unsubscribe(); stop();
   };
 }

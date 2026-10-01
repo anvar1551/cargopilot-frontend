@@ -1,3 +1,4 @@
+import { validateSession, identityKey } from "./session-contract";
 export type Role = "customer" | "manager" | "warehouse" | "driver";
 export type ScopeType =
   | "company"
@@ -32,6 +33,28 @@ export type AuthUser = {
 const TOKEN_KEY = "token";
 const USER_KEY = "user";
 const REFRESH_TOKEN_KEY = "refreshToken";
+const SESSION_KEY = "cp_auth_session_v1";
+let epoch = 0;
+let blocked = false;
+const listeners = new Set<() => void>();
+export function subscribeAuth(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; }
+function emitAuth() { listeners.forEach(listener => listener()); }
+function readSession(): any {
+  if (!isBrowser() || blocked) return null;
+  try {
+    const value = JSON.parse(window.localStorage.getItem(SESSION_KEY) || "null");
+    if (!value?.nonce) return null;
+    validateSession(value);
+    return value;
+  } catch { return null; }
+}
+export function authEpoch() { return `${epoch}:${readSession()?.nonce ?? "signed-out"}`; }
+export function authContext() { const session = readSession(); return session ? identityKey(session.user) : null; }
+export function observeAuthStorage() {
+  const listener = (event: StorageEvent) => { if (event.key === SESSION_KEY || event.key === null) { epoch++; emitAuth(); } };
+  window.addEventListener("storage", listener);
+  return () => window.removeEventListener("storage", listener);
+}
 
 let cachedUserRaw: string | null | undefined = undefined;
 let cachedUser: AuthUser | null = null;
@@ -202,40 +225,47 @@ function isBrowser() {
 export function saveAuth(
   token: string,
   user: unknown,
-  options?: { refreshToken?: string | null },
+  options?: { refreshToken?: string | null; expectedEpoch?: string; refreshContext?: string },
 ) {
   if (!isBrowser()) return;
+  if (options?.expectedEpoch && options.expectedEpoch !== authEpoch()) throw new Error("Session changed; response discarded");
   const normalizedUser = normalizeAuthUser(user);
-  window.localStorage.setItem(TOKEN_KEY, token);
-  window.localStorage.setItem(USER_KEY, JSON.stringify(normalizedUser));
-  if (
-    typeof options?.refreshToken === "string" &&
-    options.refreshToken.trim()
-  ) {
-    window.localStorage.setItem(REFRESH_TOKEN_KEY, options.refreshToken.trim());
+  const session = validateSession({ token, user: normalizedUser, refreshToken: options?.refreshToken }, options?.refreshContext);
+  const nonce = options?.refreshContext ? readSession()?.nonce : window.crypto.randomUUID();
+  if (!nonce) throw new Error("Missing refresh session");
+  try {
+    window.localStorage.setItem(SESSION_KEY, JSON.stringify({ ...session, nonce }));
+    blocked = false;
+    for (const key of [TOKEN_KEY, USER_KEY, REFRESH_TOKEN_KEY]) window.localStorage.removeItem(key);
+  } catch {
+    blocked = true; epoch++; emitAuth();
+    throw new Error("Session storage unavailable; sign-in was not completed");
   }
   cachedUserRaw = JSON.stringify(normalizedUser);
   cachedUser = normalizedUser;
+  if (!options?.refreshContext) { epoch++; emitAuth(); }
 }
 
 export function getToken(): string | null {
   if (!isBrowser()) return null;
-  return window.localStorage.getItem(TOKEN_KEY);
+  return readSession()?.token ?? null;
 }
 
 export function setToken(token: string) {
+  void token;
   if (!isBrowser()) return;
-  window.localStorage.setItem(TOKEN_KEY, token);
+  throw new Error("Use a complete bound session");
 }
 
 export function getRefreshToken(): string | null {
   if (!isBrowser()) return null;
-  return window.localStorage.getItem(REFRESH_TOKEN_KEY);
+  return readSession()?.refreshToken ?? null;
 }
 
 export function setRefreshToken(refreshToken: string) {
+  void refreshToken;
   if (!isBrowser()) return;
-  window.localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+  throw new Error("Use a complete bound session");
 }
 
 function decodeJwtPayload(token: string): Record<string, unknown> | null {
@@ -266,7 +296,8 @@ export function isTokenExpired(token: string | null | undefined): boolean {
 
 export function getUser(): AuthUser | null {
   if (!isBrowser()) return null;
-  const raw = window.localStorage.getItem(USER_KEY);
+  const session = readSession();
+  const raw = session ? JSON.stringify(session.user) : null;
 
   // Keep snapshot reference stable when storage value is unchanged.
   if (raw === cachedUserRaw) return cachedUser;
@@ -281,7 +312,6 @@ export function getUser(): AuthUser | null {
     const parsed = JSON.parse(raw) as unknown;
     cachedUser = normalizeAuthUser(parsed);
     cachedUserRaw = JSON.stringify(cachedUser);
-    window.localStorage.setItem(USER_KEY, cachedUserRaw);
   } catch {
     cachedUser = null;
   }
@@ -291,11 +321,14 @@ export function getUser(): AuthUser | null {
 
 export function clearAuth() {
   if (!isBrowser()) return;
-  window.localStorage.removeItem(TOKEN_KEY);
-  window.localStorage.removeItem(USER_KEY);
-  window.localStorage.removeItem(REFRESH_TOKEN_KEY);
+  blocked = true;
+  epoch++;
   cachedUserRaw = null;
   cachedUser = null;
+  emitAuth();
+  try {
+    for (const key of [SESSION_KEY, TOKEN_KEY, USER_KEY, REFRESH_TOKEN_KEY]) window.localStorage.removeItem(key);
+  } catch { throw new Error("Unable to clear stored session; retry logout before leaving this device"); }
 }
 
 /** Basic client-side session check (presence + non-expired JWT). */

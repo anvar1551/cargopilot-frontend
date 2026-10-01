@@ -6,6 +6,8 @@ import {
   getRefreshToken,
   getToken,
   saveAuth,
+  authEpoch,
+  authContext,
   type AuthUser,
 } from "./auth";
 
@@ -93,6 +95,7 @@ type RefreshResponse = {
 };
 
 let refreshInFlight: Promise<string | null> | null = null;
+let refreshEpoch: string | null = null;
 
 function isAuthRoute(url: string) {
   return (
@@ -110,8 +113,10 @@ function redirectToLogin() {
 }
 
 async function performRefresh(): Promise<string | null> {
+  const epoch = authEpoch();
+  const context = authContext();
   const refreshToken = getRefreshToken();
-  if (!refreshToken) return null;
+  if (!refreshToken || !context) return null;
 
   try {
     const response = await refreshApi.post<RefreshResponse>("/api/auth/refresh", {
@@ -121,21 +126,25 @@ async function performRefresh(): Promise<string | null> {
     const nextToken = String(payload?.token ?? "").trim();
     const nextRefresh = String(payload?.refreshToken ?? "").trim();
     const nextUser = payload?.user;
-    if (!nextToken || !nextUser) return null;
+    if (epoch !== authEpoch()) return null;
+    if (!nextToken || !nextUser || !nextRefresh) throw new Error("Invalid refresh response");
 
     saveAuth(nextToken, nextUser, {
-      refreshToken: nextRefresh || refreshToken,
+      refreshToken: nextRefresh, expectedEpoch: epoch, refreshContext: context,
     });
     return nextToken;
   } catch {
+    if (epoch === authEpoch()) clearAuth();
     return null;
   }
 }
 
 export async function tryRefreshSession(): Promise<boolean> {
-  if (!refreshInFlight) {
+  if (!refreshInFlight || refreshEpoch !== authEpoch()) {
+    const started = authEpoch();
+    refreshEpoch = started;
     refreshInFlight = performRefresh().finally(() => {
-      refreshInFlight = null;
+      if (refreshEpoch === started) refreshInFlight = null;
     });
   }
   const token = await refreshInFlight;
@@ -152,7 +161,11 @@ api.interceptors.request.use((config) => {
   }
 
   if (!isAuthRoute(requestUrl)) {
+    const epoch = authEpoch();
+    if ((config as any)._sessionEpoch != null && (config as any)._sessionEpoch !== epoch) throw new Error("Session changed; request denied");
+    (config as any)._sessionEpoch = epoch;
     const token = typeof window !== "undefined" ? getToken() : null;
+    if (!token || !authContext()) throw new Error("Bound login required");
     if ((config as any).cashContext) assertCashToken(token, (config as any).cashContext);
     if (token) config.headers.Authorization = `Bearer ${token}`;
   }
@@ -160,12 +173,18 @@ api.interceptors.request.use((config) => {
 });
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const epoch = (response.config as any)?._sessionEpoch;
+    if (epoch != null && epoch !== authEpoch()) throw new Error("Session changed; late response discarded");
+    return response;
+  },
   async (error) => {
     const status = error?.response?.status;
     const reqUrl = String(error?.config?.url ?? "");
     const originalRequest = error?.config ?? {};
     const alreadyRetried = Boolean(originalRequest?._retry);
+
+    if (originalRequest._sessionEpoch != null && originalRequest._sessionEpoch !== authEpoch()) return Promise.reject(new Error("Session changed; late response discarded"));
 
     if (originalRequest.cashContext) return Promise.reject(error);
 
@@ -173,6 +192,7 @@ api.interceptors.response.use(
       if (!alreadyRetried) {
         originalRequest._retry = true;
         const refreshed = await tryRefreshSession();
+        if (originalRequest._sessionEpoch !== authEpoch()) return Promise.reject(new Error("Session changed; retry denied"));
         if (refreshed) {
           const token = getToken();
           if (token) {

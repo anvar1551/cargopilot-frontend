@@ -11,7 +11,7 @@ import type { OrderTableRow } from "@/components/orders/OrderTable";
 
 import { deleteOrder, exportOrdersCsv, fetchOrders } from "@/lib/orders";
 import { getErpOrderCapabilities } from "@/lib/orders/permissions";
-import { getUser } from "@/lib/auth";
+import { getUser, authContext } from "@/lib/auth";
 import { getStatusLabel } from "@/lib/i18n/labels";
 import { fetchDrivers } from "@/lib/manager";
 import { fetchWarehouses } from "@/lib/warehouses";
@@ -150,6 +150,10 @@ function triggerCsvDownload(blob: Blob, fileName: string) {
 }
 
 export default function ManagerOrdersPage() {
+  const [filterStorageKey] = useState(() => {
+    const context = authContext();
+    return context ? `${FILTER_PRESETS_STORAGE_KEY}:${context}` : null;
+  });
   const { t } = useI18n();
   const actor = useMemo(() => getUser(), []);
   const orderCapabilities = useMemo(() => getErpOrderCapabilities(actor), [actor]);
@@ -159,7 +163,7 @@ export default function ManagerOrdersPage() {
   const [presets, setPresets] = useState<FilterPreset[]>(() => {
     if (typeof window === "undefined") return [];
     try {
-      const raw = window.localStorage.getItem(FILTER_PRESETS_STORAGE_KEY);
+      const raw = filterStorageKey ? window.localStorage.getItem(filterStorageKey) : null;
       if (!raw) return [];
       const parsed = JSON.parse(raw);
       return Array.isArray(parsed) ? parsed : [];
@@ -175,11 +179,12 @@ export default function ManagerOrdersPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (!filterStorageKey) return;
     window.localStorage.setItem(
-      FILTER_PRESETS_STORAGE_KEY,
+      filterStorageKey,
       JSON.stringify(presets),
     );
-  }, [presets]);
+  }, [presets, filterStorageKey]);
 
   const filterSignature = JSON.stringify(filters);
 

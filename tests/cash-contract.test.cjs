@@ -150,7 +150,7 @@ test('actual HTTP interceptor denies switched context and never refresh-replays 
   global.window = { location: { protocol: 'http:', hostname: 'localhost', pathname: '/', search: '', replace: () => {} } };
   const axios = { create: () => { const client = { interceptors: { request: { use: fn => { client.requestGuard = fn; } }, response: { use: (_, fn) => { client.errorGuard = fn; } } }, post: async () => { refreshCalls++; }, request: async () => { throw new Error('Must not replay'); } }; clients.push(client); return client; } };
   load('api', { axios: { default: axios }, './cash-intent': core,
-    './auth': { getUser: () => driver ? Promise.resolve(user) : user, getToken: () => { const token = 'header.' + Buffer.from(JSON.stringify({ ...user, tokenType: 'access' })).toString('base64url') + '.signature'; return driver ? Promise.resolve(token) : token; }, getRefreshToken: () => { refreshCalls++; return null; } },
+    './auth': { authEpoch: () => 'epoch-a', authContext: () => core.cashContext(user), getUser: () => driver ? Promise.resolve(user) : user, getToken: () => { const token = 'header.' + Buffer.from(JSON.stringify({ ...user, tokenType: 'access' })).toString('base64url') + '.signature'; return driver ? Promise.resolve(token) : token; }, getRefreshToken: () => { refreshCalls++; return null; } },
     'expo-constants': { default: {} }, 'react-native': { Platform: { OS: 'web' } },
   });
   const config = { url: '/api/orders/order-a/cash/collect', headers: {}, cashContext: 'other-context' };

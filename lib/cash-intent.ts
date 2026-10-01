@@ -2,7 +2,7 @@
 export function cashContext(user: any): string {
   const fields = [user?.id, user?.tenantId, user?.tenantMembershipId, user?.companyId, user?.companyMembershipId];
   if (fields.some(v => typeof v !== "string" || !v) || user.membershipId !== user.companyMembershipId) {
-    throw new Error("Cash actions require a tenant-bound login. Sign in again; membership selection is not supported here.");
+    throw new Error("Cash actions require a tenant-bound login. Sign in again and select an authorized membership.");
   }
   return JSON.stringify(fields);
 }
