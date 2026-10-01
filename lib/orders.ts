@@ -1,3 +1,4 @@
+import { mutateCash, type CashSingleResult, type CashBulkResult } from "./cash";
 import { api } from "./api";
 import { CreateOrderPayload } from "./validators/order";
 import type { ServiceType } from "./orders/service-types";
@@ -459,110 +460,24 @@ export async function fetchOrderProofLinks(
   return res.data as OrderProofLinksResponse;
 }
 
-export async function collectOrderCash(payload: {
-  orderId: string;
-  kind: "cod" | "service_charge";
-  amount?: number | null;
-  note?: string | null;
-}) {
-  const res = await api.post(`/api/orders/${payload.orderId}/cash/collect`, {
-    kind: payload.kind,
-    amount: payload.amount ?? null,
-    note: payload.note ?? null,
-  });
-  return res.data as { success: boolean; message: string; order: Order };
+export async function collectOrderCash(payload: { orderId: string; kind: "cod" | "service_charge"; note?: string | null }) {
+  return mutateCash("collect", [payload]) as Promise<CashSingleResult>;
 }
-
-export async function collectOrderCashBulk(payload: {
-  items: Array<{
-    orderId: string;
-    kind: "cod" | "service_charge";
-    amount?: number | null;
-    note?: string | null;
-  }>;
-  note?: string | null;
-}) {
-  const res = await api.post(`/api/orders/cash/collect-bulk`, {
-    items: payload.items,
-    note: payload.note ?? null,
-  });
-  return res.data as {
-    success: boolean;
-    count: number;
-    failedCount: number;
-    orders: Order[];
-    failed: Array<{ orderId: string; kind: "cod" | "service_charge"; error: string }>;
-  };
+export async function collectOrderCashBulk(payload: { items: Array<{ orderId: string; kind: "cod" | "service_charge"; note?: string | null }>; note?: string | null }) {
+  return mutateCash("collect", payload.items, { note: payload.note }, true) as Promise<CashBulkResult>;
 }
-
-export async function handoffOrderCash(payload: {
-  orderId: string;
-  kind: "cod" | "service_charge";
-  toHolderType: "driver" | "warehouse" | "pickup_point";
-  toDriverId?: string | null;
-  toWarehouseId?: string | null;
-  note?: string | null;
-}) {
-  const res = await api.post(`/api/orders/${payload.orderId}/cash/handoff`, {
-    kind: payload.kind,
-    toHolderType: payload.toHolderType,
-    toDriverId: payload.toDriverId ?? null,
-    toWarehouseId: payload.toWarehouseId ?? null,
-    note: payload.note ?? null,
-  });
-  return res.data as { success: boolean; message: string; order: Order };
+type CashTarget = { toHolderType: "driver" | "warehouse" | "pickup_point"; toDriverId?: string | null; toWarehouseId?: string | null; note?: string | null };
+export async function handoffOrderCash(payload: { orderId: string; kind: "cod" | "service_charge" } & CashTarget) {
+  return mutateCash("handoff", [payload], payload) as Promise<CashSingleResult>;
 }
-
-export async function settleOrderCash(payload: {
-  orderId: string;
-  kind: "cod" | "service_charge";
-  note?: string | null;
-}) {
-  const res = await api.post(`/api/orders/${payload.orderId}/cash/settle`, {
-    kind: payload.kind,
-    note: payload.note ?? null,
-  });
-  return res.data as { success: boolean; message: string; order: Order };
+export async function settleOrderCash(payload: { orderId: string; kind: "cod" | "service_charge"; note?: string | null }) {
+  return mutateCash("settle", [payload], { note: payload.note }) as Promise<CashSingleResult>;
 }
-
-export async function handoffOrderCashBulk(payload: {
-  items: Array<{ orderId: string; kind: "cod" | "service_charge" }>;
-  toHolderType: "driver" | "warehouse" | "pickup_point";
-  toDriverId?: string | null;
-  toWarehouseId?: string | null;
-  note?: string | null;
-}) {
-  const res = await api.post(`/api/orders/cash/handoff-bulk`, {
-    items: payload.items,
-    toHolderType: payload.toHolderType,
-    toDriverId: payload.toDriverId ?? null,
-    toWarehouseId: payload.toWarehouseId ?? null,
-    note: payload.note ?? null,
-  });
-  return res.data as {
-    success: boolean;
-    count: number;
-    failedCount: number;
-    orders: Order[];
-    failed: Array<{ orderId: string; kind: "cod" | "service_charge"; error: string }>;
-  };
+export async function handoffOrderCashBulk(payload: { items: Array<{ orderId: string; kind: "cod" | "service_charge" }> } & CashTarget) {
+  return mutateCash("handoff", payload.items, payload, true) as Promise<CashBulkResult>;
 }
-
-export async function settleOrderCashBulk(payload: {
-  items: Array<{ orderId: string; kind: "cod" | "service_charge" }>;
-  note?: string | null;
-}) {
-  const res = await api.post(`/api/orders/cash/settle-bulk`, {
-    items: payload.items,
-    note: payload.note ?? null,
-  });
-  return res.data as {
-    success: boolean;
-    count: number;
-    failedCount: number;
-    orders: Order[];
-    failed: Array<{ orderId: string; kind: "cod" | "service_charge"; error: string }>;
-  };
+export async function settleOrderCashBulk(payload: { items: Array<{ orderId: string; kind: "cod" | "service_charge" }>; note?: string | null }) {
+  return mutateCash("settle", payload.items, { note: payload.note }, true);
 }
 
 export async function assignDriversBulk(payload: {

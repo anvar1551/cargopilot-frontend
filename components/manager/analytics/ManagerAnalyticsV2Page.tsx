@@ -578,7 +578,7 @@ export function ManagerAnalyticsV2Page() {
         queryClient.invalidateQueries({ queryKey: ["orders"] }),
       ]);
     },
-    onError: () => toast.error(t("managerAnalytics.finance.settleSelectedFailed")),
+    onError: (error: Error) => toast.error(error.message),
   });
 
   const handoffSelectedMutation = useMutation({
@@ -608,7 +608,7 @@ export function ManagerAnalyticsV2Page() {
         queryClient.invalidateQueries({ queryKey: ["orders"] }),
       ]);
     },
-    onError: () => toast.error(t("managerAnalytics.finance.handoffSelectedFailed")),
+    onError: (error: Error) => toast.error(error.message),
   });
 
   const trendPeak = useMemo(() => {
@@ -1161,7 +1161,7 @@ export function ManagerAnalyticsV2Page() {
                           </Button>
                           <Badge variant="outline">{t("managerAnalytics.finance.selectedCount", { count: selectedCashItems.length })}</Badge>
                           <Button type="button" size="sm" onClick={() => settleSelectedMutation.mutate()} disabled={!canMutateSelectedCash || settleSelectedMutation.isPending}>
-                            {settleSelectedMutation.isPending ? t("managerAnalytics.finance.settlingSelected") : t("managerAnalytics.finance.settleSelected")}
+                            {settleSelectedMutation.isPending ? t("managerAnalytics.finance.settlingSelected") : "Settle as separate checker"}
                           </Button>
                           <Select value={handoffToType} onValueChange={(value: HandoffType) => { setHandoffToType(value); setHandoffToDriverId(""); setHandoffToWarehouseId(""); }}>
                             <SelectTrigger className="h-9 w-[180px]"><SelectValue /></SelectTrigger>

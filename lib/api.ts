@@ -1,6 +1,8 @@
+import { cashContext, assertCashToken } from "./cash-intent";
 import axios from "axios";
 import {
   clearAuth,
+  getUser,
   getRefreshToken,
   getToken,
   saveAuth,
@@ -142,6 +144,7 @@ export async function tryRefreshSession(): Promise<boolean> {
 
 api.interceptors.request.use((config) => {
   const requestUrl = String(config.url ?? "");
+  if ((config as any).cashContext && cashContext(getUser()) !== (config as any).cashContext) throw new Error("Cash context changed; request denied.");
 
   // Avoid `/api/api/...` when the base URL is already `/api` and callers use `/api/...`.
   if (normalizedBaseUrl.endsWith("/api") && requestUrl.startsWith("/api/")) {
@@ -150,6 +153,7 @@ api.interceptors.request.use((config) => {
 
   if (!isAuthRoute(requestUrl)) {
     const token = typeof window !== "undefined" ? getToken() : null;
+    if ((config as any).cashContext) assertCashToken(token, (config as any).cashContext);
     if (token) config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
@@ -162,6 +166,8 @@ api.interceptors.response.use(
     const reqUrl = String(error?.config?.url ?? "");
     const originalRequest = error?.config ?? {};
     const alreadyRetried = Boolean(originalRequest?._retry);
+
+    if (originalRequest.cashContext) return Promise.reject(error);
 
     if (typeof window !== "undefined" && status === 401 && !isAuthRoute(reqUrl)) {
       if (!alreadyRetried) {

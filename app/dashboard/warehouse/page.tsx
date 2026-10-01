@@ -1325,7 +1325,6 @@ export default function WarehouseDashboardPage() {
       return collectOrderCash({
         orderId: handoverMatchedOrder.id,
         kind: item.kind,
-        amount: item.expectedAmount,
         note:
           handoverNote.trim() ||
           "Pickup point handover cash collected by warehouse operator",
@@ -1425,12 +1424,12 @@ export default function WarehouseDashboardPage() {
         items: selectedExpectedRows.map((row) => ({
           orderId: row.orderId,
           kind: row.kind,
-          amount: row.expectedAmount,
         })),
       });
     },
-    onSuccess: () => {
-      toast.success(text.cashQueueCollectSuccess);
+    onSuccess: (result) => {
+      if (result.failedCount) toast.error("Some cash actions were rejected. Reload and review permissions and custody; no automatic replay.");
+      else toast.success(text.cashQueueCollectSuccess);
       setCashSelectedIds([]);
       void Promise.all([
         cashQueueQuery.refetch(),
@@ -1464,8 +1463,9 @@ export default function WarehouseDashboardPage() {
         toDriverId: cashHandoffDriverId,
       });
     },
-    onSuccess: () => {
-      toast.success(text.cashQueueHandoffSuccess);
+    onSuccess: (result) => {
+      if (result.failedCount) toast.error("Some cash actions were rejected. Reload and review permissions and custody; no automatic replay.");
+      else toast.success(text.cashQueueHandoffSuccess);
       setCashSelectedIds([]);
       void Promise.all([
         cashQueueQuery.refetch(),

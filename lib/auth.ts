@@ -13,6 +13,9 @@ export type AuthUser = {
   name: string;
   email: string;
   role: Role;
+  tenantId?: string | null;
+  tenantMembershipId?: string | null;
+  companyMembershipId?: string | null;
   membershipId?: string | null;
   companyId?: string | null;
   branchId?: string | null;
@@ -174,6 +177,9 @@ function normalizeAuthUser(user: unknown): AuthUser {
     name: String(raw.name ?? ""),
     email: String(raw.email ?? ""),
     role: normalizeRole(rawRole),
+    tenantId: raw.tenantId == null ? null : String(raw.tenantId),
+    tenantMembershipId: raw.tenantMembershipId == null ? null : String(raw.tenantMembershipId),
+    companyMembershipId: raw.companyMembershipId == null ? null : String(raw.companyMembershipId),
     membershipId: raw.membershipId == null ? null : String(raw.membershipId),
     companyId: raw.companyId == null ? null : String(raw.companyId),
     branchId: raw.branchId == null ? null : String(raw.branchId),

@@ -1,4 +1,5 @@
 "use client";
+import { cashDecimal } from "@/lib/cash-intent";
 
 import Link from "next/link";
 import * as React from "react";
@@ -455,7 +456,8 @@ function formatDateTime(value?: string | null) {
   return d.toLocaleString();
 }
 
-function formatMoney(amount?: number | null, currency?: string | null) {
+function formatMoney(amount?: number | string | null, currency?: string | null) {
+  if (typeof amount === "string") return cashDecimal(amount, currency);
   const n = safeNumber(amount);
   if (n == null) return "-";
   const cur = currency || "UZS";
@@ -2525,8 +2527,7 @@ export default function OrderDetailsView({
                             order?.currentWarehouse?.id === primaryWarehouseId;
                           const canAcceptToWarehouse =
                             isScopedWarehouseUser &&
-                            (collection.status === "expected" ||
-                              collection.currentHolderType === "driver");
+                            collection.status === "expected";
                           const canSettleToFinance =
                             canSettleCash &&
                             collection.status === "held";
@@ -2595,6 +2596,7 @@ export default function OrderDetailsView({
                                 </div>
                               ) : null}
 
+                              {collection.currentHolderType === "driver" ? <p className="mt-2 text-sm text-muted-foreground">The assigned driver must initiate cash handoff. Warehouse acceptance cannot act for the driver.</p> : null}
                               {canAcceptToWarehouse || canSettleToFinance ? (
                                 <div className="mt-3 flex flex-wrap gap-2">
                                   {canAcceptToWarehouse ? (
@@ -2663,7 +2665,7 @@ export default function OrderDetailsView({
                                       {cashActionKey === cashActionId(collection, "settle") ? (
                                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                                       ) : null}
-                                      {t("orderDetails.cash.actions.settle")}
+                                      {"Settle as separate checker"}
                                     </Button>
                                   ) : null}
                                 </div>
