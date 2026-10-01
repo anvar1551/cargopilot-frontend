@@ -115,11 +115,16 @@ test('cash requests bypass automatic auth replay and old route fallback is absen
   assert.doesNotMatch(orders, /api.post\("\/api\/orders\/cash\/collect"/);
 });
 
-test('partial bulk success remains blocked until explicit review; no blind replay', async () => {
+test('partial bulk results retain the original unresolved identity', async () => {
   const h = harness(); h.deps.send = async () => ({ success: false, count: 1, failedCount: 1 });
-  await core.executeCashIntent('bulk', h.deps); assert.equal(JSON.parse(h.raw).blocked, true);
-  h.deps.send = async () => { throw new Error('Must not send'); };
-  await assert.rejects(core.executeCashIntent('bulk', h.deps), /no replay/);
+  await core.executeCashIntent('bulk', h.deps); const saved = h.raw;
+  assert.equal(JSON.parse(saved).blocked, undefined);
+  await assert.rejects(core.executeCashIntent('different', h.deps), /unresolved/); assert.equal(h.raw, saved);
+});
+test('partial result after timeout cannot replace saved operations or custody snapshots', async () => {
+  const h = harness(); h.error = new Error('timeout'); await assert.rejects(core.executeCashIntent('bulk', h.deps)); const saved = h.raw;
+  h.deps.send = async record => { assert.deepEqual(record.body, JSON.parse(saved).body); return { success: false, failedCount: 1 }; };
+  await core.executeCashIntent('bulk', h.deps); assert.equal(h.raw, saved); assert.equal(h.prepares, 1);
 });
 test('real cash adapter reload retains request IDs and does not refresh a saved event', async () => {
   const driver = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'))).name.includes('driver');

@@ -69,8 +69,8 @@ export async function executeCashIntent(intent: string, deps: CashDependencies) 
   try {
     const result = await deps.send(record);
     // The bulk contract has no per-item status code to establish retryability.
-    // Preserve a blocked intent rather than automatically replaying partial work.
-    await deps.write(result?.failedCount > 0 ? JSON.stringify({ ...record, blocked: true }) : null);
+    // Preserve the unresolved identity rather than clearing/replacing partial work.
+    await deps.write(result?.failedCount > 0 ? JSON.stringify(record) : null);
     return result;
   } catch (error: any) {
     const status = Number(error?.response?.status ?? 0);
