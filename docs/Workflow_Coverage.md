@@ -1,5 +1,38 @@
 # Frontend integration programme — current checkpoint
 
+## Current B2 dashboard
+
+Frontend B2 starts at abba612d916a745eb7f4052eccd75d182b8c71fe; backend remains
+0275cceec8c1b39d18c1c3d3835371e0a9477ad1, driver untouched. All older B1 state/
+handoff statements below are historical evidence, not the current remaining task.
+Implementation checkpoint: **433c7a1ced56bd92cf6056ede3c498b07761a76f**.
+This dashboard checkpoint changes documentation only. Frontend authored/staged
+work is clean after checkpointing; backend retains preexisting dist changes only.
+
+| State | Current result / remaining boundary |
+| --- | --- |
+| Implemented and actual-browser/PostgreSQL verified | B1 customer/address selection → normal order → immutable receipt retry/reload → scoped list/detail; two-row CSV preview/confirm/matching retry; scoped inbox/detail/read/read-all/count. Three orders/three row receipts/two creation intents, no retry duplicates. |
+| Implemented and unit verified | B2 normalized context/API-origin intent persistence-before-send, read-back, Web Locks, conflict/uncertain containment, restart/partial resume, late-response suppression, strict authority projection and bounded notification contract. 18 new cases, 18 affected master and21 cash cases:57 distinct client cases, not a sum of reruns. Final no-emit and focused lint pass. |
+| Real transport evidence | Actual native EIO4/Socket.IO adapter authenticated against the owned backend hub; repeated protected count signals and reconnect caused persisted retrieval without extra message rows. Five focused additional HTTP/database/transport assertions. No deployed infrastructure or exactly-once delivery claim. |
+| Partially verified | Template endpoint works; filesystem download not confirmed by in-app browser. Copyable server-template fallback added and type/unit checked, final browser rendering unverified after bounded API expiry. Optional scheduling/detailed parcel dimensions, larger address-selection directories and localization remain client gaps. |
+| Deliberately unavailable | Merchant COD, accounting/FX, financial corrections and uncertain real-provider replay remain backend-contained. Uncertain master writes and conflicting/permanently rejected creation intents lack safe abandon/reconciliation contracts. No fake success or financial authority workaround. |
+| Remaining integration | B3 controlled administration/provisioning; B4 approved pricing/payer/CASH instructions/manual invoice; B5 restricted custody/proof viewing; B6 service cash/support/reporting/current finance contracts; B7 cross-workflow/browser matrix. Legacy screen presence is not restored compatibility. |
+| External gates | Storage/providers/native devices/distributed recovery and production release gates retained. Label/storage/carrier/Redis effects explicitly mocked in B2 acceptance. Both owned PostgreSQL instances removed with verified ownership/tmpfs cleanup; test servers stopped. |
+
+Full contracts, executed versus reused evidence and limitations: [Frontend_B2.md](Frontend_B2.md).
+Automatic approval review rejected cleanup of the owned frontend temporary copy
+`C:\Users\Anvar\AppData\Local\Temp\cp-frontend-b2-5YFfem`; leave its isolated
+output and dependency junction for manual cleanup. All earlier blocked directories
+remain untouched. No remaining B2 database storage or test listeners.
+Exact next task: **B3 operational invitation creation/cancellation, authenticated
+acceptance and controlled managed-grant replacement/revocation**, starting from
+actual Users/Drivers/Warehouse contracts. Secure transient handoff, immutable
+requests and context guards; no browser owner signing or automatic grant expansion.
+Financial/cash/setup provisioning follow the separately approved B3 milestones.
+B2 stops here; none of B3 implemented in this batch.
+
+## Historical B1 baseline
+
 Baseline backend f363ee54dc68d6d73d6b385b7cc43a4fc47a7417; frontend
 5bfae6ed9e4b9f1ec48883788bc5dee220f860c9; driver
 b7040eadf47850fa6f8392a45c6b7370c03125da. Frontend/driver worktrees clean at inspection;
@@ -14,11 +47,11 @@ Frontend B1 implementation is the local commit containing this document; no push
 
 ## Finite batches and completion criteria
 
-1. **Workspace + customer/address master workflow (this session):** selected-context
+1. **Workspace + customer/address master workflow (B1 completed):** selected-context
    shell, accessible reusable states/design tokens; scoped search/list/detail and
    create/edit/address/default/delete contracts. Actual adapters, no fake success.
    Missing master-write idempotency means ambiguous writes cannot auto-replay.
-2. **Orders/import + operational notifications:** immutable context-bound order/import
+2. **Orders/import + operational notifications (B2 implemented, limits above):** immutable context-bound order/import
    operation IDs, reference consistency, partial row results, authoritative refresh;
    notification inbox/list/read/count with recipient/context partitioning.
 3. **Administration + provisioning:** operational/driver invitations, acceptance and
@@ -57,8 +90,8 @@ screens are present code, **not claims of current contract compatibility**. B=pl
 | Customers / clerk or authorized customers.read/write | /api/customers GET q/type/page/limit and :id; POST/PATCH strict fields, DELETE204; tenant-owned masters may span companies but existing object checks remain | B1 implemented and browser verified: scoped list/search/create/detail/edit/delete. No inferred exclusive company ownership or ownership request fields; uncertain writes remain contained. |
 | Addresses / authorized customer actor | /api/addresses GET customerEntityId/q/take (max50, array, not page/limit); POST requires customer; PATCH cannot move owner; customer PATCH defaultAddressId | B1 implemented and browser verified: bounded search/create/edit/default/clear/delete with exact customer identity and unknown-write containment. |
 | Warehouse provisioning/access / explicitly appointed admin or scoped staff | /api/warehouses POST warehouse.create + durable authority + operationId; GET list/:id shipment.view scoped, PUT shipment.update restrictions | Warehouse/create dialog present but no durable provisioning contract. B3 no automatic access/ceiling; B5 actual scoped read/consumer compatibility. |
-| Order creation/list/detail/export / authorized shipment actor | /api/orders POST immutable operationId/normalized refs; GET scoped filters; :id and export.csv; no client paid/amount/owner authority | Order screens/forms exist. B2 validate customer/address links, context-bound durable retries, safe CSV download and server receipt handling; quotes are not acceptance. |
-| CSV import / shipment.create | /api/orders/import/template.csv,/preview,/confirm; stable identity+same CSV, independent per-row success/replay | Bulk dialog exists, current receipt integration missing. B2 original rows/operation persisted, partial results, no blind downstream replay. |
+| Order creation/list/detail/export / authorized shipment actor | /api/orders POST immutable operationId/normalized refs; GET scoped filters; :id and export.csv; no client paid/amount/owner authority | B2 shared creation integrated across existing callers, master refs/free text and durable original retry; list/detail verified, actual route links corrected. Export unchanged, not newly verified. Quotes not accepted prices. Optional schedule/dimensions deferred. |
+| CSV import / shipment.create | /api/orders/import/template.csv,/preview,/confirm; stable identity+same CSV, independent per-row success/replay | B2 template/preview/confirm and immutable original batch integrated. Successful receipt lists IDs/replayed rows; failed-response committed count unknown. Identical batch resumes unfinished rows; downstream recovery remains separate. |
 | Quotes/tariffs / accepted pricing actors | /api/pricing/quote,/quote-options; tariff-plans CRUD draft only; :id/versions and decision with contentSha256/generation/operationId | Pricing screen draft editor exists, approval wiring missing. B4 approved snapshots/candidate precedence, separate reviewer, reject draft/foreign fallback. |
 | Billing policy / pricing-maker/checker | /api/pricing/billing-policies POST, /decision, /:id read; immutable version/hash/op ID | Missing. B4 explicit routes/country/zone/currency/rounding/tax/state policy; no inferred defaults or mutable approved history. |
 | Payer and cash instruction / accepted billing operator | /api/pricing/orders/:id/bill-to and service-payment-instruction; billToId/CASH/SENDER or RECIPIENT/evidence/reason/opID | Missing. B4 records authoritative payer/timing before acceptance, handles CASH_COLLECTION_WINDOW_CLOSED; no online→cash conversion. |
@@ -68,7 +101,7 @@ screens are present code, **not claims of current contract compatibility**. B=pl
 | Proofs / authorized parent-order actor | /api/orders/:id/proofs read, proof-submission-capability and delivery-proof; PNG/size/dimensions, submissionId immutable content, server time | Order proof viewer present; driver native durable path exists. B5 viewer contract, driver coordination only; no SVG, context-free signing or invented retry IDs. |
 | Service charge collection/transfer/settlement / accepted supplemental cash actors | /api/orders/cash/queue; /:id/cash/preflight; collect,handoff,handoff/accept,settle; obligationId/event/operation/exact membership and amount strings | Legacy cash-intent protections exist, current DOM05/06 contract missing. B6 no resubmission after ambiguous outcome or context switch; parcel custody does not move money; separate warehouse checker. |
 | Manual invoice / independently provisioned issuer | POST /api/invoices/issue with orderId/priceApprovalId/operationId/reason; GET /:orderId; same entity base currency, configured state | Finance receivables/order views exist, issuance wiring missing. B4 durable original receipts, zero/foreign/superseded rejection. Held outbox is not accounting or payment. |
-| Notifications / selected recipient | /api/notifications GET bounded cursor/type, unread-count, :id, :id/read, read-all; exact recipient/company context; realtime uses existing IDs | Bell count exists, bell has no inbox action. B2 list/read/count and missed realtime recovery, no duplicate notification creation. |
+| Notifications / selected recipient | /api/notifications GET bounded cursor/type, unread-count, :id, :id/read, read-all; exact recipient/company context; realtime uses existing IDs | B2 bell/inbox/detail/read/read-all/count integrated and browser verified. Real transport references invalidate persisted queries; reconnect/poll recover missed signals without appending duplicates. |
 | Support / relevant support keys and company/object scopes | /api/support/tickets/summary/assignees, ticket status/assign/notes/messages; queues/rules mutations and stream contained where unsupported | SupportDashboard present. B6 validate actual status body (current client sends /status), linked order/assignee ownership and safe attachments; no live stream claim. |
 | Operational reporting / scoped shipment/report permission | /api/analytics summary/trend/warnings/finance-queue, selected context/cursor/cache; stream/refresh rules | Analytics/live map/dashboard present. B6 query/cache partitioning, no numeric mixed-currency truth or global realtime fallback. |
 | Existing finance module / explicit legal-entity permissions | /api/finance entity/accounts/periods/journals/rules/subledger/reports paths; accepted immutable rules/authority and exact strings | FinanceControlCenter and 16 workspaces inspected; substantial real API code, but broad legacy settings/payment/post controls are not restored. B6 align current reads and supported authoring receipts; disable policy-contained execution visibly. |
@@ -97,7 +130,7 @@ stack/forms fit viewport; no hidden required actions. Existing shared en/ru/uz
 infrastructure remains; new customer workspace copy is English in B1. Its Russian/
 Uzbek localization is an explicit remaining client gap, not verified compatibility.
 
-## B1 execution and evidence
+## Historical B1 execution and evidence
 
 Plan recorded before implementation. No dependency changes. UI adapters use selected
 context and actual endpoint shapes. Customer/address POST/PATCH/DELETE lack durable
@@ -139,7 +172,7 @@ Desktop/mobile screenshots: external visualization folder `frontend-b1`,
 `customers-desktop.jpg`, `directory-desktop.jpg`, `customers-mobile.jpg` and
 `address-mobile.jpg`. These contain synthetic records only.
 
-### API/client changes and exact next task
+### Historical B1 API/client changes and handoff
 
 No backend ownership/API field expansion. Required supported-browser Web Locks and
 local storage; receipt-less writes use 15s request deadlines without automatic refresh/
@@ -154,7 +187,7 @@ the backend `userId` projection directly to `cashContext`, which requires `id`.
 Frontend now normalizes that explicit alias and rejects conflicting identities;
 driver correction and device verification are deferred, not claimed compatible.
 
-Next exact task: **B2**, inspect and replace existing order/import submission contracts
+Historical B1 next task (completed in B2 above): inspect and replace existing order/import submission contracts
 with immutable context-bound operation IDs, preserve CSV/payload across uncertain retries,
 wire authorized customer/address references, partial-row results and original server
 receipts; implement scoped notification inbox/list/read/count. Prove real synthetic
