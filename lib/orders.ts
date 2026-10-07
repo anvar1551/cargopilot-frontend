@@ -2,6 +2,16 @@ import { mutateCash, type CashSingleResult, type CashBulkResult } from "./cash";
 import { api } from "./api";
 import { CreateOrderPayload } from "./validators/order";
 import type { ServiceType } from "./orders/service-types";
+import { authContext, authEpoch } from "./auth";
+import { createInWorkspace } from "./order-workspace";
+
+async function scopedOrderRead(path: string, params?: object) {
+  const context=authContext(),epoch=authEpoch();
+  if(!context)throw Error("Bound login required");
+  const response=await api.get(path,{params,timeout:15000});
+  if(context!==authContext()||epoch!==authEpoch())throw Error("Session changed; order response discarded");
+  return response.data;
+}
 
 export type ParcelInput = {
   weightKg?: number;
@@ -334,20 +344,17 @@ export type OrderImportPreview = {
 };
 
 export async function createOrder(dto: CreateOrderPayload) {
-  const res = await api.post("/api/orders", dto);
-  return res.data;
+  const context=authContext();if(!context)throw Error("Bound login required");
+  return createInWorkspace(context,"order",dto);
 }
 
 export async function fetchOrders(
   params?: ListOrdersParams,
 ): Promise<OrdersResponse> {
-  const res = await api.get("/api/orders", {
-    params: {
+  return scopedOrderRead("/api/orders", {
       ...params,
       statuses: params?.statuses?.join(",") || undefined,
-    },
   });
-  return res.data;
 }
 
 export async function exportOrdersCsv(params?: ListOrdersParams) {
@@ -390,8 +397,8 @@ export async function confirmOrderImport(payload: {
   csvText: string;
   customerEntityId?: string | null;
 }) {
-  const res = await api.post("/api/orders/import/confirm", payload);
-  return res.data as { success: boolean; count: number; orders: Order[] };
+  const context=authContext();if(!context)throw Error("Bound login required");
+  return createInWorkspace(context,"import",{...payload,customerEntityId:payload.customerEntityId??null});
 }
 
 export async function fetchOrdersPaged(params?: {
@@ -399,13 +406,12 @@ export async function fetchOrdersPaged(params?: {
   page?: number;
   limit?: number;
 }): Promise<OrdersResponse> {
-  const res = await api.get("/api/orders", { params });
-  return res.data;
+  return scopedOrderRead("/api/orders",params);
 }
 
 export async function fetchOrderById(id: string) {
-  const res = await api.get(`/api/orders/${id}`);
-  return res.data;
+  if(!/^[0-9a-f-]{36}$/i.test(id))throw Error("Invalid order reference");
+  return scopedOrderRead(`/api/orders/${id}`);
 }
 
 export async function fetchOrderLegs(orderId: string) {

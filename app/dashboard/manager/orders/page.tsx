@@ -7,11 +7,13 @@ import { toast } from "sonner";
 import { useI18n } from "@/components/i18n/I18nProvider";
 import OrdersTable from "@/components/orders/OrderTable";
 import PageShell from "@/components/layout/PageShell";
+import OrderSubmissionDialog from "@/components/workspace/OrderSubmissionDialog";
+import { useWorkspaceSession } from "@/lib/workspace";
 import type { OrderTableRow } from "@/components/orders/OrderTable";
 
 import { deleteOrder, exportOrdersCsv, fetchOrders } from "@/lib/orders";
 import { getErpOrderCapabilities } from "@/lib/orders/permissions";
-import { getUser, authContext } from "@/lib/auth";
+import { authContext } from "@/lib/auth";
 import { getStatusLabel } from "@/lib/i18n/labels";
 import { fetchDrivers } from "@/lib/manager";
 import { fetchWarehouses } from "@/lib/warehouses";
@@ -155,7 +157,7 @@ export default function ManagerOrdersPage() {
     return context ? `${FILTER_PRESETS_STORAGE_KEY}:${context}` : null;
   });
   const { t } = useI18n();
-  const actor = useMemo(() => getUser(), []);
+  const { user: actor, context } = useWorkspaceSession();
   const orderCapabilities = useMemo(() => getErpOrderCapabilities(actor), [actor]);
 
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
@@ -189,24 +191,27 @@ export default function ManagerOrdersPage() {
   const filterSignature = JSON.stringify(filters);
 
   const driversQuery = useQuery({
-    queryKey: ["operations-drivers", "orders-filters"],
+    queryKey: ["operations-drivers", context, "orders-filters"],
     queryFn: fetchDrivers,
+    enabled: Boolean(context) && Boolean(actor?.permissionCodes?.includes("drivers.read")),
   });
 
   const warehousesQuery = useQuery({
-    queryKey: ["warehouses", "orders-filters"],
+    queryKey: ["warehouses", context, "orders-filters"],
     queryFn: fetchWarehouses,
+    enabled: Boolean(context) && orderCapabilities.canOpenDetails,
   });
 
   const ordersQuery = useQuery<OrdersResponseLike | OrderTableRow[]>({
     queryKey: [
       "orders-cursor",
+      context,
       cursorStack[cursorIndex] ?? null,
       filterSignature,
     ],
     queryFn: () =>
       fetchOrders({
-        limit: 140,
+        limit: 50,
         mode: "cursor",
         cursor: cursorStack[cursorIndex] ?? undefined,
         statuses: filters.statuses,
@@ -217,7 +222,7 @@ export default function ManagerOrdersPage() {
         warehouseId: filters.warehouseId || undefined,
         region: filters.region.trim() || undefined,
     }),
-    placeholderData: (prev) => prev,
+    enabled: Boolean(context) && orderCapabilities.canOpenDetails,
   });
 
   const exportMutation = useMutation({
@@ -374,6 +379,8 @@ export default function ManagerOrdersPage() {
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
+                <OrderSubmissionDialog/>
+                <OrderSubmissionDialog kind="import" triggerLabel="Import CSV"/>
                 <Badge variant="outline" className="rounded-full">
                   {t("managerOrdersPage.activeFilters", { count: activeFilterCount })}
                 </Badge>

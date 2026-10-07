@@ -5,7 +5,8 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { Bell, Menu, MessageSquare } from "lucide-react";
+import { Menu, MessageSquare } from "lucide-react";
+import NotificationInbox from "@/components/workspace/NotificationInbox";
 import { dashboardPathForUser, hasPermission } from "@/lib/auth";
 import { useWorkspaceSession } from "@/lib/workspace";
 import { useI18n } from "@/components/i18n/I18nProvider";
@@ -114,20 +115,7 @@ export default function AppTopbar({
           </div>
 
           <div className="flex shrink-0 items-center justify-end gap-4">
-            <button
-              type="button"
-              aria-label="Notification inbox integration pending"
-              title="Notification inbox integration pending"
-              disabled
-              className="relative text-slate-600 disabled:cursor-default"
-            >
-              <Bell className="h-5 w-5" />
-              {unreadCount > 0 ? (
-                <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold text-white">
-                  {unreadCount > 99 ? "99+" : unreadCount}
-                </span>
-              ) : null}
-            </button>
+            {hasPermission(user, "notifications.read") && <NotificationInbox unreadCount={unreadCount} />}
             <Link
               href="/dashboard/manager/support"
               className="relative text-slate-600 transition hover:text-slate-950"

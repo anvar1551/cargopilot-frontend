@@ -41,6 +41,7 @@ import {
 } from "@/components/ui/dialog";
 import PageShell from "@/components/layout/PageShell";
 import WorkspaceState from "./WorkspaceState";
+import OrderSubmissionDialog from "./OrderSubmissionDialog";
 
 // Owned master data is tenant-level; selected company still gates every backend operation.
 export default function CustomerWorkspace({
@@ -630,10 +631,10 @@ function CustomerRecord({
                   Customer masters belong to the tenant. Your current
                   permissions and object scopes still apply.
                 </p>
-                <p className="mt-2">
-                  Create shipment and CSV import from this profile are pending
-                  integration in the next batch.
-                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <OrderSubmissionDialog customerId={id}/>
+                  <OrderSubmissionDialog kind="import" customerId={id} triggerLabel="Import CSV"/>
+                </div>
               </div>
               {canWrite && (
                 <Button

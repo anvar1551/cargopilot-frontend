@@ -147,7 +147,7 @@ export function getColumns(
 ): ColumnDef<OrderTableRow>[] {
   const detailsBasePath = options?.detailsBasePath ?? "/dashboard/manager/orders";
   const canDelete = Boolean(options?.capabilities?.canDelete && options?.onDeleteOrder);
-  const detailsHref = (order: OrderTableRow) => `${detailsBasePath}?order=${order.id}`;
+  const detailsHref = (order: OrderTableRow) => `${detailsBasePath}/${encodeURIComponent(order.id)}`;
 
   return [
     {

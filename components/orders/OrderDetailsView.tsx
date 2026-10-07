@@ -1,5 +1,6 @@
 "use client";
 import { cashDecimal } from "@/lib/cash-intent";
+import { useWorkspaceSession } from "@/lib/workspace";
 
 import Link from "next/link";
 import * as React from "react";
@@ -840,7 +841,7 @@ export default function OrderDetailsView({
 }) {
   const { t } = useI18n();
   const queryClient = useQueryClient();
-  const currentUser = getUser();
+  const { user: currentUser, context: selectedContext } = useWorkspaceSession();
   const actorCompanyId = getActorCompanyId(currentUser);
   const primaryWarehouseId = getPrimaryWarehouseId(currentUser);
   const orderCapabilities = React.useMemo(
@@ -859,15 +860,15 @@ export default function OrderDetailsView({
     isLoading,
     error,
   } = useQuery<OrderDetails>({
-    queryKey: ["order", orderId],
+    queryKey: ["order", orderId, selectedContext],
     queryFn: () => fetchOrderById(orderId),
-    enabled: !!orderId,
+    enabled: !!orderId && Boolean(selectedContext),
     staleTime: 60_000,
     gcTime: 15 * 60_000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     placeholderData: () =>
-      queryClient.getQueryData<OrderDetails>(["order", orderId]),
+      queryClient.getQueryData<OrderDetails>(["order", orderId, selectedContext]),
   });
 
   const [docLoading, setDocLoading] = React.useState<
