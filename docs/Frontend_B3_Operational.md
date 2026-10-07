@@ -1,3 +1,7 @@
+# Current follow-up
+
+Invitation inventory/status, named accepted-ceiling resources and manageable-grant discovery are now implemented. See [Operational_Administration_Discovery.md](Operational_Administration_Discovery.md). The original milestone evidence and missing-contract statements below are historical; lost-secret regeneration and uncertain-intent abandonment remain unavailable.
+
 # B3 operational invitations and managed grants
 
 ## Bounded execution plan

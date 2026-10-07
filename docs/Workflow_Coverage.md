@@ -1,4 +1,18 @@
-# Current B3 operational administration dashboard
+# Current operational administration discovery dashboard
+
+| State | Current behavior / boundary |
+| --- | --- |
+| Implemented / actual browser, HTTP and PostgreSQL | Scoped original-inviter invitation inventory/status and cancellation selector; accepted ceiling/profile revisions and named owned warehouse selector; manageable current grant inspection/replacement/revocation. Reload and matching receipt retry preserve original intent; narrowed/revoked authority fails closed. |
+| Implemented / focused client and mocked reads | 5 new client and 9 backend cases. Final no-emit checks and focused frontend lint passed. 10 distinct real HTTP/PostgreSQL cases and one connected selector journey. Existing 20 B3 client cases, IAM concurrency/rollback/socket and B1/B2 evidence reused unchanged. |
+| Remaining / deliberately unavailable | Secret regeneration, automatic email delivery and safe abandon of unconfirmed intents unavailable. Driver UI, warehouse creation, financial/cash delegation and entity setup remain later milestones. No permission/ceiling expansion or browser owner signing. |
+| Compatibility / limits | Backend-first additive GET rollout; bounded pages may be empty with nextCursor after target filtering. Inventory snapshots do not authorize writes. Provider/storage/Redis boundaries mocked; production-scale and native/device behavior not verified. |
+| Cleanup | Owned PostgreSQL/tmpfs removed; APIs/frontend stopped. Policy-blocked cp-frontend-discovery-owned-MDFV8l left for manual cleanup; prior blocked directories, Python runtime and dist preserved. |
+
+Exact contracts, screenshots and evidence: [Operational_Administration_Discovery.md](Operational_Administration_Discovery.md).
+Next task after external review: driver invitation and managed local/linehaul UI;
+not started. Older dashboards below are historical.
+
+# Historical B3 operational administration dashboard (superseded by discovery above)
 
 Baselines: frontend e9daeb0e0567d2d0cd62d447777880d60d1f6f16;
 backend ea985c879d7a7290df79cc29a3941830102ec9cd. Backend and driver unchanged.
@@ -125,7 +139,7 @@ screens are present code, **not claims of current contract compatibility**. B=pl
 | --- | --- | --- |
 | Selected login / all identities | /api/auth/login credential-verified 409 choices then companyMembershipId; exact refresh context, logout lineage | Login/Providers/api implemented previously; B1 preserve, managed operational profiles must reach workspace; no credentials persisted beyond existing bound session. |
 | Controlled tenant onboarding / installation owner | Internal signed permit only, no anonymous registration; reviewed real key/intent required | No browser provisioning/signer; deliberately unavailable to ordinary admin. B3 explanatory prerequisite, never fabricate endpoint. |
-| Operational invitation / accepted delegator | POST /api/auth/company-invitations, /cancel, /accept and company-operational-grants; operationId/profile revision/typed warehouse ceilings; one-use secret delivery | B3 milestone 1 implemented: Users controlled workflow and public recipient acceptance, transient private token handoff, immutable persisted requests and scoped member directory. Browser/HTTP/PostgreSQL verified; missing invitation/status/managed-grant/ceiling APIs remain explicit. No email delivery claim. See Frontend_B3_Operational.md. |
+| Operational invitation / accepted delegator | POST /api/auth/company-invitations, /cancel, /accept and company-operational-grants; operationId/profile revision/typed warehouse ceilings; one-use secret delivery | B3 milestone 1 implemented: Users controlled workflow and public recipient acceptance, transient private token handoff, immutable persisted requests and scoped member directory. Browser/HTTP/PostgreSQL verified; additive discovery now supplies invitation/status, manageable grants and named accepted-ceiling resources. See Operational_Administration_Discovery.md. No email delivery claim. See Frontend_B3_Operational.md. |
 | Driver invitation / separate driver delegator | company-driver-invitations, /cancel, /accept and company-driver-grants; exact local/linehaul membership eligibility; no implicit scopes | Drivers/edit shared User.driverType obsolete. B3 accepted restricted membership type and active-work replacement blockers; driver native work deferred. |
 | Financial/cash grant and initial entity setup / owner-appointed makers/checkers | company-financial-grants and company-cash-capabilities proposals/accept/revoke; issuing-entity-setup proposals/:id/decisions; independent User and accepted ceilings | No matching interfaces. B3 governed profiles, removed/replacement ceilings, exact acceptance IDs; no general settings.manage or automatic grant expansion. |
 | Customers / clerk or authorized customers.read/write | /api/customers GET q/type/page/limit and :id; POST/PATCH strict fields, DELETE204; tenant-owned masters may span companies but existing object checks remain | B1 implemented and browser verified: scoped list/search/create/detail/edit/delete. No inferred exclusive company ownership or ownership request fields; uncertain writes remain contained. |

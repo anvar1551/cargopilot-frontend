@@ -23,6 +23,11 @@ import WorkspaceState from "./WorkspaceState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  readOperationalDiscovery,
+  type ManagedOperationalGrant,
+  type OperationalWarehouse,
+} from "@/lib/operational-discovery";
 
 const membersSchema = z
   .object({
@@ -109,7 +114,52 @@ function Staff({
 }) {
   const [q, setQ] = useState(""),
     [page, setPage] = useState(1),
-    [target, setTarget] = useState("");
+    [target, setTarget] = useState<ManagedOperationalGrant>(),
+    [cancelTarget, setCancelTarget] = useState("");
+  const [invitationCursors, setInvitationCursors] = useState<string[]>([]),
+    [grantCursors, setGrantCursors] = useState<string[]>([]);
+  const accepted = useQuery({
+    queryKey: ["operational-ceiling", context],
+    enabled: delegate,
+    retry: false,
+    staleTime: 0,
+    queryFn: () => readOperationalDiscovery(context, "ceiling"),
+  });
+  const warehouses = useQuery({
+    queryKey: ["operational-warehouse-ceiling", context],
+    enabled: accepted.isSuccess,
+    retry: false,
+    queryFn: () => readOperationalDiscovery(context, "warehouses"),
+  });
+  const invitations = useQuery({
+    queryKey: ["operational-invitations", context, invitationCursors.at(-1)],
+    enabled: accepted.isSuccess && invite && accepted.data.canInvite,
+    retry: false,
+    queryFn: () =>
+      readOperationalDiscovery(
+        context,
+        "invitations",
+        invitationCursors.at(-1),
+      ),
+  });
+  const grants = useQuery({
+    queryKey: ["operational-managed-grants", context, grantCursors.at(-1)],
+    enabled: accepted.isSuccess,
+    retry: false,
+    queryFn: () =>
+      readOperationalDiscovery(context, "grants", grantCursors.at(-1)),
+  });
+  const available =
+    accepted.isSuccess && !warehouses.isError && !grants.isError;
+  const resources = warehouses.data?.items ?? [];
+  const approved = accepted.data?.profiles.map((p) => p.revision) ?? [];
+  const refreshDiscovery = () => {
+    void accepted.refetch();
+    void warehouses.refetch();
+    void invitations.refetch();
+    void grants.refetch();
+    void members.refetch();
+  };
   const members = useQuery({
     queryKey: ["operational-members", context, q, page],
     enabled: directory,
@@ -146,9 +196,190 @@ function Staff({
           </Link>
         </header>
         <div className="grid gap-5 xl:grid-cols-2">
-          <Action context={context} kind="invite" allowed={invite} />
-          <Action context={context} kind="cancel" allowed={invite} />
+          <Action
+            context={context}
+            kind="invite"
+            allowed={invite && available && Boolean(accepted.data?.canInvite)}
+            warehouses={resources}
+            profiles={approved}
+            onConfirmed={refreshDiscovery}
+          />
+          <Action
+            context={context}
+            kind="cancel"
+            allowed={
+              invite &&
+              available &&
+              Boolean(accepted.data?.canInvite) &&
+              !invitations.isError
+            }
+            warehouses={resources}
+            profiles={approved}
+            cancellationId={cancelTarget}
+            onConfirmed={refreshDiscovery}
+          />
         </div>
+        <section className="rounded-2xl border bg-card p-5 space-y-4">
+          <h2 className="text-lg font-semibold">
+            Accepted operational delegation
+          </h2>
+          {accepted.isPending ? (
+            <p role="status">Checking current accepted authority…</p>
+          ) : accepted.isError || !available ? (
+            <p role="alert">
+              Discovery is unavailable. Your accepted authority may be revoked,
+              expired or inconsistent; sign in afresh or ask the installation
+              owner to review it. No grant or invitation action is enabled from
+              role names alone.
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Current ceiling: {accepted.data.ceilingRevision}. Only
+              server-returned profiles and owned warehouses are selectable.
+              Every mutation checks current authority again.
+            </p>
+          )}
+          <Button variant="outline" onClick={refreshDiscovery}>
+            Refresh accepted authority and inventory
+          </Button>
+          <h3 className="font-semibold">Your invitations</h3>
+          {invitations.isError ? (
+            <p role="alert">
+              Invitations cannot be read under current authority.
+            </p>
+          ) : invitations.isFetching ? (
+            <p role="status">Loading invitations…</p>
+          ) : (
+            <ul className="space-y-2">
+              {invitations.data?.items.map((i) => (
+                <li
+                  key={i.id}
+                  className="rounded-xl border p-3 flex flex-wrap items-center justify-between gap-3"
+                >
+                  <div className="text-sm">
+                    <p className="font-medium">{i.email}</p>
+                    <p>
+                      {OPERATIONAL_PROFILES[i.profileRevision]} · {i.state} ·
+                      expires {new Date(i.expiresAt).toLocaleString()}
+                    </p>
+                    <p className="text-xs break-all">{i.id}</p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={i.state !== "pending" || !available}
+                    onClick={() => setCancelTarget(i.id)}
+                  >
+                    Select for cancellation
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {invitations.isSuccess && !invitations.data.items.length && (
+            <p className="text-sm">No invitations on this page.</p>
+          )}
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              disabled={!invitationCursors.length || invitations.isFetching}
+              onClick={() => setInvitationCursors((v) => v.slice(0, -1))}
+            >
+              Previous invitations
+            </Button>
+            <Button
+              variant="outline"
+              disabled={!invitations.data?.nextCursor || invitations.isFetching}
+              onClick={() =>
+                setInvitationCursors((v) => [
+                  ...v,
+                  invitations.data!.nextCursor!,
+                ])
+              }
+            >
+              Next invitations
+            </Button>
+          </div>
+          <h3 className="font-semibold">
+            Workflow-managed access within your ceiling
+          </h3>
+          <p className="text-sm text-muted-foreground">
+            Unrelated grants, self changes, other delegators and access outside
+            your current ceiling are excluded. The member directory below does
+            not imply grant authority.
+          </p>
+          {grants.isError ? (
+            <p role="alert">
+              Managed grants cannot be read under current authority.
+            </p>
+          ) : grants.isFetching ? (
+            <p role="status">Loading managed grants…</p>
+          ) : (
+            <ul className="space-y-2">
+              {grants.data?.items.map((g) => (
+                <li
+                  key={g.membershipId}
+                  className="rounded-xl border p-3 flex flex-wrap items-center justify-between gap-3"
+                >
+                  <div className="text-sm">
+                    <p className="font-medium">
+                      {g.name} · {g.email}
+                    </p>
+                    <p>
+                      {OPERATIONAL_PROFILES[g.profileRevision]} ·{" "}
+                      {g.enabled ? "Active" : "Revoked"}
+                    </p>
+                    <p>
+                      {!g.enabled && "Last managed scope (revoked): "}
+                      {g.warehouseIds.length
+                        ? g.warehouseIds
+                            .map(
+                              (id) =>
+                                resources.find((w) => w.id === id)?.name ??
+                                "Unavailable warehouse",
+                            )
+                            .join(", ")
+                        : "Selected company scope"}
+                    </p>
+                    <p className="text-xs break-all">{g.membershipId}</p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!available}
+                    onClick={() => setTarget(g)}
+                  >
+                    Inspect managed access
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {grants.isSuccess && !grants.data.items.length && (
+            <p className="text-sm">
+              No manageable grants on this page. Continue if another page is
+              available.
+            </p>
+          )}
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              disabled={!grantCursors.length || grants.isFetching}
+              onClick={() => setGrantCursors((v) => v.slice(0, -1))}
+            >
+              Previous grants
+            </Button>
+            <Button
+              variant="outline"
+              disabled={!grants.data?.nextCursor || grants.isFetching}
+              onClick={() =>
+                setGrantCursors((v) => [...v, grants.data!.nextCursor!])
+              }
+            >
+              Next grants
+            </Button>
+          </div>
+        </section>
         <section className="rounded-2xl border bg-card p-5">
           <h2 className="text-lg font-semibold">Selected-company members</h2>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -206,15 +437,10 @@ function Staff({
                                 "No active profile"}
                             </td>
                             <td className="p-3">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                disabled={!delegate || m.id === userId}
-                                onClick={() => setTarget(m.membershipId)}
-                              >
+                              <Button variant="outline" size="sm" disabled>
                                 {m.id === userId
                                   ? "Self changes prohibited"
-                                  : "Select membership"}
+                                  : "Use managed inventory"}
                               </Button>
                             </td>
                           </tr>
@@ -263,16 +489,16 @@ function Staff({
         <Action
           context={context}
           kind="grant"
-          allowed={delegate}
+          allowed={delegate && available}
           target={target}
-          onConfirmed={() => void members.refetch()}
+          warehouses={resources}
+          profiles={approved}
+          onConfirmed={refreshDiscovery}
         />
         <aside className="rounded-2xl border border-dashed p-5 text-sm text-muted-foreground">
-          No invitation inventory/status or accepted-ceiling picker exists.
-          Warehouse IDs must be explicitly obtained from authorized
-          provisioning; the backend checks ownership and your ceiling. Never
-          guess an ID. A lost token cannot be recovered by retry, and no email
-          is sent.
+          Inventory never recovers a secret or changes a pending intent. Lost
+          tokens cannot be regenerated by retries; no email is sent. Discovery
+          is a current snapshot, not authorization for a later mutation.
         </aside>
       </div>
     </PageShell>
@@ -283,12 +509,18 @@ function Action({
   kind,
   allowed,
   target,
+  cancellationId,
+  warehouses,
+  profiles,
   onConfirmed,
 }: {
   context: string;
   kind: Exclude<OperationalKind, "accept">;
   allowed: boolean;
-  target?: string;
+  target?: ManagedOperationalGrant;
+  cancellationId?: string;
+  warehouses: OperationalWarehouse[];
+  profiles: Array<keyof typeof OPERATIONAL_PROFILES>;
   onConfirmed?: () => void;
 }) {
   const [intent, setIntent] = useState<OperationalIntent | null>(null),
@@ -308,7 +540,23 @@ function Action({
   useEffect(() => {
     mounted.current = true;
     try {
-      setIntent(pendingOperational(context, kind));
+      const saved = pendingOperational(context, kind);
+      setIntent(saved);
+      if (saved) {
+        const p = saved.payload;
+        setEmail(typeof p.email === "string" ? p.email : "");
+        setId(String(p.invitationId ?? p.membershipId ?? ""));
+        setReason(typeof p.reason === "string" ? p.reason : "");
+        if (
+          typeof p.profileRevision === "string" &&
+          p.profileRevision in OPERATIONAL_PROFILES
+        )
+          setProfile(p.profileRevision as keyof typeof OPERATIONAL_PROFILES);
+        setWarehouseText(
+          Array.isArray(p.warehouseIds) ? p.warehouseIds.join(",") : "",
+        );
+        if (p.action === "grant" || p.action === "revoke") setAction(p.action);
+      }
     } catch {
       setError("Stored intent is unreadable; no request may be sent.");
     }
@@ -317,8 +565,14 @@ function Action({
     };
   }, [context, kind]);
   useEffect(() => {
-    if (target && !intent && !running.current) setId(target);
-  }, [target, intent]);
+    if (!intent && !running.current) {
+      if (target) {
+        setId(target.membershipId);
+        setProfile(target.profileRevision);
+        setWarehouseText(target.warehouseIds.join(","));
+      } else if (cancellationId) setId(cancellationId);
+    }
+  }, [target, cancellationId, intent]);
   const submit = async (retry = false) => {
     if (running.current || !allowed) return;
     setError("");
@@ -394,15 +648,23 @@ function Action({
         {kind === "grant"
           ? "Only workflow-managed non-self targets. Replacement checks both removed and proposed scopes; unrelated grants are protected. Target sessions are revoked on success."
           : kind === "cancel"
-            ? "Only your own issued invitation. Enter its original ID; acceptance may have won the race."
+            ? "Only your own issued invitation. Select it from inventory; acceptance may have won the race."
             : "A 72-hour single-use token is returned once. Secure delivery is your responsibility."}
       </p>
       {!allowed && (
         <p role="status" className="mt-3 text-sm">
-          Required permission hints are absent. Even with permission,
-          owner-approved authority must exist.
+          Current accepted authority and required permissions must be confirmed.
+          Permission possession or role names alone do not enable this action.
         </p>
       )}
+      {!intent &&
+        ((kind === "grant" && !target) ||
+          (kind === "cancel" && !cancellationId)) && (
+          <p className="mt-3 text-sm" role="status">
+            Select an eligible record from the authoritative inventory below
+            before starting an action.
+          </p>
+        )}
       <form
         className="mt-4 space-y-4"
         onSubmit={(e) => {
@@ -411,7 +673,13 @@ function Action({
         }}
       >
         <fieldset
-          disabled={!allowed || busy || Boolean(intent)}
+          disabled={
+            !allowed ||
+            busy ||
+            Boolean(intent) ||
+            (kind === "grant" && !target) ||
+            (kind === "cancel" && !cancellationId)
+          }
           className="space-y-4 disabled:opacity-70"
         >
           <div className="space-y-2">
@@ -433,6 +701,7 @@ function Action({
                   : setId(e.target.value)
               }
               required
+              readOnly={kind !== "invite"}
             />
           </div>
           {kind !== "cancel" && (
@@ -447,39 +716,74 @@ function Action({
                   id={`${kind}-profile`}
                   className="h-10 w-full rounded-md border bg-background px-3 text-sm"
                   value={profile}
-                  onChange={(e) =>
+                  onChange={(e) => {
                     setProfile(
                       e.target.value as keyof typeof OPERATIONAL_PROFILES,
-                    )
-                  }
+                    );
+                    if (e.target.value !== "operational-warehouse.v1")
+                      setWarehouseText("");
+                  }}
                 >
-                  {Object.entries(OPERATIONAL_PROFILES).map(
-                    ([value, label]) => (
-                      <option key={value} value={value}>
-                        {label}
-                      </option>
-                    ),
-                  )}
+                  {profiles.map((value) => (
+                    <option key={value} value={value}>
+                      {OPERATIONAL_PROFILES[value]}
+                    </option>
+                  ))}
                 </select>
               </div>
               {profile === "operational-warehouse.v1" && (
                 <div className="space-y-2">
                   <Label htmlFor={`${kind}-warehouses`}>
-                    Explicit owned warehouse IDs
+                    Allowed warehouses
                   </Label>
-                  <textarea
+                  <div
                     id={`${kind}-warehouses`}
-                    className="min-h-20 w-full rounded-md border bg-background p-3 text-sm"
-                    value={warehouseText}
-                    onChange={(e) => setWarehouseText(e.target.value)}
-                    aria-describedby={`${kind}-scope-note`}
-                  />
+                    className="max-h-60 overflow-y-auto rounded-md border p-3 space-y-3"
+                    role="group"
+                    aria-label="Allowed warehouse resources"
+                  >
+                    {warehouses.map((w) => (
+                      <label
+                        key={w.id}
+                        className="flex gap-3 items-start text-sm"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={warehouseText.split(",").includes(w.id)}
+                          onChange={(e) =>
+                            setWarehouseText((old) => {
+                              const ids = old
+                                .split(",")
+                                .filter(Boolean)
+                                .filter((id) => id !== w.id);
+                              return [
+                                ...ids,
+                                ...(e.target.checked ? [w.id] : []),
+                              ].join(",");
+                            })
+                          }
+                        />
+                        <span>
+                          {w.name}
+                          <span className="block text-xs text-muted-foreground">
+                            {w.location}
+                          </span>
+                        </span>
+                      </label>
+                    ))}
+                    {!warehouses.length && (
+                      <p>
+                        No owned warehouses are available in your accepted
+                        ceiling.
+                      </p>
+                    )}
+                  </div>
                   <p
                     id={`${kind}-scope-note`}
                     className="text-xs text-muted-foreground"
                   >
-                    Comma or newline separated, up to 20 UUIDs. No implicit
-                    company or warehouse access.
+                    Select explicit resources within your current accepted
+                    ceiling. No implicit company or warehouse access.
                   </p>
                 </div>
               )}
