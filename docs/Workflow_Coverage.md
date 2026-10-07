@@ -1,4 +1,26 @@
-# Current B2 correction dashboard
+# Current B3 operational administration dashboard
+
+Baselines: frontend e9daeb0e0567d2d0cd62d447777880d60d1f6f16;
+backend ea985c879d7a7290df79cc29a3941830102ec9cd. Backend and driver unchanged.
+Implementation checkpoint: 27ef1ed6452d4eab3cd417a0a65e451a18bc36fc.
+Older dashboards/handoffs below are historical; B3 milestone 1 only is complete.
+
+| State | Current behavior / boundary |
+| --- | --- |
+| Implemented, actual browser/HTTP/PostgreSQL verified | Approved clerk/dispatcher/warehouse invitation contracts; cancellation; new and authenticated existing-user acceptance; selected login, clerk customer/normal-order access; managed profile replacement and revocation. Other-company identity binding preserved. Warehouse profile exact scoped grants verified by HTTP/database, not a new custody UI journey. |
+| Implemented, focused client verified | Strict three-profile inputs, context/API-bound immutable persisted operation IDs, persistence-before-send/read-back, cross-tab locks, safe errors and explicit retry, late-response suppression, no persisted tokens/passwords or credential replay. 20 distinct tests; final no-emit and focused lint passed. 12 distinct HTTP/PostgreSQL cases plus one connected browser journey; unchanged backend concurrency/revocation evidence reused. |
+| Partial / missing contracts | No invitation inventory/status, managed-grant detail or ceiling/warehouse-picker API. Known IDs and manual warehouse UUIDs remain necessary; server ceiling validation remains authoritative. Local receipt is not live inventory. Unconfirmed/rejected actions stay frozen; lost token issuance cannot regenerate. Ambiguous new-user acceptance requires original token/ID and authenticated confirmation, otherwise manual review. |
+| Deliberately unavailable | Driver invitations/grants, warehouse creation, financial/cash delegation and entity setup are later B3 UI milestones. Browser owner signing, arbitrary user/role mutations, global deletion, real email delivery and automatic privilege expansion remain unavailable. Backend-contained financial/provider workflows stay contained. |
+| External evidence limits | Storage/providers/Redis admission/seed boundaries mocked. No production, native-device, new Socket.IO transport or email evidence claimed. Existing B1/B2 and backend concurrency/rollback/socket results reused only for unchanged source. |
+| Cleanup | Owned PostgreSQL/tmpfs and test API removed; both loopback test listeners stopped. New cp-frontend-b3-owned-VZXO8v cleanup rejected by policy and left for manual cleanup; all earlier blocked directories and Python runtime untouched. |
+
+Contracts, validation and exact limitations: [Frontend_B3_Operational.md](Frontend_B3_Operational.md).
+Exact next milestone: driver invitation and managed local/linehaul membership UI,
+with approved ceilings and active-work replacement blockers; no shared driverType
+mutation or native driver changes. Not started. Remaining B3 provisioning/finance
+milestones precede B4 pricing/payer/invoice, B5 custody and B6 cash/support/reporting.
+
+# Historical B2 correction dashboard (superseded by B3 above)
 
 Baseline frontend83351c85c3fbe027f8320d0ec013d8cb6f754369,
 backend0275cceec8c1b39d18c1c3d3835371e0a9477ad1. No B3 or driver changes.
@@ -103,7 +125,7 @@ screens are present code, **not claims of current contract compatibility**. B=pl
 | --- | --- | --- |
 | Selected login / all identities | /api/auth/login credential-verified 409 choices then companyMembershipId; exact refresh context, logout lineage | Login/Providers/api implemented previously; B1 preserve, managed operational profiles must reach workspace; no credentials persisted beyond existing bound session. |
 | Controlled tenant onboarding / installation owner | Internal signed permit only, no anonymous registration; reviewed real key/intent required | No browser provisioning/signer; deliberately unavailable to ordinary admin. B3 explanatory prerequisite, never fabricate endpoint. |
-| Operational invitation / accepted delegator | POST /api/auth/company-invitations, /cancel, /accept and company-operational-grants; operationId/profile revision/typed warehouse ceilings; one-use secret delivery | Users/CreateUserDialog and IAM arbitrary-role calls obsolete. B3 replace with controlled workflow, transient tokens/private delivery, durable immutable requests; no email sending claim. |
+| Operational invitation / accepted delegator | POST /api/auth/company-invitations, /cancel, /accept and company-operational-grants; operationId/profile revision/typed warehouse ceilings; one-use secret delivery | B3 milestone 1 implemented: Users controlled workflow and public recipient acceptance, transient private token handoff, immutable persisted requests and scoped member directory. Browser/HTTP/PostgreSQL verified; missing invitation/status/managed-grant/ceiling APIs remain explicit. No email delivery claim. See Frontend_B3_Operational.md. |
 | Driver invitation / separate driver delegator | company-driver-invitations, /cancel, /accept and company-driver-grants; exact local/linehaul membership eligibility; no implicit scopes | Drivers/edit shared User.driverType obsolete. B3 accepted restricted membership type and active-work replacement blockers; driver native work deferred. |
 | Financial/cash grant and initial entity setup / owner-appointed makers/checkers | company-financial-grants and company-cash-capabilities proposals/accept/revoke; issuing-entity-setup proposals/:id/decisions; independent User and accepted ceilings | No matching interfaces. B3 governed profiles, removed/replacement ceilings, exact acceptance IDs; no general settings.manage or automatic grant expansion. |
 | Customers / clerk or authorized customers.read/write | /api/customers GET q/type/page/limit and :id; POST/PATCH strict fields, DELETE204; tenant-owned masters may span companies but existing object checks remain | B1 implemented and browser verified: scoped list/search/create/detail/edit/delete. No inferred exclusive company ownership or ownership request fields; uncertain writes remain contained. |
