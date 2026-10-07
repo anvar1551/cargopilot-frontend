@@ -9,7 +9,50 @@ import {
 import { SERVICE_TYPES } from "./orders/service-types";
 
 const text = z.string().trim().max(2048);
-const person = z.object({ name: text, phone: text }).strict();
+const person = z
+  .object({
+    name: text,
+    phone: text,
+    phone2: text.optional(),
+    phone3: text.optional(),
+  })
+  .strict();
+const routeAddress = z
+  .object({
+    country: text.optional(),
+    city: text.optional(),
+    neighborhood: text.optional(),
+    street: text.optional(),
+    addressLine1: text.optional(),
+    addressLine2: text.optional(),
+    building: text.optional(),
+    apartment: text.optional(),
+    floor: text.optional(),
+    landmark: text.optional(),
+    postalCode: text.optional(),
+    latitude: z.number().finite().min(-90).max(90).optional(),
+    longitude: z.number().finite().min(-180).max(180).optional(),
+    addressType: z.enum(["RESIDENTIAL", "BUSINESS"]).optional(),
+  })
+  .strict();
+const measurement = z.number().finite().positive().optional();
+const parcel = z
+  .object({
+    weightKg: measurement,
+    lengthCm: measurement,
+    widthCm: measurement,
+    heightCm: measurement,
+  })
+  .strict();
+export const ROUTE_MODES = [
+  "ROAD",
+  "AIR",
+  "SEA",
+  "RAIL",
+  "COURIER",
+  "MULTIMODAL",
+] as const;
+/** Optional extensions have no defaults: previously persisted v1 intents retain their exact content. */
 export const normalOrderInput = z
   .object({
     customerEntityId: z.string().uuid().nullable(),
@@ -22,6 +65,8 @@ export const normalOrderInput = z
         destinationCity: text,
         senderAddressId: z.string().uuid().nullable(),
         receiverAddressId: z.string().uuid().nullable(),
+        senderAddress: routeAddress.optional(),
+        receiverAddress: routeAddress.optional(),
       })
       .strict(),
     shipment: z
@@ -31,13 +76,42 @@ export const normalOrderInput = z
         pieceTotal: z.number().int().min(1).max(100),
         currency: z.enum(["UZS", "USD", "CNY"]),
         codEnabled: z.literal(false),
+        parcels: z.array(parcel).min(1).max(100).optional(),
+        transportMode: z.enum(ROUTE_MODES).optional(),
+        fragile: z.boolean().optional(),
+        dangerousGoods: z.boolean().optional(),
+        shipmentInsurance: z.boolean().optional(),
       })
       .strict(),
-    reference: z.object({ referenceId: text }).strict(),
+    schedule: z
+      .object({
+        plannedPickupAt: z.string().datetime().optional(),
+        plannedDeliveryAt: z.string().datetime().optional(),
+        promiseDate: z.string().datetime().optional(),
+      })
+      .strict()
+      .optional(),
+    reference: z
+      .object({
+        referenceId: text,
+        shelfId: text.optional(),
+        promoCode: text.optional(),
+        numberOfCalls: z.number().int().nonnegative().optional(),
+      })
+      .strict(),
     note: text,
   })
   .strict()
   .superRefine((v, c) => {
+    if (
+      v.shipment.parcels &&
+      v.shipment.parcels.length !== v.shipment.pieceTotal
+    )
+      c.addIssue({
+        code: "custom",
+        path: ["shipment", "parcels"],
+        message: "Measurements must match the parcel count",
+      });
     if (
       !v.customerEntityId &&
       (v.addresses.senderAddressId || v.addresses.receiverAddressId)
@@ -201,4 +275,53 @@ export async function templateInWorkspace(context: string) {
   if (!(r.data instanceof Blob) || r.data.size > 1024 * 1024)
     throw Error("Unsupported CSV template response");
   return r.data as Blob;
+}
+
+const statusRow = z.discriminatedUnion("state", [
+  z
+    .object({
+      ordinal: z.number().int().nonnegative(),
+      state: z.literal("pending"),
+    })
+    .strict(),
+  z
+    .object({
+      ordinal: z.number().int().nonnegative(),
+      state: z.literal("committed"),
+      confirmedAt: z.string().datetime(),
+      order: receiptOrder.strip(),
+    })
+    .strict(),
+]);
+const statusResult = z
+  .object({
+    operationId: z.string().uuid(),
+    kind: z.literal("import"),
+    acceptedAt: z.string().datetime(),
+    rowCount: z.number().int().min(1).max(100),
+    complete: z.boolean(),
+    rows: z.array(statusRow).min(1).max(100),
+    downstreamCompletion: z.literal("not_assessed"),
+  })
+  .strict()
+  .refine(
+    (v) =>
+      v.rows.length === v.rowCount &&
+      v.rows.every((r, i) => r.ordinal === i) &&
+      v.complete === v.rows.every((r) => r.state === "committed"),
+  );
+export async function importReceiptStatus(
+  context: string,
+  operationId: string,
+) {
+  const epoch = authEpoch();
+  guard(context, epoch);
+  const id = z.string().uuid().parse(operationId);
+  const response = await api.get(`/api/orders/import/${id}/status`, {
+    timeout: 15000,
+  });
+  guard(context, epoch);
+  const status = statusResult.parse(response.data);
+  if (status.operationId !== id) throw Error("Receipt identity mismatch");
+  return status;
 }

@@ -1,6 +1,25 @@
+# Current B2 correction dashboard
+
+Baseline frontend83351c85c3fbe027f8320d0ec013d8cb6f754369,
+backend0275cceec8c1b39d18c1c3d3835371e0a9477ad1. No B3 or driver changes.
+
+| Status | Current result |
+| --- | --- |
+| Implemented / actual-browser and PostgreSQL verified | Restored schedules, parcel measurements and route snapshots in normal creation; identical authorized retry. Interrupted CSV after first row commit -> reload -> first durable ID plus pending second slot -> exact full-batch resume, no duplicate orders.3 orders/3 receipts/2 intents. |
+| Implemented / focused unit verified | Typed identity-conflict versus operational409; preserved legacy uncertain intents; strict extended allowlists; read-only status bounds/projection/fresh original authorization and late-response suppression.18 selected client and28 backend cases, no reruns summed. |
+| Compatibility | Additive status GET and conflict code require backend-first rollout. Existing success payloads unchanged. Old v1 intent shapes preserved. No status-based abandon/confirmation or downstream replay. |
+| Remaining omissions | Legacy itemValue and recipient-unavailable instruction not exposed; forbidden monetary/ownership/COD fields remain absent; nested address-book writes unavailable. Bounded directory selection, download filesystem verification, localization and browser matrix remain gaps. See complete input table in Frontend_B2.md. |
+| External / contained | Labels/providers/storage/Redis boundary mocks only; uncertain downstream work, merchant COD/accounting/FX/corrections and production gates remain contained/unverified. Notification/concurrency/rollback evidence reused unchanged. |
+| Cleanup | New owned PostgreSQL/tmpfs removed; API/frontend stopped. Policy rejected removal of cp-b2-correction-7EbPJG; leave for manual cleanup, preserve all earlier blocked locations. |
+
+Evidence, exact API/input contract and limitations: [Frontend_B2.md](Frontend_B2.md).
+Exact next task:B3 operational invitation/cancellation/authenticated acceptance and
+controlled managed-grant UI; secure transient delivery and immutable request/context
+controls. No automatic continuation or implementation in this correction batch.
+
 # Frontend integration programme — current checkpoint
 
-## Current B2 dashboard
+## Historical B2 dashboard (superseded by the correction dashboard above)
 
 Frontend B2 starts at abba612d916a745eb7f4052eccd75d182b8c71fe; backend remains
 0275cceec8c1b39d18c1c3d3835371e0a9477ad1, driver untouched. All older B1 state/
@@ -90,8 +109,8 @@ screens are present code, **not claims of current contract compatibility**. B=pl
 | Customers / clerk or authorized customers.read/write | /api/customers GET q/type/page/limit and :id; POST/PATCH strict fields, DELETE204; tenant-owned masters may span companies but existing object checks remain | B1 implemented and browser verified: scoped list/search/create/detail/edit/delete. No inferred exclusive company ownership or ownership request fields; uncertain writes remain contained. |
 | Addresses / authorized customer actor | /api/addresses GET customerEntityId/q/take (max50, array, not page/limit); POST requires customer; PATCH cannot move owner; customer PATCH defaultAddressId | B1 implemented and browser verified: bounded search/create/edit/default/clear/delete with exact customer identity and unknown-write containment. |
 | Warehouse provisioning/access / explicitly appointed admin or scoped staff | /api/warehouses POST warehouse.create + durable authority + operationId; GET list/:id shipment.view scoped, PUT shipment.update restrictions | Warehouse/create dialog present but no durable provisioning contract. B3 no automatic access/ceiling; B5 actual scoped read/consumer compatibility. |
-| Order creation/list/detail/export / authorized shipment actor | /api/orders POST immutable operationId/normalized refs; GET scoped filters; :id and export.csv; no client paid/amount/owner authority | B2 shared creation integrated across existing callers, master refs/free text and durable original retry; list/detail verified, actual route links corrected. Export unchanged, not newly verified. Quotes not accepted prices. Optional schedule/dimensions deferred. |
-| CSV import / shipment.create | /api/orders/import/template.csv,/preview,/confirm; stable identity+same CSV, independent per-row success/replay | B2 template/preview/confirm and immutable original batch integrated. Successful receipt lists IDs/replayed rows; failed-response committed count unknown. Identical batch resumes unfinished rows; downstream recovery remains separate. |
+| Order creation/list/detail/export / authorized shipment actor | /api/orders POST immutable operationId/normalized refs; GET scoped filters; :id and export.csv; no client paid/amount/owner authority | B2 shared creation integrated across existing callers, master refs/free text and durable original retry; list/detail verified, actual route links corrected. Export unchanged, not newly verified. Quotes not accepted prices. Schedules, per-parcel measurements and safe route snapshots restored by B2 corrections; remaining omissions explicitly listed in the current input table. |
+| CSV import / shipment.create | /api/orders/import/template.csv,/preview,/confirm; stable identity+same CSV, independent per-row success/replay | B2 template/preview/confirm and immutable original batch integrated. Successful receipt lists IDs/replayed rows; new original-context read-only status recovers committed IDs/pending slots after failed response/reload. Identical batch resumes unfinished rows; downstream recovery remains separate. |
 | Quotes/tariffs / accepted pricing actors | /api/pricing/quote,/quote-options; tariff-plans CRUD draft only; :id/versions and decision with contentSha256/generation/operationId | Pricing screen draft editor exists, approval wiring missing. B4 approved snapshots/candidate precedence, separate reviewer, reject draft/foreign fallback. |
 | Billing policy / pricing-maker/checker | /api/pricing/billing-policies POST, /decision, /:id read; immutable version/hash/op ID | Missing. B4 explicit routes/country/zone/currency/rounding/tax/state policy; no inferred defaults or mutable approved history. |
 | Payer and cash instruction / accepted billing operator | /api/pricing/orders/:id/bill-to and service-payment-instruction; billToId/CASH/SENDER or RECIPIENT/evidence/reason/opID | Missing. B4 records authoritative payer/timing before acceptance, handles CASH_COLLECTION_WINDOW_CLOSED; no online→cash conversion. |

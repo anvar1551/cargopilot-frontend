@@ -1,3 +1,111 @@
+# Current B2 review corrections (2026-10-07)
+
+Baselines: frontend83351c85c3fbe027f8320d0ec013d8cb6f754369;
+backend0275cceec8c1b39d18c1c3d3835371e0a9477ad1. The sections below headed
+historical describe the prior checkpoint; they do not supersede these corrections.
+
+## Corrected behavior / compatibility
+
+- One existing shared creation dialog retains schedules (pickup/delivery/promise),
+  per-parcel weight/length/width/height, supported transport mode and detailed
+  country/city/address snapshots/coordinate inputs. Additional phones, references,
+  call count, fragile/dangerous-goods/insurance-request flags also retained.
+  Optional accessible details keep the initial screen short. Coordinates validate
+  their ranges, measurements are finite/positive, dates become explicit UTC instants
+  from the labelled browser timezone, maximum100 parcel rows. Measurements determine
+  parcel count; declared total weight remains its existing separate input. No price,
+  payment acceptance, ownership or merchant COD authority is sent.
+- New optional schema fields have no injected defaults: already persisted v1 intents
+  retain their original normalized content. New inputs are included in immutable
+  persistence-before-send and retry identity; changed content cannot replace an
+  uncertain request. Freshly confirmed records alone permit a new action.
+- GET /api/orders/import/:operationId/status reads accepted header and ordinal row
+  receipts with fresh original user/tenant/company/membership and master access.
+  No-store, bounded100 rows, minimal committed IDs/numbers/times versus pending slots.
+  Database READ ONLY/RepeatableRead; no orders, pricing, claims or external effects.
+  Reload/open performs this read; explicit Refresh committed rows is read-only.
+  Missing404 is a snapshot, not proof of no in-flight work or permission to abandon.
+  A failed/denied refresh hides the cached status projection.
+- Status is independent of local confirmation. Full matching POST response is still
+  required before the intent becomes confirmed/replaceable. Explicit resumption
+  sends the original entire CSV and UUID and skips committed rows. Downstream label,
+  carrier and component completion remains unassessed, even when all receipts exist.
+- Only409 with ORDER_CREATION_IDENTITY_CONFLICT creates permanent conflict state.
+  Operational409 remains uncertain and allows explicit same-identity retry/status.
+  Older unclassified conflict records become uncertain without changing/deleting
+  identity/content. No automatic POST, blind replay or abandonment added.
+- Backend read/error-code deployment must precede the corrected frontend; unavailable
+  status safely retains intent. Existing success response shapes remain unchanged.
+  Context/epoch/query keys suppress late status results; no global cache fallback.
+  Footer Close works while an intent is frozen; submission/edits remain disabled.
+
+## Exact remaining input/interface omissions
+
+| Input / capability | Current boundary |
+| --- | --- |
+| Merchant COD enablement/amount | Backend-contained; do not restore legacy Float-based authority. |
+| Client charges/amount, paid/status, payer/payment/provider choice | Forbidden/replaced by approved pricing/payer/payment-instruction workflows; B4, not creation. Quotes remain estimates. |
+| Owner/tenant/assignment/warehouse/tariff/route-template IDs | Backend-derived or forbidden; no arbitrary creation selector. |
+| Save pickup/dropoff to master address book | Backend explicitly rejects nested creation writes; use scoped B1 address operations separately. |
+| Legacy itemValue declaration | Not exposed; legacy Float declaration is not approved COD, insurance charge or accepted price. Separate supported declaration/validation review needed before restoring; no collectible obligation inferred. |
+| ifRecipientNotAvailable legacy instruction | Not exposed in B2; exception/return workflow is not restored by an instruction enum. Explicit future interface/contract review needed, no silent default. |
+| Large customer/address directories | Existing selection queries bounded20 customers/50 addresses; customer search available, full address-directory discovery not added in this correction. |
+| Quotes/approvals/payer/instructions/invoice, administration, custody/cash/support | Separate B3 onward; old screen presence is not current-contract integration. |
+| Download/localization/browser matrix | Copyable actual template rendered in browser; filesystem download still unverified. English copy and wider browser matrix deferred. |
+
+## Executed evidence (distinct cases, no sums of reruns)
+
+- Selected node --test --test-name-pattern="intent|conflict|409|storage|restart|epoch|context and absent|snapshotted|lock|persisted|projection accepts|restored|receipt status"
+  tests/order-notification-workspace.test.cjs:18 passing cases (17 creation/status
+  plus1 existing frame case matched by the selection). Six new cases; repeated
+  execution is not additional evidence. Unit transport/storage mocked.
+- Backend focused status/creation HTTP/normalized identity suites:28 distinct passes,
+  including12 new status tests; final status-only formatting rerun12/12 is included.
+- Actual browser plus PostgreSQL run f5dca47d5796: synthetic controlled onboarding,
+  fresh selected login, scoped customer creation, restored normal order/identical
+  retry. Two-row CSV preview/confirmation deliberately interrupted after first row
+  commits by test-only label-boundary operational409. Reload displays original first
+  order ID plus pending second slot. Explicit original batch resume returns first
+  and creates second only:3 orders/3 row receipts/2 intents. No duplicates.
+- Eight successful actual HTTP/database assertions: read-only partial projection;
+  foreign404; anonymous401; invalid UUID400; changed-content typed409/no writes;
+  exact original retry bodies/IDs; persisted schedules/coordinates/measurements/flags/
+  references; final counts/original first ID. Status reads/rejections leave order,
+  intent, receipt, tracking, parcel, notification and analytics-outbox counts unchanged.
+- Desktop1440x900 and mobile390x844: actual screens inspected, document widths match
+  viewports, scrollable dialog/keyboard controls and corrected Close verified.
+  Screenshots in external frontend-b2-corrections artifact directory: restored form,
+  partial status after reload, resumed confirmation. Mobile screenshot taken
+  immediately after resizing captured an unstable frame; final confirmed-mobile
+  screenshot captured after DOM layout settled and is the verified mobile artifact.
+- Final node node_modules/typescript/bin/tsc --noEmit --incremental false:EXIT0 in
+  both repositories; backend used --max-old-space-size=6144. Focused client ESLint
+  (shared dialog, intent and adapter):no errors/warnings. No application build.
+
+Reused: unchanged B1 master/cash/session, notification real transport and durable
+creation concurrency/rollback evidence. This correction changes no schema,
+dependencies or creation transaction.122 existing migrations applied solely to the
+new owned test instance; this is not new migration-strength evidence.
+Label/storage, component seed, carrier/support boundaries and Redis invalidation
+mocked. No S3/provider/native device/distributed recovery verification claimed.
+
+Cleanup: actual API stopped; uniquely labelled container identity/tmpfs verified
+before removal and absence confirmed; no3218/4318 listeners. Automatic approval
+review rejected deleting new temp copy
+C:/Users/Anvar/AppData/Local/Temp/cp-b2-correction-7EbPJG as blocked by policy.
+Leave it for manual cleanup without retries/bypass. Prior blocked directories, dist,
+driver and unrelated work preserved.
+
+Tooling incident: python invocation unexpectedly installed Python3.14.8 through
+Windows' runtime manager before interruption completed. Project dependency files
+unchanged; installed Node used for remaining work. No further runtime changes.
+
+Stop after local review checkpoints. Exact next task remains B3 operational
+invitation/cancellation/authenticated acceptance and managed-grant interfaces,
+using approved profiles and ceilings, without browser owner signing. Not started.
+
+# Historical B2 execution plan and original evidence
+
 # B2 bounded execution plan
 
 Baselines: frontend abba612d916a745eb7f4052eccd75d182b8c71fe;

@@ -6,6 +6,7 @@ export type CreationIntent = {
   kind: "order" | "import";
   payload: Record<string, unknown>;
   state: "pending" | "uncertain" | "conflict" | "confirmed";
+  rejectionCode?: "ORDER_CREATION_IDENTITY_CONFLICT";
   orders?: Array<{ id: string; orderNumber?: string | number | null }>;
   replayedRows?: number;
   downstreamRecoveryRequired?: boolean;
@@ -50,6 +51,13 @@ export function readCreationIntent(raw: string | null): CreationIntent | null {
     typeof i.payload !== "object"
   )
     throw Error("Unreadable creation intent");
+  // Older clients classified every 409 as conflict. Retain those intents, but allow
+  // authoritative status and explicit same-identity retry rather than inventing a conflict.
+  if (
+    i.state === "conflict" &&
+    i.rejectionCode !== "ORDER_CREATION_IDENTITY_CONFLICT"
+  )
+    i.state = "uncertain";
   return i;
 }
 export async function submitCreationIntent(
@@ -117,10 +125,15 @@ export async function submitCreationIntent(
         d.epoch() === epoch &&
         (intent as CreationIntent).state !== "confirmed"
       ) {
-        intent.state =
-          (e as { response?: { status?: number } }).response?.status === 409
-            ? "conflict"
-            : "uncertain";
+        const response = (
+          e as { response?: { status?: number; data?: { code?: string } } }
+        ).response;
+        const conflict =
+          response?.status === 409 &&
+          response.data?.code === "ORDER_CREATION_IDENTITY_CONFLICT";
+        intent.state = conflict ? "conflict" : "uncertain";
+        if (conflict) intent.rejectionCode = "ORDER_CREATION_IDENTITY_CONFLICT";
+        else delete intent.rejectionCode;
         persist();
       }
       throw e;
