@@ -8,10 +8,17 @@ export const identityKey = cashContext;
 export function validateSession(value: any, expectedContext?: string): SessionResponse {
   if (!value || typeof value.token !== "string" || !value.token ||
       typeof value.refreshToken !== "string" || !value.refreshToken) throw new Error("Invalid bound session response");
-  const context = identityKey(value.user);
+  // Current backend AccessSnapshot calls the identity userId; JWTs and local
+  // bound sessions use id. Normalize the explicit alias before verification.
+  const rawUser = value.user;
+  if (!rawUser || typeof rawUser !== "object" ||
+      (rawUser.id != null && rawUser.userId != null && rawUser.id !== rawUser.userId))
+    throw new Error("Conflicting session identity");
+  const user = { ...rawUser, id: rawUser.id ?? rawUser.userId };
+  const context = identityKey(user);
   assertCashToken(value.token, context);
   if (expectedContext && context !== expectedContext) throw new Error("Session context changed; fresh login required");
-  return { token: value.token, refreshToken: value.refreshToken, user: value.user };
+  return { token: value.token, refreshToken: value.refreshToken, user };
 }
 
 export function membershipChoices(error: any): MembershipChoice[] | null {

@@ -126,6 +126,9 @@ function isErpWorkspaceRoleCode(code: string) {
     code === "accountant" ||
     code === "dispatcher" ||
     code === "support_agent"
+    || ["initial-operational-admin.v1", "initial-operational-admin.v2", "operational-clerk.v1", "operational-dispatcher.v1",
+      "pricing-maker.v1", "pricing-checker.v1", "billing-operator.v1", "price-exception-checker.v1",
+      "manual-invoice-issuer.v1", "entity-configuration-reader.v1"].includes(code)
   );
 }
 

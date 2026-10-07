@@ -1,13 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { useSyncExternalStore } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Bell, Menu, MessageSquare } from "lucide-react";
-import { dashboardPathForUser, getUser, hasPermission } from "@/lib/auth";
+import { dashboardPathForUser, hasPermission } from "@/lib/auth";
+import { useWorkspaceSession } from "@/lib/workspace";
 import { useI18n } from "@/components/i18n/I18nProvider";
 
 import UserMenu from "@/components/user/UserMenu";
@@ -44,11 +44,7 @@ export default function AppTopbar({
   const pathname = usePathname();
   const { t } = useI18n();
   const toggleMobileSidebar = useErpSidebarStore((s) => s.toggleMobile);
-  const user = useSyncExternalStore(
-    () => () => {},
-    () => getUser(),
-    () => null,
-  );
+  const { user, context } = useWorkspaceSession();
 
   const computedTitle = title ?? defaultTitleFromPath(pathname, t);
   const isErpWorkspacePath = pathname.includes("/dashboard/manager");
@@ -57,9 +53,9 @@ export default function AppTopbar({
     realtimeConnected: false,
   });
   const unreadNotificationsQuery = useQuery({
-    queryKey: ["notifications", "unread-count", user?.id],
+    queryKey: ["notifications", "unread-count", context],
     queryFn: () => fetchUnreadNotificationCount(),
-    enabled: Boolean(user?.id),
+    enabled: Boolean(context) && hasPermission(user, "notifications.read"),
     staleTime: 30_000,
     refetchInterval: notificationFallbackInterval,
     retry: false,
@@ -97,14 +93,34 @@ export default function AppTopbar({
               />
               <span className="truncate text-xl font-semibold tracking-tight text-slate-950">
                 CargoPilot
+                <span className="block text-[11px] font-normal tracking-normal text-muted-foreground">
+                  Company {user?.companyId?.slice(-8) ?? "unselected"}
+                </span>
               </span>
             </Link>
           </div>
 
-          <div className="hidden min-w-0 xl:block" />
+          <div
+            className="hidden min-w-0 xl:block"
+            title={`Company ${user?.companyId ?? "unselected"} · Tenant ${user?.tenantId ?? "unselected"}`}
+          >
+            <p className="text-xs text-muted-foreground">Selected company</p>
+            <p className="mt-1 text-sm font-semibold">
+              {user?.companyId?.slice(-8) ?? "Sign in to select"}{" "}
+              <span className="ml-2 font-normal text-muted-foreground">
+                Tenant {user?.tenantId?.slice(-8) ?? "—"}
+              </span>
+            </p>
+          </div>
 
           <div className="flex shrink-0 items-center justify-end gap-4">
-            <button type="button" className="relative text-slate-600">
+            <button
+              type="button"
+              aria-label="Notification inbox integration pending"
+              title="Notification inbox integration pending"
+              disabled
+              className="relative text-slate-600 disabled:cursor-default"
+            >
               <Bell className="h-5 w-5" />
               {unreadCount > 0 ? (
                 <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold text-white">

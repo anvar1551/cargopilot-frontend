@@ -84,6 +84,12 @@ const NAV_GROUPS: NavGroup[] = [
     labelKey: "managerSidebar.group.orders",
     items: [
       {
+        labelKey: "managerSidebar.business.customers",
+        href: "/dashboard/manager/customers",
+        icon: Users,
+        requiredPermissions: ["customers.read"],
+      },
+      {
         labelKey: "managerSidebar.item.manageOrders",
         href: "/dashboard/manager/orders",
         icon: Package,
@@ -538,20 +544,28 @@ export default function ErpSidebar() {
               className="space-y-1 border-b border-slate-700/50 pb-3 last:border-b-0"
             >
               <div className="space-y-1">
-                {group.items.map((item) => (
-                  <NavLink
-                    key={item.href}
-                    item={item}
-                    collapsed={isCollapsed}
-                    active={isActive(pathname, item.href)}
-                    label={t(item.labelKey)}
-                    badgeCount={
-                      item.href.endsWith("/support")
-                        ? supportOpenCount
-                        : undefined
-                    }
-                  />
-                ))}
+                {group.items
+                  .filter(
+                    (item) =>
+                      !item.requiredPermissions ||
+                      item.requiredPermissions.some((key) =>
+                        hasPermission(user, key),
+                      ),
+                  )
+                  .map((item) => (
+                    <NavLink
+                      key={item.href}
+                      item={item}
+                      collapsed={isCollapsed}
+                      active={isActive(pathname, item.href)}
+                      label={t(item.labelKey)}
+                      badgeCount={
+                        item.href.endsWith("/support")
+                          ? supportOpenCount
+                          : undefined
+                      }
+                    />
+                  ))}
               </div>
             </div>
           ))}

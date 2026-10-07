@@ -187,6 +187,7 @@ api.interceptors.response.use(
     if (originalRequest._sessionEpoch != null && originalRequest._sessionEpoch !== authEpoch()) return Promise.reject(new Error("Session changed; late response discarded"));
 
     if (originalRequest.cashContext) return Promise.reject(error);
+    if (originalRequest.noReplay) return Promise.reject(error);
 
     if (typeof window !== "undefined" && status === 401 && !isAuthRoute(reqUrl)) {
       if (!alreadyRetried) {

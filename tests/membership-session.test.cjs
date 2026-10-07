@@ -74,3 +74,24 @@ test('refresh rejects every identity-field change including another company in t
  }
  assert.throws(()=>core.validateSession(response({...user,tenantMembershipId:null})),/tenant-bound/);
 });
+
+if (!driver) test('receipt-less master writes cannot refresh or replay on 401', async()=>{
+ const h=harness();await h.save();const net=apiHarness(h);let refreshes=0,replays=0;
+ net.refreshed=()=>{refreshes++;return response()};net.client.request=async()=>{replays++;};
+ const config=await net.client.requestGuard({url:'/api/customers',method:'POST',noReplay:true,headers:{}});
+ await assert.rejects(net.client.bad({config,response:{status:401}}));
+ assert.equal(refreshes,0);assert.equal(replays,0);
+});
+if (!driver) test('actual backend userId projection is normalized before login and refresh validation',async()=>{
+ const h=harness(),core=h.load('session-contract');const backend={...user,userId:user.id};delete backend.id;
+ const accepted=await core.requestLogin(async()=>({data:{...response(),user:backend}}),{email:user.email,password:'transient'},[]);
+ assert.equal(accepted.session.user.id,user.id);assert.equal(core.validateSession({...response(),user:backend},core.identityKey(user)).user.id,user.id);
+ assert.throws(()=>core.validateSession({...response(),user:{...user,userId:'foreign'}}),/Conflicting session identity/);
+});
+if (!driver) test('approved operational/financial profiles route to workspace without inventing permissions',()=>{
+ const h=harness();for(const code of ['initial-operational-admin.v1','initial-operational-admin.v2','operational-clerk.v1','operational-dispatcher.v1','pricing-maker.v1','pricing-checker.v1','billing-operator.v1','price-exception-checker.v1','manual-invoice-issuer.v1','entity-configuration-reader.v1']){
+  const actor={...user,role:'customer',roleCodes:[code],permissionCodes:['customers.read']};
+  assert.equal(h.auth.dashboardPathForUser(actor),'/dashboard/manager');assert.equal(h.auth.hasPermission(actor,'customers.write'),false);
+ }
+ assert.equal(h.auth.dashboardPathForUser({...user,roleCodes:['local-driver.v1']}),'/dashboard/driver');
+});
