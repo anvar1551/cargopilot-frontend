@@ -1,4 +1,22 @@
-# Current initial issuing-entity setup UI readiness (2026-10-08)
+# Current cash supplemental administration UI readiness (2026-10-08)
+
+Implemented with stated evidence: /dashboard/manager/cash-access proposer/checker views, three exact supplements, current independently appointed cash-delegation.v1 ceiling/entity/named resources, eligible membership selectors, immutable proposals, independent replacement/acceptance and controlled revocation. No authority is inferred from ordinary administrator, financial, operational or driver delegation. No base roles/scopes change.
+
+11 distinct client adapter cases and 7 new actual backend HTTP/PostgreSQL administration cases plus 2 affected concurrency/rollback cases passed (9 distinct DB cases, repetitions not added). Final both no-emit checks and focused frontend lint passed. Actual API/DB flow is separate from browser operation. Exact contracts, reruns, executed versus reused evidence and limitations: [Cash_Supplemental_UI.md](Cash_Supplemental_UI.md).
+
+| Supported capability | Current implementation / acceptance |
+| --- | --- |
+| Authority/resources/recipients | GET /api/auth/company-cash-capabilities?view=ceiling or recipients&kind=proposer or checker; bounded fresh no-store snapshots; no manual IDs/prerequisite creation. |
+| Exact proposals/managed access | Same read view=proposals or grants; named ownership/resources, immutable fingerprint/prior acceptance/reason and independent/stale state; unrelated grants remain separate. |
+| Propose/replace | Existing POST /company-cash-capabilities/proposals; singleton approved profile and accepted ceiling, operationId/reason/expectedAcceptanceId. Pending proposal grants nothing. |
+| Accept/revoke | Existing POST /accept or /revoke; independently accepted checker or authorized whole-removal ceiling, exact immutable IDs/content and current server revalidation. |
+| Persistence | Original context/API origin/ID/payload stored/read-back before send, Web Locks, explicit matching retry only; late suppression and no unconfirmed abandonment. |
+
+Partially integrated: supported DOM-05/06 service-charge action screens are still separate work. Deliberately unavailable: merchant COD monetary basis, accounting/FX, suspended-holder recovery, owner signing/automatic grants and uncertain-intent reconciliation. Awaiting external verification: new UI's rendered desktop/tablet/mobile/zoom/keyboard acceptance; no screenshots, no browser attempts, user visual review pending. Source uses corrected shared layout, not a claim of visual success. Native driver/device and real infrastructure gates remain separate.
+
+Next proposed finite batch, not started: approved pricing/payer/CASH instruction action integration under current accepted financial profiles; separate restricted cash action screens follow. Older handoffs below are historical.
+
+# Historical initial issuing-entity setup UI readiness (2026-10-08)
 
 Implemented: independently appointed proposer/checker views; explicit blank currency/month/timezone and null reporting restriction; bounded owned proposal inventory, exact immutable inspection and independent decision; read-only published entity; persisted context-bound intents and explicit matching retries with late suppression. Backend discovery rollout precedes UI. No automatic appointment/grants or general settings.manage.
 

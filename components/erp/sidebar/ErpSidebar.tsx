@@ -141,6 +141,13 @@ const NAV_GROUPS: NavGroup[] = [
         },
       {
         labelKey: "managerSidebar.item.createUser",
+        label: "Cash access supplements",
+        href: "/dashboard/manager/cash-access",
+        icon: Users,
+        requiredPermissions: ["membership.proposeCashCapability", "membership.approveCashCapability"],
+      },
+      {
+        labelKey: "managerSidebar.item.createUser",
         href: "/dashboard/manager/users",
         icon: Users,
       },
