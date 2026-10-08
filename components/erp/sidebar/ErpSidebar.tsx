@@ -130,21 +130,30 @@ const NAV_GROUPS: NavGroup[] = [
         label: "Financial access",
         href: "/dashboard/manager/financial-access",
         icon: Users,
-        requiredPermissions: ["membership.proposeFinancial", "membership.approveFinancial"],
+        requiredPermissions: [
+          "membership.proposeFinancial",
+          "membership.approveFinancial",
+        ],
       },
-        {
-          labelKey: "managerSidebar.item.createUser",
-          label: "Initial issuing entity",
-          href: "/dashboard/manager/entity-setup",
-          icon: Users,
-          requiredPermissions: ["finance.entitySetup.propose", "finance.entitySetup.approve"],
-        },
+      {
+        labelKey: "managerSidebar.item.createUser",
+        label: "Initial issuing entity",
+        href: "/dashboard/manager/entity-setup",
+        icon: Users,
+        requiredPermissions: [
+          "finance.entitySetup.propose",
+          "finance.entitySetup.approve",
+        ],
+      },
       {
         labelKey: "managerSidebar.item.createUser",
         label: "Cash access supplements",
         href: "/dashboard/manager/cash-access",
         icon: Users,
-        requiredPermissions: ["membership.proposeCashCapability", "membership.approveCashCapability"],
+        requiredPermissions: [
+          "membership.proposeCashCapability",
+          "membership.approveCashCapability",
+        ],
       },
       {
         labelKey: "managerSidebar.item.createUser",
@@ -184,6 +193,18 @@ const BILLING_ITEMS: NavItem[] = [
     labelKey: "managerSidebar.billing.pricing",
     href: "/dashboard/manager/pricing",
     icon: CreditCard,
+    requiredPermissions: ["pricing.read"],
+  },
+  {
+    labelKey: "managerSidebar.billing.orderPreparation",
+    label: "Order billing preparation",
+    href: "/dashboard/manager/order-billing",
+    icon: CreditCard,
+    requiredPermissions: [
+      "billing.payers.bind",
+      "pricing.orders.accept",
+      "pricing.orders.approve",
+    ],
   },
   {
     labelKey: "managerSidebar.billing.providers",

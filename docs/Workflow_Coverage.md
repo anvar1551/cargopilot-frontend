@@ -1,3 +1,25 @@
+# Current approved pricing and order billing preparation (2026-10-08)
+
+| Capability / actor | Integration and acceptance status |
+| --- | --- |
+| Tariff drafts / accepted pricing maker | Existing full draft field contract retained, owned named selectors and create/update/delete; published/versioned plans protected. Drafts lack server receipts, so uncertain draft writes cannot replay. |
+| Tariff proposal / maker; decision / independent checker | Original operation IDs, generation/content fingerprint, exact immutable inspection, owned history and publication state. No active draft is presented as independently approved. |
+| Billing-policy proposal / maker; decision / checker | Explicit supported fields, country-qualified routes/zone zero, exact fee/discount/tax/rounding inputs and manual billing configuration. No inferred financial defaults. |
+| Reference configuration | Existing bounded read-only region/zone/SLA metadata retained; contained mutations unavailable. Linear/transit drafts do not imply supported publication. |
+| Payer / billing operator | Existing scoped customer selection and bill-to evidence/reason. Additive action-scoped order discovery; no general shipment.view workaround. |
+| CASH instruction / billing operator | Explicit sender/recipient timing and evidence tied to current bill-to. No inferred online-to-cash conversion or merchant COD. |
+| Exact acceptance / billing operator | Actual server result/components/policy/rounding/currency/current obligation/source identity; no amount input. |
+| Exception/revision / operator then different-human checker | Exact pending content/history, separate approval, server freezes/deadlines preserved. Historic receipts do not move current pointers. |
+| Persistence / all mutations | Context/API-origin bound normalized content persisted and read back before send, exclusive locks, explicit matching retry, no uncertain abandonment or late-context confirmation. |
+
+Implemented evidence: 16 distinct client adapter cases and 6 actual HTTP-injection/PostgreSQL cases, including normal creation, narrow billing-only actor, exact acceptance/revision, foreign/conflict/frozen/late rejection, bounded safe reads and published protection. Final no-emit/focused lint and owned disposable cleanup recorded in [Pricing_Billing_UI.md](Pricing_Billing_UI.md). Existing calculation, locks/concurrency, cash, IAM and socket evidence reused. No browser or real provider/storage evidence in this batch.
+
+Visual verification pending: user review remains required; no screenshots, rendered viewport/zoom or cross-browser claims. Corrected shrinking/wrapping/stacking/bounded scrolling reused without retrying the blocked browser channel.
+
+Remaining integrations: restricted cash collection/offer/acceptance/warehouse settlement screens; manual same-base-currency invoice screens. Customer-specific tariff authoring needs independently granted customer read/scope. Exact-price preparation needs owned structured customer/addresses and positive recorded weight even though general free-text creation remains supported. Accounting/FX, merchant COD, late corrections, uncertain draft recovery, shared reference mutation and automatic provisioning remain unavailable. No omitted functionality is presented as working.
+
+Next task: one separate restricted service-charge cash action UI batch under DOM-05/06, preserving base profiles, immutable intents and authoritative custody state. Invoice UI and visual user acceptance follow separately. Do not start them in this batch. Older handoffs below are historical.
+
 # Current cash supplemental administration UI readiness (2026-10-08)
 
 Implemented with stated evidence: /dashboard/manager/cash-access proposer/checker views, three exact supplements, current independently appointed cash-delegation.v1 ceiling/entity/named resources, eligible membership selectors, immutable proposals, independent replacement/acceptance and controlled revocation. No authority is inferred from ordinary administrator, financial, operational or driver delegation. No base roles/scopes change.
