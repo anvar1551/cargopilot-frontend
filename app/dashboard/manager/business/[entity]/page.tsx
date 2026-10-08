@@ -1,4 +1,5 @@
 "use client";
+import WarehouseWorkspace from "@/components/workspace/WarehouseWorkspace";
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
@@ -44,7 +45,6 @@ import {
   type OrganizationType,
 } from "@/lib/organizations";
 import {
-  createWarehouse,
   fetchWarehouses,
   getWarehouseTypeLabel,
   type Warehouse,
@@ -364,13 +364,8 @@ export default function BusinessEntityPage() {
           toast.error("Location is required");
           return;
         }
-        await createWarehouse({
-          name: cleanName,
-          type: warehouseType,
-          location: location.trim(),
-          region: region.trim() || undefined,
-        });
-        toast.success("Warehouse created");
+        toast.info("Use the controlled warehouse workspace.");
+        return;
       }
 
       setOpen(false);
@@ -421,6 +416,7 @@ export default function BusinessEntityPage() {
     );
   }
 
+  if (config.kind === "warehouse") return <WarehouseWorkspace />;
   return (
     <div className="w-full space-y-6 p-4 sm:p-6 lg:p-8">
       <section className="relative overflow-hidden rounded-[28px] border border-slate-200/70 bg-gradient-to-br from-slate-900 via-slate-800 to-cyan-900 p-6 text-white">
@@ -451,9 +447,7 @@ export default function BusinessEntityPage() {
                 <DialogDescription>
                   {config.kind === "organization"
                     ? "Configure hierarchy and activation directly via new RBAC organization model."
-                    : config.kind === "warehouse"
-                      ? "Operational warehouse nodes can be standard warehouses or pickup-point warehouses."
-                      : "Create person/company customer entities for order ownership and routing."}
+                    : "Create person/company customer entities for order ownership and routing."}
                 </DialogDescription>
               </DialogHeader>
 

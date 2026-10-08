@@ -1,4 +1,26 @@
-# Current driver administration — implemented, focused evidence
+# Current warehouse workspace — implemented, focused evidence
+
+| Action / actor | Contract / acceptance |
+| --- | --- |
+| Scoped reader | GET /api/warehouses?search&page&limit and /:id; shipment.view and explicit warehouse scope; bounded list and safe detail/order summaries. |
+| Independently appointed provisioner | GET /api/warehouses/provisioning-authority; POST /api/warehouses with stable operationId and six normalized fields; warehouse.create, accepted warehouse-provisioning.v1 and selected-company scope. Persist/read-back before send; matching explicit retry only. |
+| Existing authorized editor | PUT /api/warehouses/:id; shipment.update and explicit warehouse scope. Persisted uncertain edit is blocked, no automatic retry or claim of server receipt/version fencing. |
+| Staff management | Link to existing users workspace and named approved warehouse selector; creation never extends ceiling or grants access. Separate controlled owner approval remains necessary. |
+| Unsupported | Delete, assignments, generic configuration, owner signing, automatic scope grants and uncertain-edit reconciliation. Not displayed as working actions. |
+
+Executed: 12 client cases, 8 mocked authority cases, 8 distinct HTTP/PostgreSQL
+cases and a connected browser create/reload/matching retry/detail/edit/approved
+staff-selector journey; desktop/mobile inspection, final no-emit and focused lint.
+Reused unchanged DOM-02/delegation/custody/socket evidence. Storage/provider/Redis
+boundaries mocked; synthetic pre-existing edit role/scope explicitly required.
+Details: [Warehouse_Provisioning_UI.md](Warehouse_Provisioning_UI.md).
+Existing auth-layout hydration warnings remain; owned test services removed,
+new temporary frontend directory cleanup policy-blocked and left untouched.
+
+Next finite milestone after review: financial-actor administration selectors/UI
+under existing independently accepted ceilings. Not started.
+
+# Historical driver administration — implemented, focused evidence
 
 | Action / actor | Exact contract | Acceptance / limit |
 | --- | --- | --- |
