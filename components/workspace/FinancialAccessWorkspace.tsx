@@ -25,7 +25,7 @@ export default function FinancialAccessWorkspace() {
   const s = useWorkspaceSession();
   if (!s.context || !s.user)
     return (
-      <PageShell>
+      <PageShell className="admin-workspace">
         <WorkspaceState
           kind="denied"
           title="Selected company required"
@@ -120,10 +120,10 @@ function Access({
     setCursors({ recipients: [], proposals: [], grants: [] });
   }
   return (
-    <PageShell>
+    <PageShell className="admin-workspace">
       <div className="space-y-6">
-        <header className="flex flex-col gap-4 sm:flex-row sm:justify-between">
-          <div>
+        <header className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0 flex-1 basis-80">
             <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
               Independent company governance
             </p>
@@ -158,7 +158,7 @@ function Access({
           Refresh accepted authority and inventory
         </Button>
         {ceiling.data && (
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="admin-columns gap-3">
             {ceiling.data.authorities.map((a) => (
               <section
                 className="rounded-2xl border bg-card p-5 shadow-sm"
@@ -186,7 +186,7 @@ function Access({
           </div>
         )}
         <div
-          className="flex gap-2"
+          className="flex flex-wrap gap-2"
           role="group"
           aria-label="Financial authority view"
         >
@@ -223,9 +223,9 @@ function Access({
                 {recipients.data?.items.map((r) => (
                   <li
                     key={r.membershipId}
-                    className="flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:justify-between"
+                    className="flex min-w-0 flex-wrap items-start gap-3 rounded-xl border p-4"
                   >
-                    <div>
+                    <div className="min-w-0 flex-1 basis-64">
                       <h3 className="font-medium">{r.name}</h3>
                       <p className="text-xs text-muted-foreground">
                         {r.currentEnabled
@@ -284,8 +284,8 @@ function Access({
             >
               {proposals.data?.items.map((p) => (
                 <li key={p.proposalId} className="rounded-xl border p-4">
-                  <div className="flex flex-col justify-between gap-3 sm:flex-row">
-                    <div>
+                  <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1 basis-64">
                       <h3 className="font-medium">{p.recipientName}</h3>
                       <p className="text-sm">{p.profileRevisions.join(", ")}</p>
                       <p className="mt-1 text-xs text-muted-foreground">
@@ -377,9 +377,9 @@ function Access({
               {grants.data?.items.map((g) => (
                 <li
                   key={g.membershipId}
-                  className="flex flex-col justify-between gap-3 rounded-xl border p-4 sm:flex-row"
+                  className="flex min-w-0 flex-wrap items-start justify-between gap-3 rounded-xl border p-4"
                 >
-                  <div>
+                  <div className="min-w-0 flex-1 basis-64">
                     <h3 className="font-medium">{g.name}</h3>
                     <p className="text-sm">{g.profileRevisions.join(", ")}</p>
                     <p className="text-xs text-muted-foreground">
@@ -469,7 +469,7 @@ function Inventory({
           )}
         </>
       )}
-      <div className="mt-4 flex gap-2">
+      <div className="mt-4 flex flex-wrap gap-2">
         <Button
           variant="outline"
           disabled={!page.length || pending}
@@ -616,7 +616,7 @@ function Mutation({
           className="space-y-4"
         >
           {kind === "propose" && (
-            <fieldset className="grid gap-3 sm:grid-cols-2">
+            <fieldset className="admin-columns gap-3">
               <legend className="mb-2 text-sm font-medium">
                 Exact approved profiles within your ceiling
               </legend>
@@ -670,7 +670,12 @@ function Mutation({
           <summary className="cursor-pointer text-sm font-medium">
             Exact {intent ? "persisted" : "selected"} context / grant intent
           </summary>
-          <pre className="mt-2 whitespace-pre-wrap break-all text-xs">
+          <pre
+            className="admin-receipt mt-2"
+            tabIndex={0}
+            role="region"
+            aria-label="Exact immutable grant intent"
+          >
             {JSON.stringify(intent?.payload ?? initial, null, 2)}
           </pre>
         </details>
@@ -683,7 +688,12 @@ function Mutation({
           <p className="break-all">Operation ID: {intent.operationId}</p>
           {intent.code && <p>{intent.code}</p>}
           {intent.result && (
-            <pre className="whitespace-pre-wrap break-all text-xs">
+            <pre
+              className="admin-receipt"
+              tabIndex={0}
+              role="region"
+              aria-label="Confirmed operation receipt"
+            >
               {JSON.stringify(intent.result, null, 2)}
             </pre>
           )}

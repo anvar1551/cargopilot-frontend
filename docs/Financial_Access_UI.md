@@ -1,5 +1,7 @@
 # Financial access administration — finite UI plan
 
+Current layout qualification (2026-10-08): the reported administration overflow prompted a focused source-level reflow correction. See [Administration_Layout_Correction.md](Administration_Layout_Correction.md). Earlier browser/business evidence below remains historical evidence for those flows; its document-width check does not establish absence of overlap, clipping or inaccessible controls. The correction has no new screenshots; desktop/tablet/390px mobile and 100%/200% zoom verification remain pending. Backend/business behavior is unchanged.
+
 Baselines backend571829e2fffa83627d5043889aba9efe355e7f00/frontend3359ecbd7d2f3e6abdf241a17cb727af86f8a2cc.
 
 | Supported | Current contract / boundary |

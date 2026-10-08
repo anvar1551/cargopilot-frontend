@@ -61,30 +61,30 @@ export default function UserMenu() {
       <DropdownMenuTrigger asChild>
         <Button
           variant="ghost"
-          className="h-10 rounded-xl px-2 hover:bg-muted/50"
+          className="h-auto min-h-10 min-w-0 max-w-full whitespace-normal rounded-xl px-2 py-2 hover:bg-muted/50"
           aria-label={t("userMenu.open")}
         >
-          <Avatar className="h-8 w-8">
+          <Avatar className="h-8 w-8 shrink-0">
             <AvatarFallback className="text-xs">
               {user?.name ? initials(user.name) : <UserIcon className="h-4 w-4" />}
             </AvatarFallback>
           </Avatar>
 
-          <div className="ml-2 hidden flex-col items-start leading-tight sm:flex">
+          <div className="ml-2 hidden min-w-0 max-w-64 flex-col items-start text-left leading-tight [overflow-wrap:anywhere] sm:flex">
             <span className="text-sm font-medium">{user?.name ?? t("common.user")}</span>
             <span className="text-xs text-muted-foreground">{user?.email ?? "-"}</span>
           </div>
         </Button>
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent align="end" className="w-72">
+      <DropdownMenuContent align="end" className="max-h-[calc(100dvh-2rem)] w-72 max-w-[calc(100vw-2rem)] overflow-y-auto">
         <DropdownMenuLabel className="space-y-1">
-          <div className="flex items-start justify-between gap-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
-              <div className="truncate text-sm font-semibold">
+              <div className="text-sm font-semibold [overflow-wrap:anywhere]">
                 {user?.name ?? t("common.user")}
               </div>
-              <div className="truncate text-xs text-muted-foreground">
+              <div className="text-xs text-muted-foreground [overflow-wrap:anywhere]">
                 {user?.email ?? "-"}
               </div>
             </div>

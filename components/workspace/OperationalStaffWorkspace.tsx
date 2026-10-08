@@ -65,7 +65,7 @@ export default function OperationalStaffWorkspace() {
   const session = useWorkspaceSession();
   if (!session.context || !session.user)
     return (
-      <PageShell>
+      <PageShell className="admin-workspace">
         <WorkspaceState
           kind="denied"
           title="Selected membership required"
@@ -77,7 +77,7 @@ export default function OperationalStaffWorkspace() {
     delegate = hasPermission(session.user, "membership.delegateOperational");
   if (!invite && !delegate)
     return (
-      <PageShell>
+      <PageShell className="admin-workspace">
         <WorkspaceState
           kind="denied"
           title="Staff delegation unavailable"
@@ -174,7 +174,7 @@ function Staff({
     },
   });
   return (
-    <PageShell>
+    <PageShell className="admin-workspace">
       <div className="space-y-6">
         <header className="space-y-2">
           <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
@@ -195,7 +195,7 @@ function Staff({
             Accept an invitation as its recipient
           </Link>
         </header>
-        <div className="grid gap-5 xl:grid-cols-2">
+        <div className="admin-columns gap-5">
           <Action
             context={context}
             kind="invite"
@@ -256,7 +256,7 @@ function Staff({
                   key={i.id}
                   className="rounded-xl border p-3 flex flex-wrap items-center justify-between gap-3"
                 >
-                  <div className="text-sm">
+                  <div className="min-w-0 flex-1 basis-64 text-sm">
                     <p className="font-medium">{i.email}</p>
                     <p>
                       {OPERATIONAL_PROFILES[i.profileRevision]} · {i.state} ·
@@ -279,7 +279,7 @@ function Staff({
           {invitations.isSuccess && !invitations.data.items.length && (
             <p className="text-sm">No invitations on this page.</p>
           )}
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
               disabled={!invitationCursors.length || invitations.isFetching}
@@ -321,7 +321,7 @@ function Staff({
                   key={g.membershipId}
                   className="rounded-xl border p-3 flex flex-wrap items-center justify-between gap-3"
                 >
-                  <div className="text-sm">
+                  <div className="min-w-0 flex-1 basis-64 text-sm">
                     <p className="font-medium">
                       {g.name} · {g.email}
                     </p>
@@ -361,7 +361,7 @@ function Staff({
               available.
             </p>
           )}
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
               disabled={!grantCursors.length || grants.isFetching}
@@ -413,8 +413,13 @@ function Staff({
                 </p>
               ) : (
                 <>
-                  <div className="mt-4 overflow-x-auto">
-                    <table className="w-full text-left text-sm">
+                  <div
+                    className="admin-table-scroll mt-4"
+                    tabIndex={0}
+                    role="region"
+                    aria-label="Selected-company member directory"
+                  >
+                    <table className="w-full min-w-[36rem] table-fixed text-left text-sm">
                       <caption className="sr-only">
                         Current company members and displayed profiles
                       </caption>
@@ -838,7 +843,12 @@ function Action({
         >
           <p className="font-medium">Local receipt: {intent.state}</p>
           <p className="break-all">Operation ID: {intent.operationId}</p>
-          <pre className="max-h-44 overflow-auto whitespace-pre-wrap break-all text-xs">
+          <pre
+            className="admin-receipt"
+            tabIndex={0}
+            role="region"
+            aria-label="Persisted operation receipt"
+          >
             {JSON.stringify(intent.result ?? intent.payload, null, 2)}
           </pre>
           <p>No live invitation state is inferred from this receipt.</p>

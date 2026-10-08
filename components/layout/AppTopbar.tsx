@@ -70,8 +70,8 @@ export default function AppTopbar({
 
   if (isErpWorkspacePath) {
     return (
-      <header className="sticky top-0 z-40 w-full border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/85">
-        <div className="flex h-[72px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+      <header className="erp-topbar w-full border-b bg-white/95 xl:sticky xl:top-0 xl:z-40 backdrop-blur supports-[backdrop-filter]:bg-white/85">
+        <div className="flex min-h-[72px] min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3 sm:px-6 lg:px-8">
           <div className="flex min-w-0 items-center gap-3 xl:hidden">
             <button
               type="button"
@@ -114,7 +114,7 @@ export default function AppTopbar({
             </p>
           </div>
 
-          <div className="flex shrink-0 items-center justify-end gap-4">
+          <div className="flex min-w-0 max-w-full flex-wrap items-center justify-end gap-3">
             {hasPermission(user, "notifications.read") && <NotificationInbox unreadCount={unreadCount} />}
             <Link
               href="/dashboard/manager/support"

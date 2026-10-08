@@ -30,7 +30,7 @@ const empty: WarehouseFields = {
 export default function WarehouseWorkspace() {
   const s = useWorkspaceSession();
   return (
-    <PageShell>
+    <PageShell className="admin-workspace">
       <div className="space-y-6">
         <header>
           <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
@@ -190,7 +190,7 @@ function Selected({ context }: { context: string }) {
             ))}
           </ul>
         )}
-        <div className="mt-4 flex items-center gap-3">
+        <div className="mt-4 flex flex-wrap items-center gap-3">
           <Button
             variant="outline"
             disabled={page === 1 || list.isFetching || !canRead}
@@ -233,7 +233,7 @@ function Selected({ context }: { context: string }) {
           ) : (
             detail.data && (
               <>
-                <dl className="my-4 grid gap-3 text-sm sm:grid-cols-2">
+                <dl className="my-4 admin-columns gap-3 text-sm">
                   {Object.entries({
                     Name: detail.data.name,
                     Type: detail.data.type,
@@ -406,10 +406,10 @@ function WarehouseForm({
           disabled={
             !enabled || busy || !!intent || error.includes("unreadable")
           }
-          className="grid gap-4 sm:grid-cols-2"
+          className="admin-columns gap-4"
         >
           {(["name", "location", "region"] as const).map((k) => (
-            <div key={k} className={k === "location" ? "sm:col-span-2" : ""}>
+            <div key={k} className={k === "location" ? "admin-span-all" : ""}>
               <Label htmlFor={`${kind}-${k}`}>
                 {k === "name"
                   ? "Name"
@@ -443,11 +443,11 @@ function WarehouseForm({
               <option value="pickup_point">Pickup point</option>
             </select>
           </div>
-          <details className="sm:col-span-2 rounded-xl border p-3">
+          <details className="admin-span-all rounded-xl border p-3">
             <summary className="cursor-pointer text-sm font-medium">
               Optional geographic coordinates
             </summary>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <div className="mt-3 admin-columns gap-3">
               {(["latitude", "longitude"] as const).map((k) => (
                 <div key={k}>
                   <Label htmlFor={`${kind}-${k}`}>
@@ -474,7 +474,7 @@ function WarehouseForm({
               ))}
             </div>
           </details>
-          <Button type="submit" className="sm:col-span-2 sm:justify-self-start">
+          <Button type="submit" className="admin-span-all sm:justify-self-start">
             {busy
               ? "Awaiting confirmation…"
               : kind === "create"

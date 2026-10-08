@@ -29,7 +29,7 @@ export default function DriverAdministrationWorkspace() {
   const session = useWorkspaceSession();
   if (!session.context || !session.user)
     return (
-      <PageShell>
+      <PageShell className="admin-workspace">
         <WorkspaceState
           kind="denied"
           title="Selected membership required"
@@ -87,7 +87,7 @@ function DriverStaff({
     void grants.refetch();
   };
   return (
-    <PageShell>
+    <PageShell className="admin-workspace">
       <div className="mx-auto max-w-6xl space-y-5">
         <header className="space-y-2">
           <p className="text-xs uppercase tracking-widest text-muted-foreground">
@@ -136,7 +136,7 @@ function DriverStaff({
             Refresh driver authority and inventory
           </Button>
         </section>
-        <div className="grid gap-5 xl:grid-cols-2">
+        <div className="admin-columns gap-5">
           <Action
             kind="invite"
             context={context}
@@ -173,7 +173,7 @@ function DriverStaff({
                   key={i.id}
                   className="rounded-xl border p-3 flex flex-wrap justify-between items-center gap-3"
                 >
-                  <div className="text-sm">
+                  <div className="min-w-0 flex-1 basis-64 text-sm">
                     <p className="font-medium">{i.email}</p>
                     <p>
                       {DRIVER_PROFILES[i.profileRevision]} · {i.state}
@@ -238,7 +238,7 @@ function DriverStaff({
                   key={g.membershipId}
                   className="rounded-xl border p-3 flex flex-wrap justify-between gap-3"
                 >
-                  <div className="text-sm">
+                  <div className="min-w-0 flex-1 basis-64 text-sm">
                     <p className="font-medium">
                       {g.name} · {g.email}
                     </p>
@@ -583,7 +583,12 @@ function Action({
         >
           <p className="font-medium">Local receipt: {intent.state}</p>
           <p className="break-all">Operation ID: {intent.operationId}</p>
-          <pre className="max-h-44 overflow-auto whitespace-pre-wrap break-all text-xs">
+          <pre
+            className="admin-receipt"
+            tabIndex={0}
+            role="region"
+            aria-label="Persisted operation receipt"
+          >
             {JSON.stringify(intent.result ?? intent.payload, null, 2)}
           </pre>
           <p>No live invitation state is inferred from this receipt.</p>
