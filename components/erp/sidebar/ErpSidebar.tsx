@@ -48,6 +48,7 @@ import {
 
 type NavItem = {
   labelKey: string;
+  label?: string;
   href: string;
   icon: React.ComponentType<{ className?: string }>;
   disabled?: boolean;
@@ -124,6 +125,13 @@ const NAV_GROUPS: NavGroup[] = [
   {
     labelKey: "managerSidebar.group.admin",
     items: [
+      {
+        labelKey: "managerSidebar.item.createUser",
+        label: "Financial access",
+        href: "/dashboard/manager/financial-access",
+        icon: Users,
+        requiredPermissions: ["membership.proposeFinancial", "membership.approveFinancial"],
+      },
       {
         labelKey: "managerSidebar.item.createUser",
         href: "/dashboard/manager/users",
@@ -558,7 +566,7 @@ export default function ErpSidebar() {
                       item={item}
                       collapsed={isCollapsed}
                       active={isActive(pathname, item.href)}
-                      label={t(item.labelKey)}
+                      label={item.label ?? t(item.labelKey)}
                       badgeCount={
                         item.href.endsWith("/support")
                           ? supportOpenCount

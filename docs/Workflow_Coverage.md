@@ -1,4 +1,24 @@
-# Current warehouse workspace — implemented, focused evidence
+# Current financial-access workspace readiness (2026-10-08)
+
+Implemented: exact six-profile accepted financial ceilings, bounded no-store recipient/entity/proposal/managed-grant discovery; selected-context proposer/checker workspace, independently accepted replacements/revocation, immutable persisted intents and matching explicit retries. Operational/driver authority alone is insufficient; unrelated grants preserved. Backend read rollout precedes frontend. No mutation policy/schema changes.
+
+Executed: 10 client cases, 10 mocked read cases, 12 distinct actual HTTP/PostgreSQL cases and one connected browser proposal/reload/retry -> separate checker acceptance -> recipient fresh login/entity read -> replacement/acceptance/revocation journey. Desktop/mobile inspected; frontend no-emit/focused lint passed; final backend no-emit passed (exit 0). Existing DOM-03 lock/concurrency/rollback and session/socket evidence reused unchanged; no new transport claim. See [Financial_Access_UI.md](Financial_Access_UI.md).
+
+Prerequisites: independently appointed accepted finance authorities, explicit owned active entity and eligible existing company memberships/scopes. No automatic setup or grants. Deliberately unavailable: unconfirmed-intent abandonment/reconciliation, finance-only invitations, owner signing/appointment, entity setup/cash/financial business-action UI in this batch; accounting/FX remain contained. Existing legacy finance adapter gaps and auth-layout warnings remain visible in the report.
+
+Cleanup: owned PostgreSQL/tmpfs removed, listeners stopped; frontend temp cleanup policy-blocked at cp-frontend-financial-access-ui-owned-XscTqy and left for manual cleanup. Prior blocked paths/dist preserved.
+
+Next finite milestone after review: independently approved initial issuing-entity setup UI, existing contracts only; not started. Older handoffs below are historical.
+
+| Current action | Contract / acceptance |
+| --- | --- |
+| Proposer | Existing eligible recipients, exact six server revisions and owned entity; POST proposals with immutable operationId/expectedAcceptanceId/reason. Current ceiling covers removed and replacement grants. |
+| Checker | Exact proposal scope/fingerprint/reason; POST accept, different human from maker/recipient, current accepted authority. Pending access grants nothing. |
+| Managed revocation | POST revoke with exact current acceptance; selected owned membership, preserved unrelated roles. Reinstatement is new independent acceptance. |
+| Discovery | GET /api/auth/company-financial-access views ceiling/recipients/proposals/grants; fresh accepted finance authority, bounded context-bound cursor, no-store/minimal/no-write snapshots. |
+| Missing integration | Initial entity setup, cash supplemental delegation and approved pricing/billing/manual-invoice action screens remain later batches. Existing accounting/FX/payment containment unchanged. |
+
+# Historical warehouse workspace — implemented, focused evidence
 
 | Action / actor | Contract / acceptance |
 | --- | --- |
@@ -177,7 +197,7 @@ screens are present code, **not claims of current contract compatibility**. B=pl
 | Controlled tenant onboarding / installation owner | Internal signed permit only, no anonymous registration; reviewed real key/intent required | No browser provisioning/signer; deliberately unavailable to ordinary admin. B3 explanatory prerequisite, never fabricate endpoint. |
 | Operational invitation / accepted delegator | POST /api/auth/company-invitations, /cancel, /accept and company-operational-grants; operationId/profile revision/typed warehouse ceilings; one-use secret delivery | B3 milestone 1 implemented: Users controlled workflow and public recipient acceptance, transient private token handoff, immutable persisted requests and scoped member directory. Browser/HTTP/PostgreSQL verified; additive discovery now supplies invitation/status, manageable grants and named accepted-ceiling resources. See Operational_Administration_Discovery.md. No email delivery claim. See Frontend_B3_Operational.md. |
 | Driver invitation / separate driver delegator | company-driver-invitations, /cancel, /accept and company-driver-grants; exact local/linehaul membership eligibility; no implicit scopes | Drivers/edit shared User.driverType obsolete. B3 accepted restricted membership type and active-work replacement blockers; driver native work deferred. |
-| Financial/cash grant and initial entity setup / owner-appointed makers/checkers | company-financial-grants and company-cash-capabilities proposals/accept/revoke; issuing-entity-setup proposals/:id/decisions; independent User and accepted ceilings | No matching interfaces. B3 governed profiles, removed/replacement ceilings, exact acceptance IDs; no general settings.manage or automatic grant expansion. |
+| Historical planned financial/cash grant and initial entity setup / owner-appointed makers/checkers | company-financial-grants and company-cash-capabilities proposals/accept/revoke; issuing-entity-setup proposals/:id/decisions; independent User and accepted ceilings | No matching interfaces. B3 governed profiles, removed/replacement ceilings, exact acceptance IDs; no general settings.manage or automatic grant expansion. |
 | Customers / clerk or authorized customers.read/write | /api/customers GET q/type/page/limit and :id; POST/PATCH strict fields, DELETE204; tenant-owned masters may span companies but existing object checks remain | B1 implemented and browser verified: scoped list/search/create/detail/edit/delete. No inferred exclusive company ownership or ownership request fields; uncertain writes remain contained. |
 | Addresses / authorized customer actor | /api/addresses GET customerEntityId/q/take (max50, array, not page/limit); POST requires customer; PATCH cannot move owner; customer PATCH defaultAddressId | B1 implemented and browser verified: bounded search/create/edit/default/clear/delete with exact customer identity and unknown-write containment. |
 | Warehouse provisioning/access / explicitly appointed admin or scoped staff | /api/warehouses POST warehouse.create + durable authority + operationId; GET list/:id shipment.view scoped, PUT shipment.update restrictions | Warehouse/create dialog present but no durable provisioning contract. B3 no automatic access/ceiling; B5 actual scoped read/consumer compatibility. |
