@@ -2518,6 +2518,7 @@ export default function OrderDetailsView({
                       <HandCoins className="h-4 w-4" />
                       {t("orderDetails.cash.title")}
                     </p>
+                    <p className="mt-3 text-sm">These legacy mirrors are not monetary authority. <a className="underline underline-offset-4" href="/dashboard/service-cash">Open controlled service-charge cash</a> for collection, exact handoff acceptance and independent settlement.</p>
                     {cashCollections.length ? (
                       <div className="mt-3 space-y-3">
                         {cashCollections.map((collection) => {
@@ -2605,7 +2606,7 @@ export default function OrderDetailsView({
                                       type="button"
                                       size="sm"
                                       variant="outline"
-                                      disabled={cashActionKey === cashActionId(collection, "accept")}
+                                      disabled={true}
                                       onClick={() => {
                                         const actionKey = cashActionId(collection, "accept");
                                         if (collection.currentHolderType === "driver") {
@@ -2649,7 +2650,7 @@ export default function OrderDetailsView({
                                     <Button
                                       type="button"
                                       size="sm"
-                                      disabled={cashActionKey === cashActionId(collection, "settle")}
+                                      disabled={true}
                                       onClick={() =>
                                         void runCashAction(
                                           cashActionId(collection, "settle"),

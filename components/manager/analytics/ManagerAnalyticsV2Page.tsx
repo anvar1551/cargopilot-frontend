@@ -553,9 +553,6 @@ export function ManagerAnalyticsV2Page() {
     });
   }, [handoffToType, warehousesQuery.data]);
 
-  const selectedHeldCashItems = selectedQueueItems.filter((item) => item.status === "held");
-  const canMutateSelectedCash =
-    selectedCashItems.length > 0 && selectedHeldCashItems.length === selectedCashItems.length;
 
   const settleSelectedMutation = useMutation({
     mutationFn: async () => settleOrderCashBulk({ items: selectedCashItems }),
@@ -1144,8 +1141,8 @@ export function ManagerAnalyticsV2Page() {
                       <div className="rounded-lg border bg-slate-50 p-3">
                         <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
                           <div>
-                            <h3 className="text-sm font-semibold">Cash Control</h3>
-                            <p className="text-xs text-slate-500">Settle collected funds or hand off custody for selected cash items.</p>
+                            <h3 className="text-sm font-semibold">Cash Control</h3><a className="text-sm underline underline-offset-4" href="/dashboard/service-cash">Open controlled service-charge cash</a>
+                            <p className="text-xs text-slate-500">Legacy cash actions are unavailable here.</p>
                           </div>
                           <div className="rounded-md border bg-white px-3 py-2 text-right text-xs">
                             <div className="font-semibold">{selectedMoneyBreakdown}</div>
@@ -1160,7 +1157,7 @@ export function ManagerAnalyticsV2Page() {
                             {t("managerAnalytics.finance.clearSelection")}
                           </Button>
                           <Badge variant="outline">{t("managerAnalytics.finance.selectedCount", { count: selectedCashItems.length })}</Badge>
-                          <Button type="button" size="sm" onClick={() => settleSelectedMutation.mutate()} disabled={!canMutateSelectedCash || settleSelectedMutation.isPending}>
+                          <Button type="button" size="sm" onClick={() => settleSelectedMutation.mutate()} disabled={true}>
                             {settleSelectedMutation.isPending ? t("managerAnalytics.finance.settlingSelected") : "Settle as separate checker"}
                           </Button>
                           <Select value={handoffToType} onValueChange={(value: HandoffType) => { setHandoffToType(value); setHandoffToDriverId(""); setHandoffToWarehouseId(""); }}>
@@ -1190,7 +1187,7 @@ export function ManagerAnalyticsV2Page() {
                               </SelectContent>
                             </Select>
                           )}
-                          <Button type="button" size="sm" variant="outline" onClick={() => handoffSelectedMutation.mutate()} disabled={!canMutateSelectedCash || !handoffDestinationReady || handoffSelectedMutation.isPending}>
+                          <Button type="button" size="sm" variant="outline" onClick={() => handoffSelectedMutation.mutate()} disabled={true}>
                             {handoffSelectedMutation.isPending ? t("managerAnalytics.finance.handingOffSelected") : t("managerAnalytics.finance.handoffSelected")}
                           </Button>
                         </div>

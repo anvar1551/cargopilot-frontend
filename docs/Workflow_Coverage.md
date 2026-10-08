@@ -1,3 +1,20 @@
+# Current restricted service-charge cash actions (2026-10-08)
+
+| Capability / actor | Implemented integration and evidence |
+| --- | --- |
+| Accepted supplement / exact selected driver, warehouse staff or checker | /dashboard/service-cash is reachable without manager-dashboard scope; fresh /api/orders/cash/access returns accepted authority, entity, kinds and named warehouse ceiling. No role-name or snapshot-permission authority. |
+| Restricted work/preflight | Existing cash queue/preflight, bounded cursors, minimal names, exact decimal/currency/obligation/timing/holder and pending offer shown separately. No general order-detail access. |
+| Collection / accepted scoped collector | Original operationId/obligationId captured durably; no amount input. Timing/zero affordances match backend; every mutation revalidates. |
+| Offer / recorded current holder | Authoritative named recipient/warehouse selector, exact expectedEventId; offered funds remain with holder. Existing one-offer-per-event constraint retained; no retarget/replacement. |
+| Acceptance / exact eligible recipient | Explicit original offerId/expectedEventId; holder changes only after server confirmation. |
+| Settlement / independent warehouse checker | Exact custody basis and separate-human checking; never marks invoice paid or enables accounting. |
+| Immutable retry/reload/context boundaries | Persist/read-back before send, exclusive lock, original IDs/content, no automatic replay, late response suppression, confirmed receipt separated from live state. Unresolved intent cannot be discarded or replaced. |
+| Legacy competing cash controls | Disabled order/warehouse/analytics buttons link here; obsolete adapter sends nothing and preserves v1 records for reconciliation. |
+
+Evidence: 19 distinct focused frontend cases (16 intent/affordance + 3 static component markup), 7 distinct actual HTTP/PostgreSQL cases. Final both no-emit and focused lint; retained legacy warnings recorded. Actual synthetic restricted collection → parcel intake retaining cash → offer → exact recipient acceptance → separate settlement succeeded; matching retries add no custody records. Read/rejection graph digests unchanged. Three owned disposable cleanups verified. Existing monetary/concurrency/rollback/socket evidence reused; no browser/storage/provider transport claim. Visual verification pending. Exact contracts, commands and limitations: [Restricted_Service_Cash_UI.md](Restricted_Service_Cash_UI.md).
+
+Remaining omissions: merchant COD provenance, suspended-holder recovery, legacy ambiguous-intent reconciliation, offer cancellation/replacement, late adjustments/refunds, accounting/FX, invoice-paid automation, native driver integration and production/visual/device gates. Same-currency invoice issuance UI is the next separate task, not implemented here. This finite batch stops here; prior sections are historical evidence, not current missing cash-screen claims.
+
 # Current pricing UI correction (2026-10-08)
 
 Implemented: loaded tariff identity/request/context fencing, explicit new-draft versus edit modes and named update/delete targets. Selecting B cannot submit A's retained editor; late/competing loads are suppressed. Stored uncertain requests remain unchanged and receipt-less draft replay stays disabled.

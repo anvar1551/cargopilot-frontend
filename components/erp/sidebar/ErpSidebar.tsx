@@ -171,6 +171,12 @@ const NAV_GROUPS: NavGroup[] = [
 
 const BILLING_ITEMS: NavItem[] = [
   {
+    labelKey: "managerSidebar.billing.cash",
+    label: "Service-charge cash",
+    href: "/dashboard/service-cash",
+    icon: CreditCard,
+  },
+  {
     labelKey: "managerSidebar.billing.finance",
     href: "/dashboard/manager/finance",
     icon: Landmark,

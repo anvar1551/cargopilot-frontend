@@ -1952,7 +1952,7 @@ export default function WarehouseDashboardPage() {
                                     onClick={() =>
                                       handoverCollectMutation.mutate(item)
                                     }
-                                    disabled={handoverCollectMutation.isPending}
+                                    disabled={true}
                                   >
                                     {handoverCollectMutation.isPending
                                       ? text.ppHandoverCollecting
@@ -1994,6 +1994,7 @@ export default function WarehouseDashboardPage() {
           ) : null}
 
           <TabsContent value="cash" className="space-y-4">
+            <p className="rounded-lg border p-4 text-sm">Cash is independent of parcel intake. Legacy mirrors and actions here are not authoritative. <a className="underline underline-offset-4" href="/dashboard/service-cash">Open controlled service-charge cash</a> for scoped discovery, collection and explicit offer acceptance.</p>
             <Card className="rounded-3xl border-border/70">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">
@@ -2226,10 +2227,7 @@ export default function WarehouseDashboardPage() {
                     type="button"
                     variant="outline"
                     className="w-full gap-2"
-                    disabled={
-                      collectQueueMutation.isPending ||
-                      selectedExpectedRows.length === 0
-                    }
+                    disabled={true}
                     onClick={() => collectQueueMutation.mutate()}
                   >
                     <Wallet className="h-4 w-4" />
@@ -2255,10 +2253,7 @@ export default function WarehouseDashboardPage() {
                     <Button
                       type="button"
                       className="w-full gap-2 sm:w-auto"
-                      disabled={
-                        handoffQueueMutation.isPending ||
-                        selectedHeldRows.length === 0
-                      }
+                      disabled={true}
                       onClick={() => handoffQueueMutation.mutate()}
                     >
                       {text.cashQueueHandoffSelected}

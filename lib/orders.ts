@@ -483,7 +483,7 @@ export async function handoffOrderCashBulk(payload: { items: Array<{ orderId: st
   return mutateCash("handoff", payload.items, payload, true) as Promise<CashBulkResult>;
 }
 export async function settleOrderCashBulk(payload: { items: Array<{ orderId: string; kind: "cod" | "service_charge" }>; note?: string | null }) {
-  return mutateCash("settle", payload.items, { note: payload.note }, true);
+  return mutateCash("settle", payload.items, { note: payload.note }, true) as Promise<CashBulkResult>;
 }
 
 export async function assignDriversBulk(payload: {

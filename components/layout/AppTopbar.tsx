@@ -129,6 +129,7 @@ export default function AppTopbar({
               ) : null}
             </Link>
             <div className="hidden h-8 w-px bg-border sm:block" />
+            <Link href="/dashboard/service-cash" className="max-w-full text-sm font-medium underline underline-offset-4">Service-charge cash</Link>
             <UserMenu />
           </div>
         </div>
@@ -151,7 +152,7 @@ export default function AppTopbar({
 
   return (
     <header className="sticky top-0 z-40 w-full border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="mx-auto flex h-14 items-center justify-between px-3 sm:px-4">
+      <div className="mx-auto flex min-h-14 min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 py-2 sm:px-4">
         {/* Left side */}
         <div className="flex items-center gap-3 min-w-0">
           {isErpWorkspacePath ? (
@@ -200,14 +201,15 @@ export default function AppTopbar({
         {/* Right side */}
         <div
           className={cn(
-            "flex shrink-0 items-center gap-2",
+            "flex min-w-0 max-w-full flex-wrap items-center gap-2",
             actions ? "gap-3" : "",
           )}
         >
           {actions ? (
             <div className="hidden sm:flex items-center gap-2">{actions}</div>
           ) : null}
-          <UserMenu />
+          <Link href="/dashboard/service-cash" className="max-w-full text-sm font-medium underline underline-offset-4">Service-charge cash</Link>
+            <UserMenu />
         </div>
       </div>
     </header>
