@@ -1,3 +1,5 @@
+Current correction: loaded editor identity and structured authoring supersede the earlier UI details below. See [Pricing_UI_Correction.md](Pricing_UI_Correction.md) for focused state, HTTP/PostgreSQL evidence and pending visual status. The original batch evidence remains historical and is reused only for unchanged behavior.
+
 # Approved pricing and order billing preparation UI
 
 ## Scope and current behavior

@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { hasPermission } from "@/lib/auth";
@@ -15,6 +15,13 @@ import PageShell from "@/components/layout/PageShell";
 import WorkspaceState from "./WorkspaceState";
 import PricingReferencePanel from "./PricingReferencePanel";
 import BillingPolicyForm from "./BillingPolicyForm";
+import PricingRows from "./PricingRows";
+import {
+  createTariffEditor,
+  normalizeRows,
+  textRows,
+  type TextRow,
+} from "@/lib/pricing-editor";
 import { Button } from "@/components/ui/button";
 import {
   Field,
@@ -107,8 +114,8 @@ function Configuration({
   const [fields, setFields] = useState<Record<string, string>>({
       status: "draft",
     }),
-    [rates, setRates] = useState(""),
-    [legs, setLegs] = useState(""),
+    [rates, setRates] = useState<TextRow[] | null>(null),
+    [legs, setLegs] = useState<TextRow[] | null>(null),
     [customer, setCustomer] = useState(""),
     [template, setTemplate] = useState(""),
     [customerSearch, setCustomerSearch] = useState(""),
@@ -116,6 +123,31 @@ function Configuration({
     [planCursor, setPlanCursor] = useState<string[]>([]),
     [templateCursor, setTemplateCursor] = useState<string[]>([]),
     [policy, setPolicy] = useState("");
+  const editor = useRef(createTariffEditor(context));
+  const [policyReady, setPolicyReady] = useState(false);
+  const [loaded, setLoaded] = useState<{ id: string; name: string } | null>(
+    null,
+  );
+  const [loadingDraft, setLoadingDraft] = useState(false);
+  useEffect(() => {
+    const own = editor.current;
+    own.activate();
+    return () => own.invalidate();
+  }, []);
+  const choosePlan = (id: string) => {
+    editor.current.select(id);
+    setSelected(id);
+    setLoaded(null);
+    setLoadingDraft(false);
+    setFields({ status: "draft" });
+    setRates(null);
+    setLegs(null);
+    setCustomer("");
+    setTemplate("");
+    setDraftError("");
+    setCursor([]);
+    setVersion(undefined);
+  };
   const list = useQuery({
     queryKey: ["pricing-plans", context, planCursor.at(-1)],
     enabled: can("pricing.read"),
@@ -169,13 +201,25 @@ function Configuration({
   };
   const edit = async () => {
     setDraftError("");
+    const ticket = editor.current.begin();
+    setLoaded(null);
+    setLoadingDraft(true);
     try {
       const d = await readPricing<Record<string, unknown>>(
         context,
-        "/tariff-plans/" + selected,
+        "/tariff-plans/" + ticket.id,
       );
+      if (!editor.current.current(ticket)) return;
       if (d.approvedVersionId)
         throw Error("Published plans are immutable; author a new draft.");
+      const nextRates = textRows(d.rates as Record<string, unknown>[]);
+      const nextLegs = textRows(
+        (d.transitPricingConfig as { legs?: Record<string, unknown>[] } | null)
+          ?.legs ?? [],
+      );
+      const identity = { id: String(d.id), name: String(d.name) };
+      if (!editor.current.accept(ticket, identity)) return;
+      setLoaded(identity);
       setFields(
         Object.fromEntries(
           [
@@ -198,27 +242,12 @@ function Configuration({
       );
       setCustomer(String(d.customerEntityId ?? ""));
       setTemplate(String(d.routeTemplateId ?? ""));
-      setRates(
-        JSON.stringify(
-          (d.rates as Record<string, unknown>[]).map((r) => ({
-            zone: r.zone,
-            weightFromKg: Number(r.weightFromKg),
-            weightToKg: Number(r.weightToKg),
-            price: Number(r.price),
-          })),
-          null,
-          2,
-        ),
-      );
-      setLegs(
-        JSON.stringify(
-          (d.transitPricingConfig as { legs?: unknown[] } | null)?.legs ?? [],
-          null,
-          2,
-        ),
-      );
+      setRates(nextRates);
+      setLegs(nextLegs);
     } catch (e) {
-      setDraftError(pricingError(e));
+      if (editor.current.current(ticket)) setDraftError(pricingError(e));
+    } finally {
+      if (editor.current.current(ticket)) setLoadingDraft(false);
     }
   };
   const draft = () =>
@@ -232,8 +261,8 @@ function Configuration({
       isDefault: fields.isDefault ? fields.isDefault === "true" : undefined,
       customerEntityId: customer || null,
       routeTemplateId: template || null,
-      rates: rates ? JSON.parse(rates) : [],
-      transitLegRates: legs ? JSON.parse(legs) : [],
+      rates: normalizeRows("rate", rates),
+      transitLegRates: normalizeRows("transit", legs),
     });
   const set = (k: string, v: string) => setFields((f) => ({ ...f, [k]: v }));
   const fieldNames: Record<string, string> = {
@@ -287,6 +316,10 @@ function Configuration({
             variant={tab === "policy" ? "default" : "outline"}
             onClick={() => {
               setTab("policy");
+              if (tab !== "policy") {
+                setPolicy("");
+                setPolicyReady(false);
+              }
               setCursor([]);
               setVersion(undefined);
             }}
@@ -314,11 +347,7 @@ function Configuration({
                 <select
                   className={control}
                   value={selected}
-                  onChange={(e) => {
-                    setSelected(e.target.value);
-                    setCursor([]);
-                    setVersion(undefined);
-                  }}
+                  onChange={(e) => choosePlan(e.target.value)}
                 >
                   <option value="">Select a named plan</option>
                   {list.data?.data.map((p) => (
@@ -354,9 +383,21 @@ function Configuration({
                   disabled={!selected || !can("pricing.write")}
                   onClick={() => void edit()}
                 >
-                  Load unpublished draft
+                  {loadingDraft
+                    ? "Reload latest selected draft"
+                    : "Load unpublished draft"}
+                </Button>
+                <Button variant="outline" onClick={() => choosePlan("")}>
+                  Start new draft
                 </Button>
               </div>
+              <p className="break-words text-sm" role="status">
+                {loaded
+                  ? `Editing loaded draft: ${loaded.name} (${loaded.id})`
+                  : selected
+                    ? "No editable draft loaded for this selection. Load it before saving."
+                    : "Authoring a new unpublished draft."}
+              </p>
               {draftError && <p role="alert">{draftError}</p>}
               <div className="grid min-w-0 gap-4 sm:grid-cols-2">
                 {[
@@ -485,29 +526,26 @@ function Configuration({
                   Next customers
                 </Button>
               </div>
-              <Field label="Weight/zone rate rows (JSON)">
-                <textarea
-                  rows={7}
-                  className={control + " font-mono"}
-                  value={rates}
-                  placeholder={
-                    '[{"zone":0,"weightFromKg":0.01,"weightToKg":10,"price":100}]'
-                  }
-                  onChange={(e) => setRates(e.target.value)}
-                />
-              </Field>
+              <PricingRows
+                title="Weight and zone rates"
+                kind="rate"
+                value={rates}
+                onChange={setRates}
+                max={1000}
+                allowNone
+              />
               <details>
                 <summary className="cursor-pointer">
                   Transit draft fields
                 </summary>
-                <Field label="Transit leg rates (JSON array)">
-                  <textarea
-                    rows={6}
-                    className={control + " font-mono"}
-                    value={legs}
-                    onChange={(e) => setLegs(e.target.value)}
-                  />
-                </Field>
+                <PricingRows
+                  title="Transit legs"
+                  kind="transit"
+                  value={legs}
+                  onChange={setLegs}
+                  max={50}
+                  allowNone
+                />
                 <p className="text-sm">
                   sequence, legCode, label, mode, originCountryCode,
                   destinationCountryCode, ratePerKg, minCharge, flatFee. Transit
@@ -518,22 +556,32 @@ function Configuration({
               <IntentAction
                 context={context}
                 kind="draftCreate"
-                payload={() => ({ draft: draft() })}
-                allowed={can("pricing.write")}
+                payload={() => editor.current.create(draft())}
+                allowed={can("pricing.write") && !selected && !loadingDraft}
                 label="Create unpublished draft"
                 onConfirmed={refresh}
               />
               {selected && (
                 <>
+                  <p className="break-words text-sm">
+                    Selected action target:{" "}
+                    {list.data?.data.find((p) => p.id === selected)?.name ??
+                      "Named target unavailable"}{" "}
+                    ({selected}). Update additionally requires this exact loaded
+                    editor. Selection never changes a stored uncertain request.
+                  </p>
                   <IntentAction
                     context={context}
                     kind="draftUpdate"
-                    payload={() => ({ planId: selected, draft: draft() })}
+                    payload={() => editor.current.update(selected, draft())}
                     allowed={
                       can("pricing.write") &&
-                      !history.data?.plan?.approvedVersionId
+                      loaded?.id === selected &&
+                      !loadingDraft &&
+                      history.data?.plan?.id === selected &&
+                      !history.data.plan.approvedVersionId
                     }
-                    label="Save selected unpublished draft"
+                    label="Save loaded unpublished draft"
                     onConfirmed={refresh}
                   />
                   <IntentAction
@@ -542,7 +590,9 @@ function Configuration({
                     payload={() => ({ planId: selected })}
                     allowed={
                       can("pricing.write") &&
-                      !history.data?.plan?.approvedVersionId
+                      history.data?.plan?.id === selected &&
+                      !history.data.plan.approvedVersionId &&
+                      !!list.data?.data.find((p) => p.id === selected)
                     }
                     label="Delete selected unpublished draft"
                     onConfirmed={refresh}
@@ -646,7 +696,12 @@ function Configuration({
                   promotions do not change prices.
                 </p>
               </details>
-              <BillingPolicyForm onChange={setPolicy} />
+              <BillingPolicyForm
+                onChange={(json, valid) => {
+                  setPolicy(json);
+                  setPolicyReady(valid);
+                }}
+              />
               <ExactDetails
                 value={policy ? JSON.parse(policy) : null}
                 title="Exact proposed policy preview (incomplete until all required fields are supplied)"
@@ -665,7 +720,8 @@ function Configuration({
                   content: policyContent.parse(JSON.parse(policy)),
                   reason,
                 })}
-                allowed={can("billing.policies.propose")}
+                allowed={can("billing.policies.propose") && policyReady}
+                retryAllowed={can("billing.policies.propose")}
                 label="Propose immutable policy"
                 onConfirmed={refresh}
               />

@@ -1,3 +1,13 @@
+# Current pricing UI correction (2026-10-08)
+
+Implemented: loaded tariff identity/request/context fencing, explicit new-draft versus edit modes and named update/delete targets. Selecting B cannot submit A's retained editor; late/competing loads are suppressed. Stored uncertain requests remain unchanged and receipt-less draft replay stays disabled.
+
+Structured authoring now covers weight/zone rates, all transit draft fields, country-qualified routes, included services, fees, discounts and eligible invoice states. Exact policy decimals stay strings; zone zero, explicit None choices, bounds and existing fields/contracts remain supported. Read-only exact JSON inspection is retained; users need not author JSON. No backend, permission, schema or dependency changes.
+
+Evidence: 14 new editor/form/static-component cases plus 16 affected intent cases passed. Two existing actual HTTP/PostgreSQL setup/draft-edit cases rerun and passed; owned cleanup verified. Focused lint and final frontend no-emit recorded in [Pricing_UI_Correction.md](Pricing_UI_Correction.md). Approval/calculation/cash/concurrency evidence reused. Static React markup is not browser verification; visual review remains pending.
+
+Remaining: uncertain draft reconciliation, rendered user acceptance and separately deferred cash/invoice screens. No accounting, FX, merchant COD or policy expansion. Stop after this finite correction. The prior batch and handoffs below are historical.
+
 # Current approved pricing and order billing preparation (2026-10-08)
 
 | Capability / actor | Integration and acceptance status |
