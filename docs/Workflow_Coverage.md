@@ -1,3 +1,17 @@
+# Current driver administration — implemented, focused evidence
+
+| Action / actor | Exact contract | Acceptance / limit |
+| --- | --- | --- |
+| Driver invitation and cancellation / independently owner-appointed driver delegator | POST /api/auth/company-driver-invitations and /cancel; immutable operationId, local-driver.v1 or linehaul-driver.v1, reason; original inviter only | Persist before send, transient one-time token; matching retry never regenerates token. Operational authority is insufficient. |
+| New/authenticated existing recipient | POST /api/auth/company-driver-invitations/accept; token + operationId; new name/password or current existing identity | No credential adoption/reset; acceptance issues no session; selected login follows. No token/password persistence. |
+| Managed eligibility inspection/replacement/revocation | POST /api/auth/company-driver-grants; membershipId, profileRevision, grant/revoke, reason, operationId | Zero scopes, exact managed role, current accepted driver ceiling. Active pickup/nominations/custody block type changes; revocation preserves work/history. |
+| Required selectors | GET /api/auth/company-driver-delegation, /company-driver-invitations, /company-driver-grants | Fresh driver authority, bounded metadata-only no-store reads; no manual IDs, owner signer or operational-authority fallback. |
+
+Executed: 7 mocked backend cases, 20 client intent/acceptance cases, 5 client discovery cases, 12 actual HTTP/PostgreSQL cases and the browser enrollment/login/replace/retry/revoke journey. Final no-emit and focused lint passed. Details: [Driver_Administration_UI.md](Driver_Administration_UI.md). Native
+app, cash, financial and further provisioning UI remain outside this batch.
+
+
+# Historical discovery dashboard (completed preceding batch)
 # Current operational administration discovery dashboard
 
 | State | Current behavior / boundary |
