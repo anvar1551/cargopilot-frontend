@@ -1,6 +1,25 @@
-# Current financial-access workspace readiness (2026-10-08)
+# Current initial issuing-entity setup UI readiness (2026-10-08)
 
-Layout status: source-level responsive correction covers financial access and the same confirmed sizing causes in staff, driver and warehouse workspaces/shared shell. Focused lint and in-memory CSS compilation passed; final no-emit result is recorded in [Administration_Layout_Correction.md](Administration_Layout_Correction.md). Visual acceptance remains pending: no new screenshots or desktop/tablet/mobile/zoom verification. The historical flow evidence below is reused for unchanged business behavior, not proof that the reported visual defect is resolved. Actual visual inspection is required before committing future UI feature batches. No next feature batch has started.
+Implemented: independently appointed proposer/checker views; explicit blank currency/month/timezone and null reporting restriction; bounded owned proposal inventory, exact immutable inspection and independent decision; read-only published entity; persisted context-bound intents and explicit matching retries with late suppression. Backend discovery rollout precedes UI. No automatic appointment/grants or general settings.manage.
+
+Contracts/evidence: [Issuing_Entity_Setup_UI.md](Issuing_Entity_Setup_UI.md). 12 distinct adapter cases and 12 actual backend HTTP-injection/PostgreSQL cases, proposal -> independent approval -> publication, no direct entity prerequisite. Unchanged setup concurrency/rollback and session/socket evidence reused. Reads are current-authority snapshots, not write authorization. Final focused lint/no-emit recorded in the report.
+
+Visual acceptance pending: no screenshots or new browser/zoom verification. Per current user direction, unavailable rendering does not block this source-level batch. Corrected shared layout rules reused; no policy bypass/tool installation. Prior business journeys remain historical evidence, not visual acceptance of this new screen.
+
+Unavailable: published-entity editing/deactivation, uncertain-intent abandonment/reconciliation, browser owner signing/key registration/appointment, accounting/FX/cash actions here. Real registry/secure handoff/concrete reviewed company values remain external prerequisites.
+
+Next finite task, not started: cash supplemental administration discovery/UI using existing narrow accepted authority and independent acceptance, preserving base driver/warehouse profiles. Prior sections below are historical.
+
+| Supported action | Exact current contract / limit |
+| --- | --- |
+| Setup discovery | GET /api/auth/issuing-entity-setup?view=authority or proposals&kind=proposer or checker&limit&cursor. Current owner-accepted setup authority and selected company; bounded, no-store, no writes. |
+| Proposal | POST /api/auth/issuing-entity-setup/proposals; operationId/reason/explicit configuration. Matching retries retain the original result and reauthorize. |
+| Independent decision | POST /api/auth/issuing-entity-setup/decisions; immutable proposalId/contentHash/approved-or-rejected/reason. Different User; pending access confers no authority. |
+| Publication | Minimal current entity via setup-authority read, no finance settings bypass or edits. Existing organization supplies issuing identity. |
+
+# Historical financial-access workspace readiness (2026-10-08)
+
+Layout status: source-level responsive correction covers financial access and the same confirmed sizing causes in staff, driver and warehouse workspaces/shared shell. Focused lint and in-memory CSS compilation passed; final no-emit result is recorded in [Administration_Layout_Correction.md](Administration_Layout_Correction.md). Visual acceptance remains pending: no new screenshots or desktop/tablet/mobile/zoom verification. The historical flow evidence below is reused for unchanged business behavior, not proof that the reported visual defect is resolved. This earlier visual gate is superseded for the source-level issuing-entity batch by the current user direction above; verification remains pending.
 
 Implemented: exact six-profile accepted financial ceilings, bounded no-store recipient/entity/proposal/managed-grant discovery; selected-context proposer/checker workspace, independently accepted replacements/revocation, immutable persisted intents and matching explicit retries. Operational/driver authority alone is insufficient; unrelated grants preserved. Backend read rollout precedes frontend. No mutation policy/schema changes.
 

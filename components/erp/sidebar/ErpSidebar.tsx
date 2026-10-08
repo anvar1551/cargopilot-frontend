@@ -132,6 +132,13 @@ const NAV_GROUPS: NavGroup[] = [
         icon: Users,
         requiredPermissions: ["membership.proposeFinancial", "membership.approveFinancial"],
       },
+        {
+          labelKey: "managerSidebar.item.createUser",
+          label: "Initial issuing entity",
+          href: "/dashboard/manager/entity-setup",
+          icon: Users,
+          requiredPermissions: ["finance.entitySetup.propose", "finance.entitySetup.approve"],
+        },
       {
         labelKey: "managerSidebar.item.createUser",
         href: "/dashboard/manager/users",
