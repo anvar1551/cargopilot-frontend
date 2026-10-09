@@ -487,25 +487,25 @@ function Billing({
                         tabIndex={0}
                         aria-label="Exact price components"
                       >
-                        <table className="w-full text-sm">
+                        <table className="w-full min-w-[30rem] text-sm">
                           <caption className="p-3 text-left font-medium">
                             {price.total} {price.currency} — exact components
                           </caption>
                           <thead>
                             <tr>
-                              <th className="p-2 text-left">Component</th>
-                              <th className="p-2 text-left">Code / basis</th>
-                              <th className="p-2 text-right">Exact amount</th>
+                              <th scope="col" className="p-2 text-left whitespace-nowrap">Component</th>
+                              <th scope="col" className="p-2 text-left whitespace-nowrap">Code / basis</th>
+                              <th scope="col" className="p-2 text-right whitespace-nowrap">Exact amount</th>
                             </tr>
                           </thead>
                           <tbody>
                             {price.content.components.map((c, i) => (
                               <tr key={i}>
-                                <td className="p-2 break-words">{c.type}</td>
-                                <td className="p-2 break-all">
+                                <td className="p-2 [overflow-wrap:anywhere]">{c.type}</td>
+                                <td className="p-2 [overflow-wrap:anywhere]">
                                   {c.code ?? c.basis ?? "—"}
                                 </td>
-                                <td className="p-2 text-right tabular-nums">
+                                <td className="p-2 text-right whitespace-nowrap tabular-nums">
                                   {c.amount}
                                 </td>
                               </tr>

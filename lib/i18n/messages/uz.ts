@@ -134,6 +134,8 @@ export const uz = {
       pickupPoints: "Oxirgi mil pickup punktlari",
     },
     billing: {
+      cash: "Xizmat haqi naqd puli",
+      orderPreparation: "Buyurtma hisobini tayyorlash",
       group: "Billing va tariflar",
       finance: "Moliya nazorati",
       pricing: "Tariflar",
@@ -141,6 +143,8 @@ export const uz = {
       integrations: "Integratsiyalar",
     },
     billingDesc: {
+      cash: "Undirish, aniq topshirish va mustaqil hisob-kitob tasdig‘i",
+      orderPreparation: "To‘lovchi ko‘rsatmalari va aniq tasdiqlangan narxlar",
       finance: "Kreditorlik, g'aznachilik va solishtirish",
       pricing: "Tarif, SLA va zona qoidalari",
       providers: "Provayder kalitlari va aktivatsiya",

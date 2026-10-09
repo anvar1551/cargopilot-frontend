@@ -13,6 +13,7 @@ import {
   authEpoch,
 } from "@/lib/auth";
 import { toast } from "sonner";
+import { postLoginDestination } from "@/lib/acceptance-corrections";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -59,7 +60,7 @@ export default function LoginPage() {
     const user = getUser();
     if (!user) return;
     const next = searchParams.get("next");
-    router.replace(next || dashboardPathForUser(user));
+    router.replace(postLoginDestination(user, next, dashboardPathForUser(user)));
   }, [router, searchParams]);
 
   async function onSubmit(e: React.FormEvent) {
@@ -85,7 +86,7 @@ export default function LoginPage() {
       const next = searchParams.get("next");
       const storedUser = getUser();
       setPassword(""); setChoices([]);
-      router.replace(next?.startsWith("/dashboard/") ? next : dashboardPathForUser(storedUser));
+      router.replace(postLoginDestination(storedUser, next, dashboardPathForUser(storedUser)));
     } catch (err: unknown) {
       if (mounted.current) { setPassword(""); setChoices([]); setSelected(""); toast.error(extractErrorMessage(err)); }
     } finally {

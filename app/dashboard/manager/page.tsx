@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { fetchOrderById, fetchOrders } from "@/lib/orders";
+import { overviewPaymentLabel } from "@/lib/acceptance-corrections";
 import {
   fetchManagerOverview,
   subscribeManagerAnalyticsStream,
@@ -63,6 +64,7 @@ type InvoiceLite = {
 };
 
 type OrderLite = {
+  paymentType?: string | null;
   id: string;
   orderNumber?: string | number | null;
   status?: OrderStatus | null;
@@ -307,11 +309,6 @@ function formatShortDate(value: string | null | undefined, locale: string) {
 function hasInvoiceReady(order: OrderLite) {
   const invoice = order.invoice ?? order.Invoice;
   return Boolean(invoice?.invoiceUrl);
-}
-
-function hasPaymentPending(order: OrderLite) {
-  const invoice = order.invoice ?? order.Invoice;
-  return Boolean(invoice?.paymentUrl) && invoice?.status !== "paid";
 }
 
 function orderRef(order: OrderLite, fallback: string) {
@@ -1047,7 +1044,7 @@ export default function ManagerDashboardPage() {
                             )}
                           </Badge>
                           <span className="w-fit rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700">
-                            {hasPaymentPending(order) ? "COD" : "Prepaid"}
+                            {overviewPaymentLabel(order)}
                           </span>
                           <span className="inline-flex items-center gap-1 text-slate-500">
                             <FileText className="h-3.5 w-3.5" />

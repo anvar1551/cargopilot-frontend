@@ -1,3 +1,11 @@
+# Current acceptance correction — 2026-10-09
+
+Six bounded findings corrected: demo handover contract/resume (demo-only), overview payment truthfulness, guarded empty history refresh, cash/billing translations, actor-appropriate login destinations, and accessible exact component-table scrolling. No backend API, permissions or financial-policy changes. [Acceptance_Corrections.md](Acceptance_Corrections.md) records exact scope and limitations.
+
+Evidence: 8 new + 20 affected session cases, final frontend no-emit and focused lint (zero errors/two existing warnings). Actual existing demo completed pickup/warehouse intake retaining driver cash -> explicit offer -> exact acceptance -> independent settlement, with matching retries and two wrong-actor denials. Read-only PostgreSQL verified one offer, four receipts, three exact custody operations, unchanged source and no invoice/accounting effects. Browser confirmed offer/acceptance holder states, overview Unknown and stale-next fallback. Settlement HTTP evidence is separate from browser evidence. Corrected pricing-table mobile/menu/history visual rechecks remain pending after browser control stalled. Unchanged concurrency/rollback/socket evidence reused; demo/data preserved.
+
+No new feature batch begins here. Next is bounded visual acceptance of these corrected views and external review. Older sections below describe historical evidence and pending features; they do not supersede the current verification limits.
+
 # Current restricted service-charge cash actions (2026-10-08)
 
 | Capability / actor | Implemented integration and evidence |

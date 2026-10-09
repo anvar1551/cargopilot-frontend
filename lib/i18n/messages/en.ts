@@ -134,12 +134,16 @@ export const en = {
     },
     billing: {
       group: "Billing & Pricing",
+      cash: "Service-charge cash",
+      orderPreparation: "Order billing preparation",
       finance: "Finance Control",
       pricing: "Pricing",
       providers: "Payment Providers",
       integrations: "Integrations",
     },
     billingDesc: {
+      cash: "Collection, explicit handoffs and independent settlement",
+      orderPreparation: "Payer instructions and exact approved selling prices",
       finance: "Payables, treasury, and reconciliation",
       pricing: "Tariffs, SLA, and zone rules",
       providers: "Provider credentials and activation",

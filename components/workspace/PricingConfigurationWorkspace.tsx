@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { pricingHistoryReady } from "@/lib/acceptance-corrections";
 import { useQuery } from "@tanstack/react-query";
 import { hasPermission } from "@/lib/auth";
 import { useWorkspaceSession } from "@/lib/workspace";
@@ -185,7 +186,7 @@ function Configuration({
   });
   const history = useQuery({
     queryKey: ["pricing-history", context, tab, selected, cursor.at(-1)],
-    enabled: can("pricing.read") && (tab === "policy" || !!selected),
+    enabled: pricingHistoryReady(can("pricing.read"), tab, selected),
     retry: false,
     queryFn: () =>
       readPricing<Page>(context, "/workflow", {
@@ -197,7 +198,7 @@ function Configuration({
   });
   const refresh = () => {
     void list.refetch();
-    void history.refetch();
+    if (pricingHistoryReady(can("pricing.read"), tab, selected)) void history.refetch();
   };
   const edit = async () => {
     setDraftError("");

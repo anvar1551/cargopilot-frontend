@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { getUser, hasPermission } from "@/lib/auth";
+import { navigationLabel } from "@/lib/acceptance-corrections";
 import { useSupportSummary } from "@/lib/use-support-summary";
 import { useErpSidebarStore } from "@/store/useErpSidebarStore";
 
@@ -49,6 +50,7 @@ import {
 type NavItem = {
   labelKey: string;
   label?: string;
+  description?: string;
   href: string;
   icon: React.ComponentType<{ className?: string }>;
   disabled?: boolean;
@@ -173,6 +175,7 @@ const BILLING_ITEMS: NavItem[] = [
   {
     labelKey: "managerSidebar.billing.cash",
     label: "Service-charge cash",
+    description: "Collection, explicit handoffs and independent settlement",
     href: "/dashboard/service-cash",
     icon: CreditCard,
   },
@@ -204,6 +207,7 @@ const BILLING_ITEMS: NavItem[] = [
   {
     labelKey: "managerSidebar.billing.orderPreparation",
     label: "Order billing preparation",
+    description: "Payer instructions and exact approved selling prices",
     href: "/dashboard/manager/order-billing",
     icon: CreditCard,
     requiredPermissions: [
@@ -570,11 +574,13 @@ export default function ErpSidebar() {
                           />
                           <div className="min-w-0">
                             <p className="truncate text-sm font-medium">
-                              {t(item.labelKey)}
+                              {navigationLabel(t(item.labelKey), item.labelKey, item.label ?? "Billing workspace")}
                             </p>
                             <p className="truncate text-xs text-slate-400">
-                              {t(
+                              {navigationLabel(
+                                t(`managerSidebar.billingDesc.${item.labelKey.split(".").pop()}`),
                                 `managerSidebar.billingDesc.${item.labelKey.split(".").pop()}`,
+                                item.description ?? item.label ?? "Billing workspace",
                               )}
                             </p>
                           </div>
