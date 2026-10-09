@@ -8,7 +8,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { useI18n } from "@/components/i18n/I18nProvider";
-import { getPrimaryWarehouseId, getUser } from "@/lib/auth";
+import { getPrimaryWarehouseId, getUser, hasPermission, authContext, authEpoch } from "@/lib/auth";
 import { getMapboxToken } from "@/lib/mapbox";
 import {
   READ_ONLY_ORDER_CAPABILITIES,
@@ -933,7 +933,7 @@ export default function OrderDetailsView({
 
   const canOpenLabel =
     hasAnyParcelLabel || Boolean(order?.labelKey) || invoiceStatus === "paid";
-  const canOpenInvoice = Boolean(invoice?.id) && invoiceStatus === "paid";
+  const canOpenInvoice = Boolean(invoice?.id) && hasPermission(currentUser, "payments.intents.read");
 
   const {
     data: labelBundle,
@@ -1224,16 +1224,18 @@ export default function OrderDetailsView({
   };
 
   const openInvoice = async () => {
-    if (!order?.id) return;
+    if (!order?.id || !selectedContext) return;
+    const epoch = authEpoch();
+    const current = () => selectedContext === authContext() && epoch === authEpoch();
 
     try {
       setDocLoading("invoice");
       const url = await getInvoiceUrl(order.id);
-      window.open(url, "_blank", "noopener,noreferrer");
-    } catch (err: unknown) {
-      toast.error(extractErrorMessage(err, "Could not open invoice"));
+      if (current()) window.open(url, "_blank", "noopener,noreferrer");
+    } catch {
+      if (current()) toast.error("Invoice file unavailable or document access denied.");
     } finally {
-      setDocLoading(null);
+      if (current()) setDocLoading(null);
     }
   };
 
@@ -2729,9 +2731,14 @@ export default function OrderDetailsView({
                       </Button>
                     </div>
 
-                    {!canOpenInvoice && invoice?.id && invoiceStatus !== "paid" ? (
+                    {(hasPermission(currentUser, "finance.invoices.read") || hasPermission(currentUser, "finance.invoices.issue")) && (
+                      <Link className="text-sm underline" href={invoice?.id ? `/dashboard/manager/invoices?invoice=${invoice.id}` : `/dashboard/manager/invoices?order=${order.id}`}>
+                        Sales invoices — inspect or prepare manual issuance
+                      </Link>
+                    )}
+                    {!canOpenInvoice && invoice?.id ? (
                       <p className="text-xs text-muted-foreground">
-                        Invoice PDF becomes available after payment confirmation.
+                        PDF signing requires separate authorized document access. Invoice issuance and cash settlement do not prove payment.
                       </p>
                     ) : null}
 

@@ -1,3 +1,20 @@
+# Current manual invoice workspace (2026-10-09)
+
+| Capability / actor | Current integration / acceptance boundary |
+| --- | --- |
+| Invoice register/detail / accepted invoice reader | One canonical /dashboard/manager/invoices, Billing → Sales invoices; bounded no-store names/numbers, exact amount/currency/payer/issuer/dates/status under tenant/company/entity/object/customer scopes. |
+| Named order eligibility / accepted manual issuer | Authoritative action-scoped discovery/preflight; current price/components/payer/policy-state/base-currency and explicit rejection reasons. No manual UUID selection or general shipment permission workaround. |
+| Manual issuance / accepted issuer | Existing operationId + priceApprovalId + reason; persistence/readback and exclusive locks before send, original explicit retries/reload, no retarget/abandon/replay or late-context confirmation. Historical receipt separated from current state. |
+| Invoice files / separately authorized document actor | Existing signing retained, no false paid-only gate; current selected context/epoch required. No new document grant or fabricated PDF. Missing file/authority explained. |
+| Navigation/consolidation | One workspace linked from sidebar/orders/billing prep; supported read and issue deep links. No old standalone invoice page existed; no component deletion/legacy redirect invented. Existing summaries, receivables and supplier bills preserved. |
+| Naming/layout | Business names/numbers, no rendered UUIDs/technical JSON in affected invoice view; responsive min-width/stacking/wrapping and keyboard-scrollable exact components. Rendered visual verification pending. |
+
+Evidence: 17 distinct focused invoice client cases (3 actual static React markup), 8 affected existing navigation regressions, 5 actual HTTP/PostgreSQL cases. Matching retries create one invoice/receipt/held outbox; foreign/unauthorized/conflicting operations leave graph digests unchanged. Issuer-only membership uses no shipment authority. Final both no-emit and focused lint (two existing order image warnings); two exclusively owned disposable resources removed. Detailed commands and API/rollout limits: [Manual_Invoice_Workspace.md](Manual_Invoice_Workspace.md). Calculation/concurrency/rollback/DOM-06/socket evidence reused; no real storage/PDF/provider or browser/device claim. Existing manual demo preserved.
+
+Unavailable: automatic/consolidated invoicing, corrections/refunds, payment updates/accounting/FX/merchant COD, PDF generation, and unresolved-intent reconciliation. Public-identifier API redesign remains unimplemented. No UUID-free API claim. Separate duplicate-screen review: business/customers overlaps canonical customers; warehouse alias already shares its canonical workspace. No unrelated consolidation performed.
+
+Next finite task: user visual/manual invoice acceptance; no next implementation batch started. Earlier sections below are historical, including prior invoice-UI omissions.
+
 # Current acceptance correction — 2026-10-09
 
 Six bounded findings corrected: demo handover contract/resume (demo-only), overview payment truthfulness, guarded empty history refresh, cash/billing translations, actor-appropriate login destinations, and accessible exact component-table scrolling. No backend API, permissions or financial-policy changes. [Acceptance_Corrections.md](Acceptance_Corrections.md) records exact scope and limitations.

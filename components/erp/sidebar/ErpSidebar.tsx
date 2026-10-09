@@ -173,6 +173,14 @@ const NAV_GROUPS: NavGroup[] = [
 
 const BILLING_ITEMS: NavItem[] = [
   {
+    labelKey: "managerSidebar.billing.invoices",
+    label: "Sales invoices",
+    description: "Invoice register and same-currency manual issuance",
+    href: "/dashboard/manager/invoices",
+    icon: CreditCard,
+    requiredPermissions: ["finance.invoices.read", "finance.invoices.issue"],
+  },
+  {
     labelKey: "managerSidebar.billing.cash",
     label: "Service-charge cash",
     description: "Collection, explicit handoffs and independent settlement",

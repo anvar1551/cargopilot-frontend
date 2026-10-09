@@ -162,6 +162,9 @@ function Billing({
           <Link className="underline" href="/dashboard/manager/pricing">
             Inspect approved configuration →
           </Link>
+          <Link className="underline" href="/dashboard/manager/invoices">
+            Sales invoices →
+          </Link>
         </header>
         {!permissions.length ? (
           <WorkspaceState

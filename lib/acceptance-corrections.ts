@@ -17,13 +17,14 @@ export function postLoginDestination(user: AuthUser | null, next: string | null,
     return any("cash.custody.read") ? next : home;
   }
   if (pathname !== home && !pathname.startsWith(home + "/")) return home;
-  if (url.searchParams.has("order") && !any("shipment.view", "shipment.viewAssigned")) return home;
+  if (url.searchParams.has("order") && !any("shipment.view", "shipment.viewAssigned") && !(pathname === "/dashboard/manager/invoices" && any("finance.invoices.issue"))) return home;
   if (pathname === home || pathname === home + "/settings") return next;
   const routes: Array<[RegExp, string[]]> = [
     [/^\/dashboard\/manager\/customers(?:\/[^/]+)?$/, ["customers.read"]],
     [/^\/dashboard\/(manager|warehouse|customer)\/orders(?:\/[^/]+)?$/, ["shipment.view", "shipment.viewAssigned"]],
     [/^\/dashboard\/manager\/pricing$/, ["pricing.read"]],
     [/^\/dashboard\/manager\/order-billing$/, ["billing.payers.bind", "pricing.orders.accept", "pricing.orders.approve"]],
+    [/^\/dashboard\/manager\/invoices$/, ["finance.invoices.read", "finance.invoices.issue"]],
     [/^\/dashboard\/manager\/users$/, ["membership.invite", "membership.delegateOperational"]],
     [/^\/dashboard\/manager\/drivers$/, ["membership.delegateDrivers"]],
     [/^\/dashboard\/manager\/drivers\/roster$/, ["drivers.read"]],
