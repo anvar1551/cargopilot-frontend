@@ -1,6 +1,5 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
@@ -20,7 +19,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { getUser, hasPermission } from "@/lib/auth";
+import { hasPermission } from "@/lib/auth";
+import { useWorkspaceSession } from "@/lib/workspace";
 import { navigationLabel } from "@/lib/acceptance-corrections";
 import { useSupportSummary } from "@/lib/use-support-summary";
 import { useErpSidebarStore } from "@/store/useErpSidebarStore";
@@ -119,6 +119,14 @@ const NAV_GROUPS: NavGroup[] = [
       },
       {
         labelKey: "managerSidebar.item.warehouses",
+        label: "Warehouse operations",
+        href: "/dashboard/warehouse",
+        icon: Warehouse,
+        requiredPermissions: ["shipment.custody.intake", "shipment.custody.receive", "shipment.custody.dispatch", "shipment.custody.last-mile-offer"],
+      },
+      {
+        labelKey: "managerSidebar.item.warehouses",
+        label: "Warehouse locations",
         href: "/dashboard/manager/warehouses",
         icon: Warehouse,
       },
@@ -346,11 +354,7 @@ export default function ErpSidebar() {
   const pathname = usePathname();
   const { isCollapsed, toggle } = useErpSidebarStore();
   const { t } = useI18n();
-  const user = useSyncExternalStore(
-    () => () => {},
-    () => getUser(),
-    () => null,
-  );
+  const { user } = useWorkspaceSession();
   const canViewSupport = hasPermission(user, "support.view");
   const supportSummaryQuery = useSupportSummary({
     enabled: canViewSupport,

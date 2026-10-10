@@ -13,6 +13,9 @@ export function postLoginDestination(user: AuthUser | null, next: string | null,
   const permissions = new Set(user.permissionCodes ?? []);
   const any = (...keys: string[]) => keys.some(key => permissions.has(key));
   const pathname = url.pathname;
+  if (pathname === "/dashboard/warehouse") {
+    return any("shipment.view") && any("shipment.custody.intake", "shipment.custody.receive", "shipment.custody.dispatch", "shipment.custody.last-mile-offer") ? next : home;
+  }
   if (pathname === "/dashboard/service-cash" || pathname === "/dashboard/manager/service-cash") {
     return any("cash.custody.read") ? next : home;
   }

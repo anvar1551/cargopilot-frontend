@@ -4,29 +4,21 @@ import * as React from "react";
 import { useCallback, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
-import { useMutation, useQuery } from "@tanstack/react-query";
+import Link from "next/link";
 import { toast } from "sonner";
 
 import AssignDriverDialog from "@/components/orders/AssignDriverDialog";
 import { useI18n } from "@/components/i18n/I18nProvider";
 
-import {
-  updateOrdersStatusBulk,
-} from "@/lib/orders";
-import {
-  fetchWarehouses,
-  normalizeWarehouseType,
-  type Warehouse as WarehouseLite,
-  type WarehouseType,
-} from "@/lib/warehouses";
-import { getPrimaryWarehouseId, getUser } from "@/lib/auth";
-import { getReasonCodeLabel, getStatusLabel } from "@/lib/i18n/labels";
+import { hasPermission } from "@/lib/auth";
+import { useWorkspaceSession } from "@/lib/workspace";
+import { getStatusLabel } from "@/lib/i18n/labels";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+
 import {
   Table,
   TableBody,
@@ -42,13 +34,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+
 
 import {
   Plus,
@@ -123,39 +109,6 @@ const ORDER_STATUSES: OrderStatus[] = [
 ];
 
 const MAX_BATCH_SIZE = 100;
-const REASON_REQUIRED_STATUSES = new Set<OrderStatus>([
-  "exception",
-  "return_in_progress",
-  "cancelled",
-]);
-
-const COMMON_REASON_CODES = [
-  "OTHER",
-  "SENDER_NOT_AVAILABLE",
-  "RECIPIENT_NOT_AVAILABLE",
-  "BAD_SENDER_ADDRESS",
-  "BAD_RECIPIENT_ADDRESS",
-  "OUT_OF_PICKUP_AREA",
-  "OUT_OF_DELIVERY_AREA",
-  "TO_BE_RETURNED",
-  "CANCELLED_BY_CUSTOMER",
-  "DRIVER_CANCELLED",
-  "LOST",
-  "DAMAGED",
-];
-
-const LOCATION_STATUS_OPTIONS: Record<WarehouseType, OrderStatus[]> = {
-  warehouse: ["at_warehouse", "in_transit", "out_for_delivery", "exception"],
-  pickup_point: [
-    "at_warehouse",
-    "in_transit",
-    "out_for_delivery",
-    "delivered",
-    "exception",
-    "return_in_progress",
-  ],
-};
-
 function orderLabel(order: OrderItem) {
   return order.orderNumber ? `#${order.orderNumber}` : "Unnumbered order";
 }
@@ -194,15 +147,6 @@ function paymentStateLabel(state?: string | null) {
   return value;
 }
 
-function errorMessage(err: unknown, fallback: string) {
-  if (!err || typeof err !== "object") return fallback;
-  const e = err as {
-    response?: { data?: { error?: string } };
-    message?: string;
-  };
-  return e.response?.data?.error ?? e.message ?? fallback;
-}
-
 type ScanMatch = {
   orderId: string;
   kind: "orderId" | "orderNumber" | "parcelCode";
@@ -222,9 +166,8 @@ export default function DispatchCenter({
   const searchParams = useSearchParams();
   const { t } = useI18n();
 
-  const canOperateTasks = scope === "erp" || scope === "warehouse";
-  const authUser = useMemo(() => getUser(), []);
-  const attachedWarehouseId = getPrimaryWarehouseId(authUser);
+  const session = useWorkspaceSession();
+  const canOperateTasks = scope === "erp" && hasPermission(session.user, "shipment.assignCourier");
 
   const [activeStatusTab, setActiveStatusTab] = useState<"all" | OrderStatus>("all");
 
@@ -232,116 +175,12 @@ export default function DispatchCenter({
   const [assignOpen, setAssignOpen] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
 
-  const [operationMode, setOperationMode] = useState<"assign" | "status">("assign");
-  const [statusTarget, setStatusTarget] = useState<OrderStatus | "">("");
-  const [statusReasonCode, setStatusReasonCode] = useState("");
-  const [statusRegion, setStatusRegion] = useState("");
-  const [statusNote, setStatusNote] = useState("");
-  const [statusWarehouseId, setStatusWarehouseId] = useState("");
-
   const [scanValue, setScanValue] = useState("");
   const [scanError, setScanError] = useState<string | null>(null);
   const [scannedParcelsByOrder, setScannedParcelsByOrder] = useState<
     Record<string, string[]>
   >({});
   const lastHandledExternalScanIdRef = React.useRef<number | null>(null);
-
-  const reasonRequired =
-    statusTarget !== "" && REASON_REQUIRED_STATUSES.has(statusTarget);
-  const needsWarehouseSelection =
-    scope === "erp" &&
-    (statusTarget === "at_warehouse" ||
-      statusTarget === "in_transit" ||
-      statusTarget === "out_for_delivery");
-
-  const warehousesQuery = useQuery<WarehouseLite[]>({
-    queryKey: ["warehouses", "status-bulk"],
-    queryFn: fetchWarehouses,
-    enabled:
-      canOperateTasks &&
-      operationMode === "status" &&
-      (needsWarehouseSelection || scope === "warehouse"),
-  });
-
-  const attachedWarehouseType = useMemo<WarehouseType>(() => {
-    if (scope !== "warehouse") return "warehouse";
-    const attached = (warehousesQuery.data ?? []).find(
-      (item) => item.id === attachedWarehouseId,
-    );
-    return normalizeWarehouseType(attached?.type);
-  }, [attachedWarehouseId, scope, warehousesQuery.data]);
-
-  const attachedWarehouseName = useMemo(() => {
-    if (!attachedWarehouseId) return null;
-    const attached = (warehousesQuery.data ?? []).find(
-      (item) => item.id === attachedWarehouseId,
-    );
-    return attached?.name ?? null;
-  }, [attachedWarehouseId, warehousesQuery.data]);
-
-  const warehouseStatusOptions = useMemo<OrderStatus[]>(() => {
-    if (scope === "erp") return ORDER_STATUSES;
-    return LOCATION_STATUS_OPTIONS[attachedWarehouseType];
-  }, [attachedWarehouseType, scope]);
-
-  React.useEffect(() => {
-    if (!statusTarget) return;
-    if (!warehouseStatusOptions.includes(statusTarget)) {
-      setStatusTarget("");
-    }
-  }, [statusTarget, warehouseStatusOptions]);
-
-  const statusMutation = useMutation({
-    mutationFn: async () => {
-      if (!canOperateTasks) throw new Error("You do not have access to update status");
-      if (batchIds.length === 0) throw new Error("Add at least one order to batch");
-      if (batchIds.length > MAX_BATCH_SIZE) {
-        throw new Error(`Maximum ${MAX_BATCH_SIZE} orders are allowed in one operation`);
-      }
-      if (!statusTarget) {
-        throw new Error("Select status");
-      }
-      if (reasonRequired && !statusReasonCode) {
-        throw new Error("Reason code is required for this status");
-      }
-
-      if (scope === "warehouse" && !attachedWarehouseId) {
-        throw new Error("Warehouse user has no attached warehouse");
-      }
-
-      if (needsWarehouseSelection && !statusWarehouseId) {
-        throw new Error("Select warehouse for this update");
-      }
-
-      return updateOrdersStatusBulk({
-        orderIds: batchIds,
-        status: statusTarget,
-        warehouseId:
-          scope === "warehouse"
-            ? attachedWarehouseId
-            : needsWarehouseSelection
-              ? statusWarehouseId
-              : null,
-        reasonCode: statusReasonCode || null,
-        note: statusNote.trim() || null,
-        region: statusRegion.trim() || null,
-      });
-    },
-    onSuccess: () => {
-      toast.success(`Updated ${batchIds.length} order(s)`);
-      setBatchIds([]);
-      setScannedParcelsByOrder({});
-      setStatusTarget("");
-      setStatusReasonCode("");
-      setStatusNote("");
-      setStatusRegion("");
-      setStatusWarehouseId("");
-      onRefresh?.();
-    },
-    onError: (err: unknown) => {
-      toast.error(errorMessage(err, "Failed to update status"));
-    },
-  });
 
   const byStatus = useMemo(() => {
     const map: Record<OrderStatus | "other", OrderItem[]> = {
@@ -596,49 +435,6 @@ export default function DispatchCenter({
     return warnings;
   }, [batchOrders, scannedParcelsByOrder]);
 
-  const statusDisabledReasons = useMemo(() => {
-    if (operationMode !== "status") return [] as string[];
-
-    const reasons: string[] = [];
-    if (!canOperateTasks) {
-      reasons.push("You do not have access to update statuses.");
-    }
-    if (batchIds.length === 0) {
-      reasons.push("Add at least one order to the batch.");
-    }
-    if (batchIds.length > MAX_BATCH_SIZE) {
-      reasons.push(`Maximum ${MAX_BATCH_SIZE} orders are allowed.`);
-    }
-    if (scope === "warehouse" && !attachedWarehouseId) {
-      reasons.push("No warehouse is attached to your account.");
-    }
-    if (!statusTarget) {
-      reasons.push("Select status.");
-    }
-    if (reasonRequired && !statusReasonCode) {
-      reasons.push("Reason code is required for this status.");
-    }
-    if (needsWarehouseSelection && !statusWarehouseId) {
-      reasons.push("Select a warehouse for this update.");
-    }
-
-    return reasons;
-  }, [
-    operationMode,
-    canOperateTasks,
-    batchIds.length,
-    scope,
-    attachedWarehouseId,
-    statusTarget,
-    reasonRequired,
-    statusReasonCode,
-    needsWarehouseSelection,
-    statusWarehouseId,
-  ]);
-
-  const canApplyStatus =
-    operationMode === "status" && statusDisabledReasons.length === 0;
-
   const CartContent = (
     <div className="space-y-3">
       <div className="space-y-2">
@@ -748,166 +544,12 @@ export default function DispatchCenter({
       ) : null}
 
       <div className="rounded-xl border bg-background p-3 space-y-3">
-        <div className="text-sm font-medium">{t("dispatch.operations")}</div>
-
-        {!canOperateTasks ? (
-          <div className="rounded-xl border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-            {t("dispatch.taskUnavailable")}
-          </div>
-        ) : (
-          <div className="grid gap-2 grid-cols-2">
-            <Button
-              type="button"
-              variant={operationMode === "assign" ? "default" : "outline"}
-              onClick={() => setOperationMode("assign")}
-              className="rounded-xl"
-            >
-              {t("dispatch.assignDriver")}
-            </Button>
-            <Button
-              type="button"
-              variant={operationMode === "status" ? "default" : "outline"}
-              onClick={() => setOperationMode("status")}
-              className="rounded-xl"
-            >
-              {t("dispatch.updateStatus")}
-            </Button>
-          </div>
-        )}
-
-        {operationMode === "assign" ? (
-          <Button
-            className="w-full gap-2"
-            onClick={() => setAssignOpen(true)}
-            disabled={!canOperateTasks || batchIds.length === 0}
-          >
-            <Clipboard className="h-4 w-4" />
-            {t("dispatch.assignSelected")}
-          </Button>
-        ) : (
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label>{t("dispatch.statusOptional")}</Label>
-              <Select
-                value={statusTarget || undefined}
-                onValueChange={(v) => setStatusTarget(v as OrderStatus)}
-              >
-                <SelectTrigger className="rounded-xl">
-                  <SelectValue placeholder={t("dispatch.selectStatus")} />
-                </SelectTrigger>
-                <SelectContent>
-                  {warehouseStatusOptions.map((status) => (
-                    <SelectItem key={status} value={status}>
-                      {getStatusLabel(status, t)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {reasonRequired ? (
-              <div className="space-y-1.5">
-                <Label>{t("dispatch.reasonCode")}</Label>
-                <Select
-                  value={statusReasonCode || undefined}
-                  onValueChange={setStatusReasonCode}
-                >
-                  <SelectTrigger className="rounded-xl">
-                    <SelectValue placeholder={t("dispatch.selectReasonCode")} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {COMMON_REASON_CODES.map((code) => (
-                      <SelectItem key={code} value={code}>
-                        {getReasonCodeLabel(code, t)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            ) : null}
-
-            {needsWarehouseSelection ? (
-              <div className="space-y-1.5">
-                <Label>{t("dispatch.warehouse")}</Label>
-                <Select
-                  value={statusWarehouseId || undefined}
-                  onValueChange={setStatusWarehouseId}
-                >
-                  <SelectTrigger className="rounded-xl">
-                    <SelectValue placeholder={t("dispatch.selectWarehouse")} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(warehousesQuery.data ?? []).map((w) => (
-                      <SelectItem key={w.id} value={w.id}>
-                        {w.name} {w.location ? `- ${w.location}` : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            ) : null}
-
-            {scope === "warehouse" ? (
-              <div className="rounded-xl border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                {t("dispatch.warehouseFromProfile")}
-                <span className="ml-1 font-medium">{attachedWarehouseName ?? "not set"}</span>
-                <span className="ml-2">
-                  (
-                  {attachedWarehouseType === "pickup_point"
-                    ? t("managerAnalytics.finance.holderTypes.pickup_point")
-                    : t("managerAnalytics.finance.holderTypes.warehouse")}
-                  )
-                </span>
-              </div>
-            ) : null}
-
-            <div className="space-y-1.5">
-              <Label>{t("dispatch.regionOptional")}</Label>
-              <Input
-                value={statusRegion}
-                onChange={(e) => setStatusRegion(e.target.value)}
-                placeholder={t("dispatch.regionPlaceholder")}
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>{t("dispatch.noteOptional")}</Label>
-              <Input
-                value={statusNote}
-                onChange={(e) => setStatusNote(e.target.value)}
-                placeholder={t("dispatch.notePlaceholder")}
-              />
-            </div>
-
-            <div className="rounded-xl border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-              {t("dispatch.applyStatusHint")}
-            </div>
-
-            {statusDisabledReasons.length > 0 ? (
-              <div className="rounded-xl border border-amber-300/50 bg-amber-50 px-3 py-2 text-xs text-amber-900 space-y-1">
-                {statusDisabledReasons.map((reason, idx) => (
-                  <div key={`${reason}-${idx}`}>- {reason}</div>
-                ))}
-              </div>
-            ) : null}
-
-            <Button
-              className="w-full"
-              onClick={() => {
-                if (parcelCompletenessWarnings.length > 0) {
-                  toast.warning(
-                    "Some multi-piece shipments are incomplete in batch. Please verify missing parcels.",
-                  );
-                }
-                statusMutation.mutate();
-              }}
-              disabled={!canApplyStatus || statusMutation.isPending}
-              title={statusDisabledReasons[0] || undefined}
-            >
-              {statusMutation.isPending ? t("dispatch.updating") : t("dispatch.applyStatus")}
-            </Button>
-          </div>
-        )}
+        <div className="text-sm font-medium">Initial assignment</div>
+        <Button className="w-full h-auto whitespace-normal" onClick={() => setAssignOpen(true)} disabled={!canOperateTasks || batchIds.length === 0}>
+          <Clipboard className="h-4 w-4" />{t("dispatch.assignSelected")}
+        </Button>
+        <Link className="block break-words text-sm underline underline-offset-4" href="/dashboard/warehouse">Open scoped receiving and custody work</Link>
+        <p className="text-sm text-muted-foreground">Custody transitions require whole-order confirmation, expected state and exact warehouse authority. Generic bulk status changes are unavailable.</p>
       </div>
     </div>
   );

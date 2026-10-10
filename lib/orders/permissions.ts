@@ -51,27 +51,7 @@ export function getErpOrderCapabilities(user: AuthUser | null | undefined): Orde
   };
 }
 
+/** Warehouse custody and cash actions have their own canonical scoped workflows. */
 export function getWarehouseOrderCapabilities(user: AuthUser | null | undefined): OrderActionCapabilities {
-  return {
-    ...READ_ONLY_ORDER_CAPABILITIES,
-    canSelect:
-      hasPermission(user, "shipment.assignCourier") ||
-      hasPermission(user, "shipment.changeStatus") ||
-      hasPermission(user, "warehouse.scanIn") ||
-      hasPermission(user, "warehouse.scanOut"),
-    canAssignDriver: hasPermission(user, "shipment.assignCourier"),
-    canChangeStatus:
-      hasPermission(user, "shipment.changeStatus") ||
-      hasPermission(user, "warehouse.scanIn") ||
-      hasPermission(user, "warehouse.scanOut"),
-    canBookCarrier: false,
-    canReadPayments: false,
-    canRetryPayment: false,
-    canSettleCash: false,
-    canHandleWarehouseCash:
-      hasPermission(user, "warehouse.scanIn") ||
-      hasPermission(user, "warehouse.scanOut"),
-    canDelete: false,
-    canExport: hasPermission(user, "shipment.export"),
-  };
+  return { ...READ_ONLY_ORDER_CAPABILITIES, canOpenDetails: hasPermission(user, "shipment.view"), canExport: hasPermission(user, "shipment.export") };
 }

@@ -23,6 +23,7 @@ import {
   READ_ONLY_ORDER_CAPABILITIES,
 } from "@/lib/orders/permissions";
 import { useErpSidebarStore } from "@/store/useErpSidebarStore";
+import { usesGenericOrderModal } from "@/lib/order-modal-route";
 
 export default function DashboardShell({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -30,12 +31,10 @@ export default function DashboardShell({ children }: { children: ReactNode }) {
   const searchParams = useSearchParams();
   const segment = useSelectedLayoutSegment();
   const isErpWorkspace = segment === "manager";
-  const orderModalId = searchParams.get("order");
+  const genericModalRoute = usesGenericOrderModal(pathname);
+  const orderModalId = genericModalRoute ? searchParams.get("order") : null;
   const [activeOrderModalId, setActiveOrderModalId] = useState<string | null>(orderModalId);
-  const isDirectOrderDetailsPage = /^\/dashboard\/(manager|warehouse|customer)\/orders\/[^/]+$/i.test(
-    pathname || "",
-  );
-  const showOrderModal = Boolean(activeOrderModalId) && !isDirectOrderDetailsPage;
+  const showOrderModal = genericModalRoute && Boolean(activeOrderModalId);
 
   const isCollapsed = useErpSidebarStore((s) => s.isCollapsed);
   const isMobileOpen = useErpSidebarStore((s) => s.isMobileOpen);
@@ -160,7 +159,7 @@ export default function DashboardShell({ children }: { children: ReactNode }) {
               Full order details modal with route, shipment, payment, and timeline tabs.
             </DialogDescription>
           </DialogHeader>
-          {activeOrderModalId ? (
+          {showOrderModal && activeOrderModalId ? (
             <div className="h-full overflow-x-hidden overflow-y-auto">
               <OrderDetailsView
                 orderId={activeOrderModalId}

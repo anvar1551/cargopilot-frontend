@@ -1,3 +1,24 @@
+# Current warehouse operations workspace (2026-10-10)
+
+| Feature | Current integration / boundary |
+| --- | --- |
+| Floor/orders/incoming work | Canonical /dashboard/warehouse: bounded selected-context discovery, named warehouse filter, current durable custody phases and no inferred global metrics. Warehouse-held pending nominations remain visible with no new action. |
+| Scanning/preflight | Exact order number/parcel code lookup within existing authority; full physical parcel confirmation, fresh expected state. Identification is never acceptance or bulk execution. |
+| Receiving | Existing receipt-backed intake/accepted transport receive. Exact destination staff scope and optional required reasoned suspension recovery preserved. |
+| Dispatch/handover | Named accepted typed memberships and existing owned planned internal legs; offers retain warehouse custody until exact driver acceptance. Shared company dispatch links to the same workflow and retains initial assignment. |
+| Retry/persistence | Original context/operation/state/whole-parcel set/targets durably saved before send; explicit matching retries, no retarget, abandon or replay; historical receipt separated from current state. |
+| Cash/invoices/location admin | Canonical Service Cash, Sales Invoices and warehouse-location screens remain separate. No duplicated cash mutations or implicit grants. |
+| Manifest | Scoped loaded-page print checklist retained. Existing full driver-route manifests remain at authorized dispatch/driver-roster entrypoints; this page never claims a complete inventory or monetary authority. |
+| Legacy entrypoints | Old warehouse board and its dead queries/generic status/cash paths replaced. Warehouse order bookmarks redirect to ?custody= canonical preflight; legacy generic warehouse detail mutations disabled. |
+| Shared shell/navigation | Invoice route owns ?order= and never mounts generic detail; genuine modal routes preserved. Warehouse deep links work for permitted cross-workspace actors; selected membership remains server-authoritative. |
+| Customer portal | Intentional separate self-service workspace retained. Existing shared-identity customer hints and query/presentation compatibility deferred; no employee-management duplicate claim. |
+
+Executed: 18 new client cases (2 static markup) + 8 affected navigation regressions; 24 distinct backend mocked cases; 6 actual HTTP/PostgreSQL cases. Final no-emit/lint, owned-resource cleanup. Reused unchanged concurrency/rollback/cash/invoice/proof/socket evidence. [Warehouse_Operations_Workspace.md](Warehouse_Operations_Workspace.md) records the finite plan, exact APIs, prerequisites, cleanup and evidence. Browser/mobile/keyboard/zoom/printing verification remains pending; no screenshot or rendered-success claim.
+
+Blocked: warehouse self-pickup delivery, exception/return overrides, nomination cancellation/recovery and unprovisioned transport planning. No policy/grant/schema expansion. No cash/invoice/accounting/FX changes. Demo/data, dist and blocked cleanup preserved. Next is external review, no next implementation batch.
+
+Older sections below are historical.
+
 # Current manual invoice workspace (2026-10-09)
 
 | Capability / actor | Current integration / acceptance boundary |
