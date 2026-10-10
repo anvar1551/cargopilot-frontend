@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { getToken, getUser, roleToDashboardPath } from "@/lib/auth";
+import { dashboardPathForUser, getToken, getUser } from "@/lib/auth";
 
 export default function DashboardLayout({
   children,
@@ -21,7 +21,7 @@ export default function DashboardLayout({
     }
 
     // Ensure user stays in correct role dashboard
-    const expectedPath = roleToDashboardPath(user.role);
+    const expectedPath = dashboardPathForUser(user);
     if (!window.location.pathname.startsWith(expectedPath)) {
       router.replace(expectedPath);
     }

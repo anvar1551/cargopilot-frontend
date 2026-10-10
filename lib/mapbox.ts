@@ -43,6 +43,8 @@ type MapboxFeature = {
   };
 } & {
   properties?: {
+    name?: string;
+    feature_type?: string;
     full_address?: string;
     place_formatted?: string;
     context?: {
@@ -102,14 +104,21 @@ function contextText(
   );
 }
 
+function normalizeText(value?: string | null) {
+  const v = String(value ?? "").trim();
+  return v || null;
+}
+
 function bestCity(feature: MapboxFeature) {
   const ctx = feature.properties?.context;
+  const featureType = String(feature.properties?.feature_type ?? "").toLowerCase();
+  const name = normalizeText(feature.properties?.name);
   return (
+    // Treat locality as district-level in many regions; keep city bound to place/region.
+    (featureType === "place" ? name : null) ??
     ctx?.place?.name ??
-    ctx?.locality?.name ??
     ctx?.region?.name ??
     contextText(feature.context, "place") ??
-    contextText(feature.context, "locality") ??
     contextText(feature.context, "region") ??
     null
   );
@@ -120,20 +129,24 @@ function normalizeFeatureAddress(
   fallbackLabel: string,
 ): ReverseGeocodeAddress {
   const v6Ctx = feature.properties?.context;
-  const house =
-    feature.properties?.context?.address?.address_number?.trim() ??
-    feature.address?.trim();
-  const streetName =
-    feature.properties?.context?.address?.street_name?.trim() ??
-    feature.properties?.context?.street?.name?.trim() ??
-    feature.text?.trim() ??
-    null;
+  const house = normalizeText(
+    feature.properties?.context?.address?.address_number ??
+      feature.address,
+  );
+  const streetName = normalizeText(
+    feature.properties?.context?.address?.street_name ??
+      feature.properties?.context?.street?.name ??
+      feature.properties?.name ??
+      feature.text,
+  );
   const street = house && streetName ? `${streetName} ${house}` : streetName;
   const neighborhood =
     v6Ctx?.neighborhood?.name ??
     v6Ctx?.district?.name ??
+    v6Ctx?.locality?.name ??
     contextText(feature.context, "neighborhood") ??
-    contextText(feature.context, "district");
+    contextText(feature.context, "district") ??
+    contextText(feature.context, "locality");
 
   return {
     formattedAddress:
@@ -146,6 +159,53 @@ function normalizeFeatureAddress(
     street,
     postalCode: v6Ctx?.postcode?.name ?? contextText(feature.context, "postcode"),
   };
+}
+
+function featureTypeOf(feature: MapboxFeature) {
+  const explicit = String(feature.properties?.feature_type ?? "")
+    .trim()
+    .toLowerCase();
+  if (explicit) return explicit;
+
+  const fromId = String(feature.id ?? "")
+    .split(".")[0]
+    .trim()
+    .toLowerCase();
+  return fromId || "unknown";
+}
+
+function featureTypeRank(featureType: string) {
+  const ranks: Record<string, number> = {
+    address: 900,
+    street: 800,
+    neighborhood: 700,
+    district: 650,
+    locality: 600,
+    place: 500,
+    region: 400,
+    postcode: 350,
+    country: 300,
+  };
+  return ranks[featureType] ?? 100;
+}
+
+function pickBestFeature(features: MapboxFeature[]) {
+  let best: { feature: MapboxFeature; score: number } | null = null;
+
+  for (const feature of features) {
+    const type = featureTypeOf(feature);
+    const normalized = normalizeFeatureAddress(feature, "");
+    let score = featureTypeRank(type);
+    if (normalized.street) score += 40;
+    if (normalized.neighborhood) score += 20;
+    if (normalized.city) score += 10;
+
+    if (!best || score > best.score) {
+      best = { feature, score };
+    }
+  }
+
+  return best?.feature ?? null;
 }
 
 function normalizeCountryCode(value?: string | null) {
@@ -204,7 +264,7 @@ export async function reverseGeocodeMapbox(params: {
   if (!res.ok) throw new Error(`Reverse geocoding failed (${res.status})`);
 
   const data = (await res.json()) as { features?: MapboxFeature[] };
-  const feature = data.features?.[0];
+  const feature = pickBestFeature(data.features ?? []);
 
   if (!feature) {
     return {
@@ -283,7 +343,7 @@ export async function forwardGeocodeMapbox(params: {
   }
 
   const data = (await res.json()) as { features?: MapboxFeature[] };
-  const feature = data.features?.[0];
+  const feature = pickBestFeature(data.features ?? []);
   if (!feature) return null;
 
   const coordinates = featureCoordinates(feature);

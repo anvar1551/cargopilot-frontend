@@ -7,16 +7,19 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import Providers from "./providers";
 
 export const metadata: Metadata = {
-  title: "Cargopilot",
-  description: "A cargo management system.",
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"),
+  title: {
+    default: "CargoPilot",
+    template: "%s | CargoPilot",
+  },
+  description: "CargoPilot logistics ERP software.",
+  applicationName: "CargoPilot",
   icons: {
     icon: [
-      { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
-      { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
-      { url: "/icon.png", sizes: "512x512", type: "image/png" },
+      { url: "/cargopilot-logo-transparent.png", type: "image/png" },
     ],
-    shortcut: "/favicon-32x32.png",
-    apple: "/apple-icon.png",
+    shortcut: "/cargopilot-logo-transparent.png",
+    apple: "/cargopilot-logo-transparent.png",
   },
 };
 

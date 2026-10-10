@@ -1,4 +1,6 @@
 import { api } from "./api";
+import { authContext } from "./auth";
+import { invoiceDownload } from "./invoice-workspace";
 
 export type OrderLabelUrl = {
   parcelId?: string;
@@ -33,6 +35,7 @@ export async function getOrderLabelUrls(orderId: string): Promise<{
 
 /** Get secure invoice PDF URL */
 export async function getInvoiceUrl(orderId: string) {
-  const res = await api.get(`/api/invoices/orders/${orderId}/url`);
-  return res.data.url;
+  const context = authContext();
+  if (!context) throw Error("Selected company required");
+  return invoiceDownload(context, orderId);
 }

@@ -16,3 +16,12 @@ export type CreateOrderParcelsFieldArray = UseFieldArrayReturn<
   "shipment.parcels",
   "id"
 >;
+
+export type OrderCreationMode = "customer" | "operations";
+export type OrderCreationModeInput = OrderCreationMode | "manager";
+
+export function normalizeOrderCreationMode(
+  mode: OrderCreationModeInput,
+): OrderCreationMode {
+  return mode === "manager" ? "operations" : mode;
+}

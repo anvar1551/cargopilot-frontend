@@ -1,6 +1,17 @@
+import { mutateCash, type CashSingleResult, type CashBulkResult } from "./cash";
 import { api } from "./api";
 import { CreateOrderPayload } from "./validators/order";
 import type { ServiceType } from "./orders/service-types";
+import { authContext, authEpoch } from "./auth";
+import { createInWorkspace } from "./order-workspace";
+
+async function scopedOrderRead(path: string, params?: object) {
+  const context=authContext(),epoch=authEpoch();
+  if(!context)throw Error("Bound login required");
+  const response=await api.get(path,{params,timeout:15000});
+  if(context!==authContext()||epoch!==authEpoch())throw Error("Session changed; order response discarded");
+  return response.data;
+}
 
 export type ParcelInput = {
   weightKg?: number;
@@ -104,6 +115,7 @@ export type Order = {
   id: string;
   orderNumber?: string | number | null;
   status?: string | null;
+  paymentState?: string | null;
   pickupAddress?: string | null;
   dropoffAddress?: string | null;
   pickupLat?: number | null;
@@ -132,7 +144,9 @@ export type Order = {
     id?: string | null;
     name?: string | null;
     companyName?: string | null;
+    email?: string | null;
     phone?: string | null;
+    type?: string | null;
   } | null;
   invoice?: {
     status?: string | null;
@@ -202,6 +216,53 @@ export type Order = {
     }> | null;
   }> | null;
   [key: string]: unknown;
+};
+
+export type OrderLeg = {
+  id: string;
+  orderId: string;
+  sequence: number;
+  mode?: string | null;
+  status?: string | null;
+  fromCountry?: string | null;
+  toCountry?: string | null;
+  transitRoute?: unknown;
+  fromWarehouseId?: string | null;
+  toWarehouseId?: string | null;
+  carrierCode?: string | null;
+  carrierRef?: string | null;
+  vehicleRef?: string | null;
+  plannedDepartureAt?: string | null;
+  plannedArrivalAt?: string | null;
+  actualDepartureAt?: string | null;
+  actualArrivalAt?: string | null;
+  notes?: string | null;
+  carrierProviderId?: string | null;
+  carrierBookingStatus?:
+    | "not_requested"
+    | "requested"
+    | "booked"
+    | "failed"
+    | "cancelled"
+    | string
+    | null;
+  carrierTrackingNumber?: string | null;
+  carrierBookingError?: string | null;
+  carrierBookedAt?: string | null;
+  carrierLastStatusAt?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+};
+
+export type CarrierBookingResponse = {
+  leg: OrderLeg;
+  outbox: {
+    id: string;
+    status: string;
+    idempotencyKey: string;
+    providerId: string | null;
+    providerCode: string;
+  };
 };
 
 export type OrderProofStage = "pickup" | "delivery";
@@ -283,20 +344,17 @@ export type OrderImportPreview = {
 };
 
 export async function createOrder(dto: CreateOrderPayload) {
-  const res = await api.post("/api/orders", dto);
-  return res.data;
+  const context=authContext();if(!context)throw Error("Bound login required");
+  return createInWorkspace(context,"order",dto);
 }
 
 export async function fetchOrders(
   params?: ListOrdersParams,
 ): Promise<OrdersResponse> {
-  const res = await api.get("/api/orders", {
-    params: {
+  return scopedOrderRead("/api/orders", {
       ...params,
       statuses: params?.statuses?.join(",") || undefined,
-    },
   });
-  return res.data;
 }
 
 export async function exportOrdersCsv(params?: ListOrdersParams) {
@@ -308,6 +366,16 @@ export async function exportOrdersCsv(params?: ListOrdersParams) {
     responseType: "blob",
   });
   return res.data as Blob;
+}
+
+export async function deleteOrder(orderId: string) {
+  const res = await api.delete<{
+    deleted: true;
+    orderId: string;
+    orderNumber?: string | null;
+    cleanup?: Record<string, number>;
+  }>(`/api/orders/${orderId}`);
+  return res.data;
 }
 
 export async function downloadOrderImportTemplate() {
@@ -329,8 +397,8 @@ export async function confirmOrderImport(payload: {
   csvText: string;
   customerEntityId?: string | null;
 }) {
-  const res = await api.post("/api/orders/import/confirm", payload);
-  return res.data as { success: boolean; count: number; orders: Order[] };
+  const context=authContext();if(!context)throw Error("Bound login required");
+  return createInWorkspace(context,"import",{...payload,customerEntityId:payload.customerEntityId??null});
 }
 
 export async function fetchOrdersPaged(params?: {
@@ -338,12 +406,50 @@ export async function fetchOrdersPaged(params?: {
   page?: number;
   limit?: number;
 }): Promise<OrdersResponse> {
-  const res = await api.get("/api/orders", { params });
-  return res.data;
+  return scopedOrderRead("/api/orders",params);
 }
 
 export async function fetchOrderById(id: string) {
-  const res = await api.get(`/api/orders/${id}`);
+  if(!/^[0-9a-f-]{36}$/i.test(id))throw Error("Invalid order reference");
+  return scopedOrderRead(`/api/orders/${id}`);
+}
+
+export async function fetchOrderLegs(orderId: string) {
+  const res = await api.get<{ legs: OrderLeg[] }>(`/api/orders/${orderId}/legs`);
+  return res.data.legs;
+}
+
+export async function bookCarrierForOrderLeg(payload: {
+  orderId: string;
+  legId: string;
+  providerId: string;
+}) {
+  const res = await api.post<CarrierBookingResponse>(
+    `/api/orders/${payload.orderId}/legs/${payload.legId}/carrier-booking`,
+    { providerId: payload.providerId },
+  );
+  return res.data;
+}
+
+export async function syncCarrierTrackingForOrderLeg(payload: {
+  orderId: string;
+  legId: string;
+}) {
+  const res = await api.post<CarrierBookingResponse>(
+    `/api/orders/${payload.orderId}/legs/${payload.legId}/carrier-track-sync`,
+  );
+  return res.data;
+}
+
+export async function cancelCarrierForOrderLeg(payload: {
+  orderId: string;
+  legId: string;
+  reason?: string | null;
+}) {
+  const res = await api.post<CarrierBookingResponse>(
+    `/api/orders/${payload.orderId}/legs/${payload.legId}/carrier-cancel`,
+    { reason: payload.reason ?? null },
+  );
   return res.data;
 }
 
@@ -360,110 +466,24 @@ export async function fetchOrderProofLinks(
   return res.data as OrderProofLinksResponse;
 }
 
-export async function collectOrderCash(payload: {
-  orderId: string;
-  kind: "cod" | "service_charge";
-  amount?: number | null;
-  note?: string | null;
-}) {
-  const res = await api.post(`/api/orders/${payload.orderId}/cash/collect`, {
-    kind: payload.kind,
-    amount: payload.amount ?? null,
-    note: payload.note ?? null,
-  });
-  return res.data as { success: boolean; message: string; order: Order };
+export async function collectOrderCash(payload: { orderId: string; kind: "cod" | "service_charge"; note?: string | null }) {
+  return mutateCash("collect", [payload]) as Promise<CashSingleResult>;
 }
-
-export async function collectOrderCashBulk(payload: {
-  items: Array<{
-    orderId: string;
-    kind: "cod" | "service_charge";
-    amount?: number | null;
-    note?: string | null;
-  }>;
-  note?: string | null;
-}) {
-  const res = await api.post(`/api/orders/cash/collect-bulk`, {
-    items: payload.items,
-    note: payload.note ?? null,
-  });
-  return res.data as {
-    success: boolean;
-    count: number;
-    failedCount: number;
-    orders: Order[];
-    failed: Array<{ orderId: string; kind: "cod" | "service_charge"; error: string }>;
-  };
+export async function collectOrderCashBulk(payload: { items: Array<{ orderId: string; kind: "cod" | "service_charge"; note?: string | null }>; note?: string | null }) {
+  return mutateCash("collect", payload.items, { note: payload.note }, true) as Promise<CashBulkResult>;
 }
-
-export async function handoffOrderCash(payload: {
-  orderId: string;
-  kind: "cod" | "service_charge";
-  toHolderType: "driver" | "warehouse" | "pickup_point";
-  toDriverId?: string | null;
-  toWarehouseId?: string | null;
-  note?: string | null;
-}) {
-  const res = await api.post(`/api/orders/${payload.orderId}/cash/handoff`, {
-    kind: payload.kind,
-    toHolderType: payload.toHolderType,
-    toDriverId: payload.toDriverId ?? null,
-    toWarehouseId: payload.toWarehouseId ?? null,
-    note: payload.note ?? null,
-  });
-  return res.data as { success: boolean; message: string; order: Order };
+type CashTarget = { toHolderType: "driver" | "warehouse" | "pickup_point"; toDriverId?: string | null; toWarehouseId?: string | null; note?: string | null };
+export async function handoffOrderCash(payload: { orderId: string; kind: "cod" | "service_charge" } & CashTarget) {
+  return mutateCash("handoff", [payload], payload) as Promise<CashSingleResult>;
 }
-
-export async function settleOrderCash(payload: {
-  orderId: string;
-  kind: "cod" | "service_charge";
-  note?: string | null;
-}) {
-  const res = await api.post(`/api/orders/${payload.orderId}/cash/settle`, {
-    kind: payload.kind,
-    note: payload.note ?? null,
-  });
-  return res.data as { success: boolean; message: string; order: Order };
+export async function settleOrderCash(payload: { orderId: string; kind: "cod" | "service_charge"; note?: string | null }) {
+  return mutateCash("settle", [payload], { note: payload.note }) as Promise<CashSingleResult>;
 }
-
-export async function handoffOrderCashBulk(payload: {
-  items: Array<{ orderId: string; kind: "cod" | "service_charge" }>;
-  toHolderType: "driver" | "warehouse" | "pickup_point";
-  toDriverId?: string | null;
-  toWarehouseId?: string | null;
-  note?: string | null;
-}) {
-  const res = await api.post(`/api/orders/cash/handoff-bulk`, {
-    items: payload.items,
-    toHolderType: payload.toHolderType,
-    toDriverId: payload.toDriverId ?? null,
-    toWarehouseId: payload.toWarehouseId ?? null,
-    note: payload.note ?? null,
-  });
-  return res.data as {
-    success: boolean;
-    count: number;
-    failedCount: number;
-    orders: Order[];
-    failed: Array<{ orderId: string; kind: "cod" | "service_charge"; error: string }>;
-  };
+export async function handoffOrderCashBulk(payload: { items: Array<{ orderId: string; kind: "cod" | "service_charge" }> } & CashTarget) {
+  return mutateCash("handoff", payload.items, payload, true) as Promise<CashBulkResult>;
 }
-
-export async function settleOrderCashBulk(payload: {
-  items: Array<{ orderId: string; kind: "cod" | "service_charge" }>;
-  note?: string | null;
-}) {
-  const res = await api.post(`/api/orders/cash/settle-bulk`, {
-    items: payload.items,
-    note: payload.note ?? null,
-  });
-  return res.data as {
-    success: boolean;
-    count: number;
-    failedCount: number;
-    orders: Order[];
-    failed: Array<{ orderId: string; kind: "cod" | "service_charge"; error: string }>;
-  };
+export async function settleOrderCashBulk(payload: { items: Array<{ orderId: string; kind: "cod" | "service_charge" }>; note?: string | null }) {
+  return mutateCash("settle", payload.items, { note: payload.note }, true) as Promise<CashBulkResult>;
 }
 
 export async function assignDriversBulk(payload: {

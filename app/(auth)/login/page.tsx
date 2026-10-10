@@ -1,16 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
+import { requestLogin, type MembershipChoice } from "@/lib/session-contract";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import {
   hasActiveSession,
   saveAuth,
-  roleToDashboardPath,
+  dashboardPathForUser,
   AuthUser,
   getUser,
+  authEpoch,
 } from "@/lib/auth";
 import { toast } from "sonner";
+import { postLoginDestination } from "@/lib/acceptance-corrections";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,7 +25,7 @@ type LoginResponse = {
   token: string;
   refreshToken?: string;
   accessTokenExpiresInSec?: number;
-  user: AuthUser & { password?: string };
+  user: AuthUser | Record<string, unknown>;
 };
 
 function extractErrorMessage(err: unknown) {
@@ -46,46 +49,49 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [choices, setChoices] = useState<MembershipChoice[]>([]);
+  const [selected, setSelected] = useState("");
+  const busy = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
   useEffect(() => {
     if (!hasActiveSession()) return;
     const user = getUser();
     if (!user) return;
     const next = searchParams.get("next");
-    router.replace(next || roleToDashboardPath(user.role));
+    router.replace(postLoginDestination(user, next, dashboardPathForUser(user)));
   }, [router, searchParams]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (busy.current) return;
+    if (choices.length && !selected) { toast.error("Choose your company membership"); return; }
+    busy.current = true;
+    const epoch = authEpoch();
     setIsSubmitting(true);
 
     try {
-      const res = await api.post<LoginResponse>("/api/auth/login", {
-        email,
-        password,
-      });
+      const result = await requestLogin((path, body) => api.post<LoginResponse>(path, body), { email, password }, choices, selected || undefined);
+      if (!mounted.current || epoch !== authEpoch()) return;
+      if (result.choices) { setChoices(result.choices); setSelected(""); return; }
+      const { token, refreshToken, user } = result.session!;
 
-      const { token, refreshToken, user } = res.data;
-
-      saveAuth(token, {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        warehouseId: user.warehouseId ?? null,
-        customerEntityId: user.customerEntityId ?? null,
-      }, {
-        refreshToken: refreshToken ?? null,
+      saveAuth(token, user, {
+        refreshToken, expectedEpoch: epoch,
       });
 
       toast.success("Logged in successfully");
 
       const next = searchParams.get("next");
-      router.replace(next || roleToDashboardPath(user.role));
+      const storedUser = getUser();
+      setPassword(""); setChoices([]);
+      router.replace(postLoginDestination(storedUser, next, dashboardPathForUser(storedUser)));
     } catch (err: unknown) {
-      toast.error(extractErrorMessage(err));
+      if (mounted.current) { setPassword(""); setChoices([]); setSelected(""); toast.error(extractErrorMessage(err)); }
     } finally {
-      setIsSubmitting(false);
+      busy.current = false;
+      if (mounted.current) setIsSubmitting(false);
     }
   }
 
@@ -138,7 +144,8 @@ export default function LoginPage() {
                     type="email"
                     autoComplete="email"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    disabled={isSubmitting}
+                    onChange={(e) => { setEmail(e.target.value); setChoices([]); setSelected(""); }}
                     placeholder="you@company.com"
                     className="h-11 pl-10"
                     required
@@ -155,7 +162,8 @@ export default function LoginPage() {
                     type="password"
                     autoComplete="current-password"
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    disabled={isSubmitting}
+                    onChange={(e) => { setPassword(e.target.value); setChoices([]); setSelected(""); }}
                     placeholder="Enter your password"
                     className="h-11 pl-10"
                     required
@@ -163,6 +171,14 @@ export default function LoginPage() {
                 </div>
               </div>
 
+              {choices.length > 0 && <div className="space-y-2">
+                <Label htmlFor="membership">Choose tenant and company</Label>
+                <select id="membership" className="w-full rounded border p-2" value={selected} disabled={isSubmitting} onChange={e => setSelected(e.target.value)}>
+                  <option value="">Select a membership</option>
+                  {choices.map(choice => <option key={choice.companyMembershipId} value={choice.companyMembershipId}>{choice.tenantName} / {choice.companyName}</option>)}
+                </select>
+                <p className="text-sm">Changing context requires logout and a fresh login.</p>
+              </div>}
               <Button className="h-11 w-full" type="submit" disabled={isSubmitting}>
                 {isSubmitting ? "Signing in..." : "Sign in"}
               </Button>

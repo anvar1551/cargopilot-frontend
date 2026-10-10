@@ -4,25 +4,22 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  ArrowRight,
   ChevronLeft,
-  ChevronRight,
   CreditCard,
-  FileText,
-  MapPin,
   Package,
   Search,
   SlidersHorizontal,
-  Tag,
   Truck,
 } from "lucide-react";
 
 import { fetchOrders, type OrderStatus, type OrdersResponse } from "@/lib/orders";
+import { getPrimaryCustomerEntityId, getUser } from "@/lib/auth";
 import { getStatusLabel } from "@/lib/i18n/labels";
+import { READ_ONLY_ORDER_CAPABILITIES } from "@/lib/orders/permissions";
 
 import { useI18n } from "@/components/i18n/I18nProvider";
 import CreateOrderDialog from "@/components/orders/CreateOrderDialog";
-import { Badge } from "@/components/ui/badge";
+import OrdersTable, { type OrderTableRow } from "@/components/orders/OrderTable";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -46,12 +43,29 @@ type CustomerOrder = {
   id: string;
   orderNumber?: string | number | null;
   status?: OrderStatus | string | null;
+  paymentState?: string | null;
   createdAt?: string | null;
   pickupAddress?: string | null;
   dropoffAddress?: string | null;
   labelUrl?: string | null;
   invoice?: InvoiceState | null;
   Invoice?: InvoiceState | null;
+  senderName?: string | null;
+  senderPhone?: string | null;
+  receiverName?: string | null;
+  receiverPhone?: string | null;
+  customer?: {
+    name?: string | null;
+    email?: string | null;
+  } | null;
+  customerEntity?: {
+    id?: string | null;
+    name?: string | null;
+    companyName?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    type?: string | null;
+  } | null;
 };
 
 const copy = {
@@ -171,39 +185,9 @@ const copy = {
   },
 } as const;
 
-function statusBadgeVariant(status: string) {
-  switch (status) {
-    case "delivered":
-      return "default";
-    case "out_for_delivery":
-    case "at_warehouse":
-    case "in_transit":
-      return "secondary";
-    case "exception":
-    case "return_in_progress":
-      return "destructive";
-    default:
-      return "outline";
-  }
-}
-
-function hasInvoiceReady(order: CustomerOrder) {
-  const invoice = order.invoice ?? order.Invoice;
-  return Boolean(invoice?.invoiceUrl);
-}
-
-function hasLabelReady(order: CustomerOrder) {
-  return Boolean(order.labelUrl);
-}
-
 function hasPaymentPending(order: CustomerOrder) {
   const invoice = order.invoice ?? order.Invoice;
   return Boolean(invoice?.paymentUrl) && invoice?.status !== "paid";
-}
-
-function isPaid(order: CustomerOrder) {
-  const invoice = order.invoice ?? order.Invoice;
-  return invoice?.status === "paid";
 }
 
 function isDelivered(order: CustomerOrder) {
@@ -280,6 +264,8 @@ function SummaryCard({
 export default function CustomerOrdersPage() {
   const { locale, t } = useI18n();
   const text = copy[locale];
+  const user = useMemo(() => getUser(), []);
+  const customerEntityId = getPrimaryCustomerEntityId(user);
 
   const { data, isLoading, error } = useQuery<OrdersResponse>({
     queryKey: ["orders"],
@@ -331,6 +317,27 @@ export default function CustomerOrdersPage() {
 
     return list;
   }, [orderList, query, sortBy, statusFilter, tab]);
+
+  const orderTableRows = useMemo<OrderTableRow[]>(() => {
+    return filtered.map((order) => ({
+      id: order.id,
+      orderNumber: order.orderNumber,
+      status: order.status ?? null,
+      paymentState: order.paymentState ?? null,
+      pickupAddress: order.pickupAddress ?? null,
+      dropoffAddress: order.dropoffAddress ?? null,
+      createdAt: order.createdAt ?? null,
+      labelUrl: order.labelUrl ?? null,
+      invoice: order.invoice ?? null,
+      Invoice: order.Invoice ?? null,
+      senderName: order.senderName ?? null,
+      senderPhone: order.senderPhone ?? null,
+      receiverName: order.receiverName ?? null,
+      receiverPhone: order.receiverPhone ?? null,
+      customer: order.customer ?? null,
+      customerEntity: order.customerEntity ?? null,
+    }));
+  }, [filtered]);
 
   const uniqueStatuses = useMemo(() => {
     const statuses = new Set<string>();
@@ -393,7 +400,12 @@ export default function CustomerOrdersPage() {
             </div>
 
             <div className="flex items-start">
-              <CreateOrderDialog triggerLabel={text.newShipment} />
+              <CreateOrderDialog
+                triggerLabel={text.newShipment}
+                presetCustomerEntityId={customerEntityId}
+                presetCustomerEntityLabel={user?.name || user?.email || null}
+                lockCustomerEntitySelection
+              />
             </div>
           </div>
         </section>
@@ -482,7 +494,7 @@ export default function CustomerOrdersPage() {
               </div>
             </div>
 
-            <div className="overflow-hidden rounded-3xl border border-border/60 bg-background">
+            <div className="overflow-hidden rounded-3xl border border-border/60 bg-background p-3 sm:p-4">
               {isLoading ? (
                 <>
                   <OrderRowSkeleton />
@@ -516,93 +528,13 @@ export default function CustomerOrdersPage() {
                   </div>
                 </div>
               ) : (
-                <div className="divide-y">
-                  {filtered.map((order) => (
-                    <Link
-                      key={order.id}
-                      href={`/dashboard/customer/orders?order=${order.id}`}
-                      className="group block p-4 transition hover:bg-muted/30"
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="min-w-0 space-y-3">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Badge
-                              variant={statusBadgeVariant(String(order.status ?? ""))}
-                              className="rounded-full capitalize"
-                            >
-                              {getStatusLabel(String(order.status ?? ""), t)}
-                            </Badge>
-
-                            <span className="text-xs text-muted-foreground">
-                              {order.orderNumber ? `#${order.orderNumber}` : text.orderInProgress}
-                            </span>
-
-                            <div className="flex flex-wrap items-center gap-2">
-                              {hasLabelReady(order) ? (
-                                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                                  <Tag className="h-3.5 w-3.5" />
-                                  {text.labelReady}
-                                </span>
-                              ) : null}
-                              {hasInvoiceReady(order) ? (
-                                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                                  <FileText className="h-3.5 w-3.5" />
-                                  {text.invoiceReady}
-                                </span>
-                              ) : null}
-                              {hasPaymentPending(order) ? (
-                                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                                  <CreditCard className="h-3.5 w-3.5" />
-                                  {text.paymentPending}
-                                </span>
-                              ) : null}
-                              {isPaid(order) ? (
-                                <span className="text-xs text-muted-foreground">{text.paid}</span>
-                              ) : null}
-                            </div>
-                          </div>
-
-                          <div className="grid gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
-                            <div className="flex min-w-0 items-start gap-2">
-                              <MapPin className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                              <div className="min-w-0">
-                                <div className="truncate text-sm font-medium">
-                                  {order.pickupAddress || "-"}
-                                </div>
-                                <div className="text-xs text-muted-foreground">{text.pickup}</div>
-                              </div>
-                            </div>
-
-                            <ArrowRight className="hidden h-4 w-4 text-muted-foreground sm:block" />
-
-                            <div className="flex min-w-0 items-start gap-2">
-                              <MapPin className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                              <div className="min-w-0">
-                                <div className="truncate text-sm font-medium">
-                                  {order.dropoffAddress || "-"}
-                                </div>
-                                <div className="text-xs text-muted-foreground">{text.dropoff}</div>
-                              </div>
-                            </div>
-                          </div>
-
-                          {order.createdAt ? (
-                            <div className="text-xs text-muted-foreground">
-                              {text.created} {new Date(order.createdAt).toLocaleString(locale)}
-                            </div>
-                          ) : null}
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <Button variant="outline" size="sm" className="hidden rounded-2xl sm:inline-flex">
-                            {text.viewDetails}
-                          </Button>
-                          <ChevronRight className="h-4 w-4 text-muted-foreground transition group-hover:translate-x-0.5" />
-                        </div>
-                      </div>
-                    </Link>
-                  ))}
-                </div>
+                <OrdersTable
+                  data={orderTableRows}
+                  capabilities={READ_ONLY_ORDER_CAPABILITIES}
+                  detailsBasePath="/dashboard/customer/orders"
+                  hideSearch
+                  hideQuickFilters
+                />
               )}
             </div>
           </CardContent>

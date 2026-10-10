@@ -7,7 +7,7 @@ import { usePathname, useRouter, useSearchParams, useSelectedLayoutSegment } fro
 
 import AppTopbar from "@/components/layout/AppTopbar";
 import OrderDetailsView from "@/components/orders/OrderDetailsView";
-import ManagerSidebar from "@/components/manager/sidebar/ManagerSidebar";
+import ErpSidebar from "@/components/erp/sidebar/ErpSidebar";
 import {
   Dialog,
   DialogContent,
@@ -16,25 +16,31 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { tryRefreshSession } from "@/lib/api";
-import { clearAuth, hasActiveSession } from "@/lib/auth";
-import { useManagerSidebarStore } from "@/store/useManagerSidebarStore"; // Zustand
+import { getUser, hasActiveSession } from "@/lib/auth";
+import {
+  getErpOrderCapabilities,
+  getWarehouseOrderCapabilities,
+  READ_ONLY_ORDER_CAPABILITIES,
+} from "@/lib/orders/permissions";
+import { useErpSidebarStore } from "@/store/useErpSidebarStore";
+import { usesGenericOrderModal } from "@/lib/order-modal-route";
 
 export default function DashboardShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const segment = useSelectedLayoutSegment();
-  const isManager = segment === "manager";
-  const orderModalId = searchParams.get("order");
+  const isErpWorkspace = segment === "manager";
+  const genericModalRoute = usesGenericOrderModal(pathname);
+  const orderModalId = genericModalRoute ? searchParams.get("order") : null;
   const [activeOrderModalId, setActiveOrderModalId] = useState<string | null>(orderModalId);
-  const isDirectOrderDetailsPage = /^\/dashboard\/(manager|warehouse|customer)\/orders\/[^/]+$/i.test(
-    pathname || "",
-  );
-  const showOrderModal = Boolean(activeOrderModalId) && !isDirectOrderDetailsPage;
+  const showOrderModal = genericModalRoute && Boolean(activeOrderModalId);
 
-  const isCollapsed = useManagerSidebarStore((s) => s.isCollapsed);
-  const isMobileOpen = useManagerSidebarStore((s) => s.isMobileOpen);
-  const setMobileOpen = useManagerSidebarStore((s) => s.setMobileOpen);
+  const isCollapsed = useErpSidebarStore((s) => s.isCollapsed);
+  const isMobileOpen = useErpSidebarStore((s) => s.isMobileOpen);
+  const setMobileOpen = useErpSidebarStore((s) => s.setMobileOpen);
+  const currentUser = getUser();
+  const [sessionReady, setSessionReady] = useState(false);
 
   const closeOrderModal = () => {
     setActiveOrderModalId(null);
@@ -60,28 +66,28 @@ export default function DashboardShell({ children }: { children: ReactNode }) {
     pathname?.startsWith("/dashboard/warehouse")
       ? {
           backHref: "/dashboard/warehouse",
-          title: "Order Details (Warehouse)",
-          showManagerActions: false,
+          title: "Order Details",
+          capabilities: getWarehouseOrderCapabilities(currentUser),
         }
       : pathname?.startsWith("/dashboard/customer")
         ? {
             backHref: "/dashboard/customer/orders",
             title: "Order Details",
-            showManagerActions: false,
+            capabilities: READ_ONLY_ORDER_CAPABILITIES,
           }
         : {
             backHref: "/dashboard/manager/orders",
-            title: "Order Details (Manager)",
-            showManagerActions: true,
+            title: "Order Details",
+            capabilities: getErpOrderCapabilities(currentUser),
           };
 
   useEffect(() => {
     let cancelled = false;
     const ensureSession = async () => {
-      if (hasActiveSession()) return;
-      const refreshed = await tryRefreshSession();
-      if (cancelled || refreshed) return;
-      clearAuth();
+      if (hasActiveSession()) { setSessionReady(true); return; }
+      const refreshed = await tryRefreshSession().catch(() => false);
+      if (cancelled) return;
+      if (refreshed) { setSessionReady(true); return; }
       if (pathname !== "/login") {
         const next = encodeURIComponent(pathname || "/dashboard");
         router.replace(`/login?next=${next}`);
@@ -101,46 +107,49 @@ export default function DashboardShell({ children }: { children: ReactNode }) {
     setMobileOpen(false);
   }, [pathname, setMobileOpen]);
 
+  if (!sessionReady || !currentUser) return null;
   return (
     <div className="min-h-dvh bg-muted/30">
-      <AppTopbar />
-
-      <div className="w-full px-3 sm:px-6 lg:px-8">
-        {isManager ? (
-          <>
-            {isMobileOpen ? (
-              <div className="fixed inset-0 z-50 xl:hidden">
-                <button
-                  type="button"
-                  className="absolute inset-0 bg-slate-950/20"
-                  onClick={() => setMobileOpen(false)}
-                  aria-label="Close navigation"
-                />
-                <div className="absolute inset-y-0 left-0 w-[290px] max-w-[88vw]">
-                  <ManagerSidebar />
-                </div>
+      {isErpWorkspace ? (
+        <>
+          {isMobileOpen ? (
+            <div className="fixed inset-0 z-50 xl:hidden">
+              <button
+                type="button"
+                className="absolute inset-0 bg-slate-950/20"
+                onClick={() => setMobileOpen(false)}
+                aria-label="Close navigation"
+              />
+              <div className="absolute inset-y-0 left-0 w-[290px] max-w-[88vw]">
+                <ErpSidebar />
               </div>
-            ) : null}
+            </div>
+          ) : null}
 
-            <div
-              className="grid gap-6 xl:grid-cols-[var(--manager-sidebar-width)_minmax(0,1fr)]"
-              style={
-                {
-                  "--manager-sidebar-width": isCollapsed ? "72px" : "16rem",
-                } as CSSProperties
-              }
-            >
-              <aside className="hidden min-w-0 xl:block">
-                <ManagerSidebar />
-              </aside>
+          <div
+            className="grid min-h-dvh gap-0 xl:grid-cols-[var(--manager-sidebar-width)_minmax(0,1fr)]"
+            style={
+              {
+                "--manager-sidebar-width": isCollapsed ? "76px" : "250px",
+              } as CSSProperties
+            }
+          >
+            <aside className="hidden min-w-0 xl:block">
+              <ErpSidebar />
+            </aside>
 
+            <div className="min-w-0">
+              <AppTopbar />
               <main className="min-w-0">{children}</main>
             </div>
-          </>
-        ) : (
+          </div>
+        </>
+      ) : (
+        <>
+          <AppTopbar />
           <main className="min-w-0">{children}</main>
-        )}
-      </div>
+        </>
+      )}
 
       <Dialog open={showOrderModal} onOpenChange={(open) => (!open ? closeOrderModal() : null)}>
         <DialogContent className="h-[96dvh] w-[calc(100vw-0.75rem)] !max-w-none overflow-hidden rounded-2xl p-0 sm:w-[calc(100vw-1.5rem)] sm:!max-w-[96rem] xl:sm:!max-w-[106rem]">
@@ -150,13 +159,13 @@ export default function DashboardShell({ children }: { children: ReactNode }) {
               Full order details modal with route, shipment, payment, and timeline tabs.
             </DialogDescription>
           </DialogHeader>
-          {activeOrderModalId ? (
+          {showOrderModal && activeOrderModalId ? (
             <div className="h-full overflow-x-hidden overflow-y-auto">
               <OrderDetailsView
                 orderId={activeOrderModalId}
                 backHref={orderDetailsModalConfig.backHref}
                 title={orderDetailsModalConfig.title}
-                showManagerActions={orderDetailsModalConfig.showManagerActions}
+                capabilities={orderDetailsModalConfig.capabilities}
                 hideBackButton
               />
             </div>

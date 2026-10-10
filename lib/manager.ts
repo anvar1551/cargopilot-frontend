@@ -1,5 +1,5 @@
-import { api, tryRefreshSession } from "@/lib/api";
-import { getToken } from "@/lib/auth";
+import { api } from "@/lib/api";
+import { subscribeAuthenticatedSse } from "@/lib/sse";
 import { fetchOrders, type Order } from "./orders";
 
 export type DriverLite = {
@@ -12,7 +12,7 @@ export type DriverLite = {
 };
 
 export async function fetchManagerOverview() {
-  const res = await api.get("/api/manager/overview");
+  const res = await api.get("/api/dashboard/overview");
   return res.data;
 }
 
@@ -45,13 +45,18 @@ export type ManagerAnalyticsV2Summary = {
   };
   finance: {
     invoicedPaidAmount: number;
+    invoicedPaidAmountByCurrency?: Array<{ currency: string; amount: number }>;
     pendingInvoicesCount: number;
     serviceChargeExpected: number;
+    serviceChargeExpectedByCurrency?: Array<{ currency: string; amount: number }>;
     codExpected: number;
+    codExpectedByCurrency?: Array<{ currency: string; amount: number }>;
     unpaidServiceCount: number;
     unpaidCodCount: number;
   };
   generatedAt: string;
+  isPartial?: boolean;
+  isStale?: boolean;
 };
 
 export type ManagerAnalyticsV2Trend = {
@@ -65,6 +70,8 @@ export type ManagerAnalyticsV2Trend = {
     delivered: Array<{ date: string; count: number }>;
   };
   generatedAt: string;
+  isPartial?: boolean;
+  isStale?: boolean;
 };
 
 export type ManagerAnalyticsV2Warnings = {
@@ -93,6 +100,9 @@ export type ManagerAnalyticsV2Warnings = {
     serviceChargeDue: number;
     updatedAt: string;
   }>;
+  generatedAt?: string;
+  isPartial?: boolean;
+  isStale?: boolean;
 };
 
 export type ManagerAnalyticsV2FinanceQueue = {
@@ -118,6 +128,9 @@ export type ManagerAnalyticsV2FinanceQueue = {
     hasPrev: boolean;
     hasNext: boolean;
   };
+  generatedAt?: string;
+  isPartial?: boolean;
+  isStale?: boolean;
 };
 
 export type ManagerOpsMetrics = {
@@ -200,6 +213,21 @@ export type ManagerOpsMetrics = {
     analyticsReconnectSpike: boolean;
     liveMapReconnectSpike: boolean;
   };
+  redis?: {
+    enabled: boolean;
+    sharedClientStatus: string;
+    cooldownActive: boolean;
+    cooldownRemainingMs: number;
+    lastUnavailableReason: string | null;
+    stats: {
+      connectAttempts: number;
+      connectFailures: number;
+      cooldownHits: number;
+      operationTimeouts: number;
+      notReadyErrors: number;
+      recycledClients: number;
+    };
+  };
 };
 
 export async function fetchManagerAnalyticsSummaryV2(params?: {
@@ -209,7 +237,7 @@ export async function fetchManagerAnalyticsSummaryV2(params?: {
   const safeParams: Record<string, number> = {};
   if (Number.isFinite(params?.rangeDays)) safeParams.rangeDays = Number(params?.rangeDays);
   if (Number.isFinite(params?.staleHours)) safeParams.staleHours = Number(params?.staleHours);
-  const res = await api.get("/api/manager/analytics/summary", { params: safeParams });
+  const res = await api.get("/api/analytics/summary", { params: safeParams });
   const raw = (res.data ?? {}) as Partial<ManagerAnalyticsV2Summary>;
   return {
     period: {
@@ -240,13 +268,33 @@ export async function fetchManagerAnalyticsSummaryV2(params?: {
     },
     finance: {
       invoicedPaidAmount: Number(raw.finance?.invoicedPaidAmount ?? 0),
+      invoicedPaidAmountByCurrency: Array.isArray(raw.finance?.invoicedPaidAmountByCurrency)
+        ? raw.finance!.invoicedPaidAmountByCurrency.map((item) => ({
+            currency: String(item.currency || "UZS").toUpperCase(),
+            amount: Number(item.amount || 0),
+          }))
+        : [],
       pendingInvoicesCount: Number(raw.finance?.pendingInvoicesCount ?? 0),
       serviceChargeExpected: Number(raw.finance?.serviceChargeExpected ?? 0),
+      serviceChargeExpectedByCurrency: Array.isArray(raw.finance?.serviceChargeExpectedByCurrency)
+        ? raw.finance!.serviceChargeExpectedByCurrency.map((item) => ({
+            currency: String(item.currency || "UZS").toUpperCase(),
+            amount: Number(item.amount || 0),
+          }))
+        : [],
       codExpected: Number(raw.finance?.codExpected ?? 0),
+      codExpectedByCurrency: Array.isArray(raw.finance?.codExpectedByCurrency)
+        ? raw.finance!.codExpectedByCurrency.map((item) => ({
+            currency: String(item.currency || "UZS").toUpperCase(),
+            amount: Number(item.amount || 0),
+          }))
+        : [],
       unpaidServiceCount: Number(raw.finance?.unpaidServiceCount ?? 0),
       unpaidCodCount: Number(raw.finance?.unpaidCodCount ?? 0),
     },
     generatedAt: String(raw.generatedAt ?? new Date().toISOString()),
+    isPartial: Boolean(raw.isPartial),
+    isStale: Boolean(raw.isStale),
   };
 }
 
@@ -255,7 +303,7 @@ export async function fetchManagerAnalyticsTrendV2(params?: {
 }): Promise<ManagerAnalyticsV2Trend> {
   const safeParams: Record<string, number> = {};
   if (Number.isFinite(params?.rangeDays)) safeParams.rangeDays = Number(params?.rangeDays);
-  const res = await api.get("/api/manager/analytics/trend", { params: safeParams });
+  const res = await api.get("/api/analytics/trend", { params: safeParams });
   const raw = (res.data ?? {}) as Partial<ManagerAnalyticsV2Trend>;
   return {
     period: {
@@ -268,6 +316,8 @@ export async function fetchManagerAnalyticsTrendV2(params?: {
       delivered: Array.isArray(raw.trend?.delivered) ? raw.trend!.delivered : [],
     },
     generatedAt: String(raw.generatedAt ?? new Date().toISOString()),
+    isPartial: Boolean(raw.isPartial),
+    isStale: Boolean(raw.isStale),
   };
 }
 
@@ -278,7 +328,7 @@ export async function fetchManagerAnalyticsWarningsV2(params?: {
   const safeParams: Record<string, number> = {};
   if (Number.isFinite(params?.rangeDays)) safeParams.rangeDays = Number(params?.rangeDays);
   if (Number.isFinite(params?.staleHours)) safeParams.staleHours = Number(params?.staleHours);
-  const res = await api.get("/api/manager/analytics/warnings", { params: safeParams });
+  const res = await api.get("/api/analytics/warnings", { params: safeParams });
   const raw = (res.data ?? {}) as Partial<ManagerAnalyticsV2Warnings>;
   return {
     overdueTotal: Number(raw.overdueTotal ?? 0),
@@ -287,6 +337,9 @@ export async function fetchManagerAnalyticsWarningsV2(params?: {
     overdueOrders: Array.isArray(raw.overdueOrders) ? raw.overdueOrders : [],
     staleOrders: Array.isArray(raw.staleOrders) ? raw.staleOrders : [],
     financeExposureOrders: Array.isArray(raw.financeExposureOrders) ? raw.financeExposureOrders : [],
+    generatedAt: String(raw.generatedAt ?? new Date().toISOString()),
+    isPartial: Boolean(raw.isPartial),
+    isStale: Boolean(raw.isStale),
   };
 }
 
@@ -299,7 +352,7 @@ export async function fetchManagerAnalyticsFinanceQueueV2(params?: {
   queueKinds?: string[];
   queueHolderTypes?: string[];
 }): Promise<ManagerAnalyticsV2FinanceQueue> {
-  const res = await api.get("/api/manager/analytics/finance-queue", {
+  const res = await api.get("/api/analytics/finance-queue", {
     params: {
       ...params,
       queueStatuses: params?.queueStatuses?.length
@@ -329,21 +382,24 @@ export async function fetchManagerAnalyticsFinanceQueueV2(params?: {
       hasPrev: Boolean(raw.queueMeta?.hasPrev ?? page > 1),
       hasNext: Boolean(raw.queueMeta?.hasNext ?? page < pageCount),
     },
+    generatedAt: String(raw.generatedAt ?? new Date().toISOString()),
+    isPartial: Boolean(raw.isPartial),
+    isStale: Boolean(raw.isStale),
   };
 }
 
 export async function invalidateManagerAnalyticsV2() {
-  const res = await api.post("/api/manager/analytics/refresh");
+  const res = await api.post("/api/analytics/refresh");
   return res.data as { ok: boolean };
 }
 
 export async function fetchManagerOpsMetrics(): Promise<ManagerOpsMetrics> {
-  const res = await api.get("/api/manager/ops/metrics");
+  const res = await api.get("/api/dashboard/ops/metrics");
   return (res.data ?? {}) as ManagerOpsMetrics;
 }
 
 export async function fetchDrivers(): Promise<DriverLite[]> {
-  const res = await api.get("/api/manager/drivers");
+  const res = await api.get("/api/dashboard/drivers");
   return Array.isArray(res.data) ? res.data : res.data?.drivers ?? [];
 }
 
@@ -358,8 +414,8 @@ export type ManagerLiveMapDriver = DriverLite & {
   warehouseIds: string[];
   driverType: "local" | "linehaul";
   liveEnabled: boolean;
-  lat: number;
-  lng: number;
+  lat: number | null;
+  lng: number | null;
   headingDeg: number;
   speedKmh: number;
   lastSeenAt: string;
@@ -398,6 +454,8 @@ export type ManagerLiveMapSnapshot = {
   orders: ManagerLiveMapOrder[];
   warehouses: ManagerLiveMapWarehouse[];
   isMock: boolean;
+  isPartial?: boolean;
+  isStale?: boolean;
 };
 
 export type LiveMapViewport = {
@@ -446,39 +504,6 @@ export type LiveMapEvent =
       };
     };
 
-function buildApiUrl(path: string) {
-  const base = String(api.defaults.baseURL ?? "").trim();
-  if (!base) return path;
-
-  const normalizedBase = base.replace(/\/+$/, "");
-  if (normalizedBase.endsWith("/api") && path.startsWith("/api/")) {
-    return `${normalizedBase}${path.slice(4)}`;
-  }
-  return `${normalizedBase}${path.startsWith("/") ? path : `/${path}`}`;
-}
-
-function parseSseFrame(frameRaw: string) {
-  const lines = frameRaw.split(/\r?\n/);
-  let event = "message";
-  const dataLines: string[] = [];
-
-  for (const line of lines) {
-    if (!line || line.startsWith(":")) continue;
-    if (line.startsWith("event:")) {
-      event = line.slice(6).trim() || "message";
-      continue;
-    }
-    if (line.startsWith("data:")) {
-      dataLines.push(line.slice(5).trimStart());
-    }
-  }
-
-  return {
-    event,
-    data: dataLines.length > 0 ? dataLines.join("\n") : "",
-  };
-}
-
 export function subscribeManagerAnalyticsStream(args: {
   onReady?: (payload: { connectedAt?: string }) => void;
   onRefresh: (payload: {
@@ -490,148 +515,30 @@ export function subscribeManagerAnalyticsStream(args: {
   }) => void;
   onError?: (error: Error) => void;
 }) {
-  if (typeof window === "undefined") return () => undefined;
-
-  const endpoint = buildApiUrl("/api/manager/analytics/stream");
-  const abortController = new AbortController();
-  const decoder = new TextDecoder();
-  let closed = false;
-  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  let attempt = 0;
-
-  const connect = async () => {
-    if (closed) return;
-    try {
-      let token = getToken();
-      if (!token) {
-        const refreshed = await tryRefreshSession();
-        if (!refreshed) {
-          throw new Error("Missing auth token for analytics stream");
-        }
-        token = getToken();
-      }
-
-      const response = await fetch(endpoint, {
-        method: "GET",
-        headers: {
-          Accept: "text/event-stream",
-          Authorization: `Bearer ${token}`,
-          "Cache-Control": "no-cache",
-        },
-        cache: "no-store",
-        signal: abortController.signal,
-      });
-
-      if (response.status === 401) {
-        const refreshed = await tryRefreshSession();
-        if (refreshed) {
-          throw new Error("ANALYTICS_STREAM_RETRY_AUTH");
-        }
-        throw new Error("ANALYTICS_STREAM_AUTH_EXPIRED");
-      }
-      if (!response.ok) {
-        const canRetry = shouldReconnectForStatus(response.status);
-        throw new Error(
-          canRetry
-            ? `Analytics stream unavailable (${response.status})`
-            : "ANALYTICS_STREAM_NO_RETRY",
+  return subscribeAuthenticatedSse({
+    path: "/api/analytics/stream",
+    lastEventIdKey: "cp:sse:manager-analytics:last-id",
+    onReady: (payload) => args.onReady?.((payload ?? {}) as { connectedAt?: string }),
+    onEvent: (frame) => {
+      if (frame.event !== "analytics-refresh") return;
+      try {
+        args.onRefresh(
+          frame.data
+            ? (JSON.parse(frame.data) as {
+                at?: string;
+                reason?: string;
+                scope?: string;
+                keys?: Array<"summary" | "trend" | "warnings" | "finance-queue">;
+                source?: string;
+              })
+            : {},
         );
+      } catch {
+        args.onRefresh({});
       }
-      if (!response.body) throw new Error("Analytics stream body is empty");
-
-      attempt = 0;
-      const reader = response.body.getReader();
-      let buffer = "";
-
-      while (!closed) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        let delimiterIndex = buffer.search(/\r?\n\r?\n/);
-
-        while (delimiterIndex >= 0) {
-          const frame = buffer.slice(0, delimiterIndex);
-          const consumedLength =
-            buffer[delimiterIndex] === "\r" && buffer[delimiterIndex + 1] === "\n" ? 4 : 2;
-          buffer = buffer.slice(delimiterIndex + consumedLength);
-
-          const parsed = parseSseFrame(frame);
-          if (parsed.event === "ready") {
-            try {
-              args.onReady?.(
-                parsed.data ? (JSON.parse(parsed.data) as { connectedAt?: string }) : {},
-              );
-            } catch {
-              args.onReady?.({});
-            }
-          } else if (parsed.event === "analytics-refresh") {
-            try {
-              args.onRefresh(
-                parsed.data
-                  ? (JSON.parse(parsed.data) as {
-                      at?: string;
-                      reason?: string;
-                      scope?: string;
-                      keys?: Array<"summary" | "trend" | "warnings" | "finance-queue">;
-                      source?: string;
-                    })
-                  : {},
-              );
-            } catch {
-              args.onRefresh({});
-            }
-          }
-
-          delimiterIndex = buffer.search(/\r?\n\r?\n/);
-        }
-      }
-
-      if (!closed) {
-        attempt += 1;
-        const delay = Math.min(10_000, 800 + attempt * 500);
-        reconnectTimer = setTimeout(() => {
-          reconnectTimer = null;
-          void connect();
-        }, delay);
-      }
-    } catch (error) {
-      if (closed) return;
-      const err = error instanceof Error ? error : new Error("Analytics stream failed");
-      if (err.message === "ANALYTICS_STREAM_NO_RETRY") return;
-      if (err.message === "ANALYTICS_STREAM_RETRY_AUTH") {
-        reconnectTimer = setTimeout(() => {
-          reconnectTimer = null;
-          void connect();
-        }, 300);
-        return;
-      }
-      if (err.message === "ANALYTICS_STREAM_AUTH_EXPIRED") {
-        reconnectTimer = setTimeout(() => {
-          reconnectTimer = null;
-          void connect();
-        }, 30_000);
-        return;
-      }
-      args.onError?.(err);
-      attempt += 1;
-      const delay = Math.min(12_000, 900 + attempt * 700);
-      reconnectTimer = setTimeout(() => {
-        reconnectTimer = null;
-        void connect();
-      }, delay);
-    }
-  };
-
-  void connect();
-  return () => {
-    closed = true;
-    if (reconnectTimer) clearTimeout(reconnectTimer);
-    abortController.abort();
-  };
-}
-
-function shouldReconnectForStatus(status: number) {
-  return status === 408 || status === 425 || status === 429 || status >= 500;
+    },
+    onError: args.onError,
+  });
 }
 
 export function deriveLiveMapDriverStatus(
@@ -656,164 +563,32 @@ export function subscribeManagerLiveMapStream(args: {
   onError?: (error: Error) => void;
   viewport?: LiveMapViewport | null;
 }) {
-  if (typeof window === "undefined") {
-    return () => undefined;
-  }
-
-  const endpointBase = buildApiUrl("/api/manager/live-map/stream");
-  const endpoint = (() => {
-    if (!args.viewport) return endpointBase;
+  const path = (() => {
+    if (!args.viewport) return "/api/live-map/stream";
     const params = new URLSearchParams({
       minLat: String(args.viewport.minLat),
       minLng: String(args.viewport.minLng),
       maxLat: String(args.viewport.maxLat),
       maxLng: String(args.viewport.maxLng),
     });
-    return `${endpointBase}?${params.toString()}`;
+    return `/api/live-map/stream?${params.toString()}`;
   })();
-  const abortController = new AbortController();
-  const decoder = new TextDecoder();
-
-  let closed = false;
-  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  let attempt = 0;
-
-  const clearReconnect = () => {
-    if (!reconnectTimer) return;
-    clearTimeout(reconnectTimer);
-    reconnectTimer = null;
-  };
-
-  const connect = async () => {
-    if (closed) return;
-
-    try {
-      let token = getToken();
-      if (!token) {
-        const refreshed = await tryRefreshSession();
-        if (!refreshed) {
-          throw new Error("Missing auth token for live-map stream");
-        }
-        token = getToken();
+  return subscribeAuthenticatedSse({
+    path,
+    lastEventIdKey: "cp:sse:manager-live-map:last-id",
+    onReady: (payload) => args.onReady?.((payload ?? {}) as { connectedAt?: string }),
+    onEvent: (frame) => {
+      if (frame.event !== "live-map" || !frame.data) return;
+      try {
+        args.onEvent(JSON.parse(frame.data) as LiveMapEvent);
+      } catch (error) {
+        args.onError?.(
+          error instanceof Error ? error : new Error("Failed to parse live-map event"),
+        );
       }
-
-      const response = await fetch(endpoint, {
-        method: "GET",
-        headers: {
-          Accept: "text/event-stream",
-          Authorization: `Bearer ${token}`,
-          "Cache-Control": "no-cache",
-        },
-        cache: "no-store",
-        signal: abortController.signal,
-      });
-
-      if (response.status === 401) {
-        const refreshed = await tryRefreshSession();
-        if (refreshed) {
-          throw new Error("LIVE_STREAM_RETRY_AUTH");
-        }
-        throw new Error("LIVE_STREAM_AUTH_EXPIRED");
-      }
-
-      if (!response.ok) {
-        const canRetry = shouldReconnectForStatus(response.status);
-        throw new Error(canRetry ? `Live-map stream unavailable (${response.status})` : "LIVE_STREAM_NO_RETRY");
-      }
-
-      if (!response.body) {
-        throw new Error("Live-map stream body is empty");
-      }
-
-      attempt = 0;
-      let buffer = "";
-      const reader = response.body.getReader();
-
-      while (!closed) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        let delimiterIndex = buffer.search(/\r?\n\r?\n/);
-
-        while (delimiterIndex >= 0) {
-          const frame = buffer.slice(0, delimiterIndex);
-          const consumedLength =
-            buffer[delimiterIndex] === "\r" && buffer[delimiterIndex + 1] === "\n"
-              ? 4
-              : 2;
-          buffer = buffer.slice(delimiterIndex + consumedLength);
-
-          const parsed = parseSseFrame(frame);
-          if (parsed.event === "ready") {
-            try {
-              args.onReady?.(
-                parsed.data ? (JSON.parse(parsed.data) as { connectedAt?: string }) : {},
-              );
-            } catch {
-              args.onReady?.({});
-            }
-          } else if (parsed.event === "live-map" && parsed.data) {
-            try {
-              args.onEvent(JSON.parse(parsed.data) as LiveMapEvent);
-            } catch (error) {
-              args.onError?.(
-                error instanceof Error ? error : new Error("Failed to parse live-map event"),
-              );
-            }
-          }
-
-          delimiterIndex = buffer.search(/\r?\n\r?\n/);
-        }
-      }
-
-      if (!closed) {
-        attempt += 1;
-        const delay = Math.min(10_000, 800 + attempt * 500);
-        reconnectTimer = setTimeout(() => {
-          reconnectTimer = null;
-          void connect();
-        }, delay);
-      }
-    } catch (error) {
-      if (closed) return;
-
-      const err = error instanceof Error ? error : new Error("Live-map stream connection failed");
-      if (err.message === "LIVE_STREAM_NO_RETRY") {
-        return;
-      }
-      if (err.message === "LIVE_STREAM_RETRY_AUTH") {
-        reconnectTimer = setTimeout(() => {
-          reconnectTimer = null;
-          void connect();
-        }, 300);
-        return;
-      }
-      if (err.message === "LIVE_STREAM_AUTH_EXPIRED") {
-        reconnectTimer = setTimeout(() => {
-          reconnectTimer = null;
-          void connect();
-        }, 30_000);
-        return;
-      }
-
-      args.onError?.(err);
-      attempt += 1;
-      const delay = Math.min(12_000, 900 + attempt * 700);
-      reconnectTimer = setTimeout(() => {
-        reconnectTimer = null;
-        void connect();
-      }, delay);
-    }
-  };
-
-  void connect();
-
-  return () => {
-    closed = true;
-    clearReconnect();
-    abortController.abort();
-  };
+    },
+    onError: args.onError,
+  });
 }
 
 const LIVE_MAP_DEFAULT_CENTER = {
@@ -963,11 +738,24 @@ export async function updateDriverProfile(
   };
 }
 
-export async function fetchManagerLiveMapSnapshot(): Promise<ManagerLiveMapSnapshot> {
-  const allowMockFallback = process.env.NEXT_PUBLIC_LIVE_MAP_ALLOW_MOCK === "true";
+export async function fetchManagerLiveMapSnapshot(
+  viewport?: LiveMapViewport | null,
+): Promise<ManagerLiveMapSnapshot> {
+  const allowMockFallback =
+    process.env.NODE_ENV !== "production" &&
+    process.env.NEXT_PUBLIC_LIVE_MAP_ALLOW_MOCK === "true";
 
   try {
-    const res = await api.get("/api/manager/live-map/snapshot");
+    const res = await api.get("/api/live-map/snapshot", {
+      params: viewport
+        ? {
+            minLat: viewport.minLat.toFixed(4),
+            minLng: viewport.minLng.toFixed(4),
+            maxLat: viewport.maxLat.toFixed(4),
+            maxLng: viewport.maxLng.toFixed(4),
+          }
+        : undefined,
+    });
     const payload = res.data as Partial<ManagerLiveMapSnapshot> | null | undefined;
     if (
       payload &&
@@ -987,6 +775,8 @@ export async function fetchManagerLiveMapSnapshot(): Promise<ManagerLiveMapSnaps
         orders: payload.orders,
         warehouses: payload.warehouses,
         isMock: Boolean(payload.isMock),
+        isPartial: Boolean(payload.isPartial),
+        isStale: Boolean(payload.isStale),
       };
     }
   } catch (error) {
@@ -1109,3 +899,4 @@ export async function fetchManagerLiveMapSnapshot(): Promise<ManagerLiveMapSnaps
     isMock: true,
   };
 }
+

@@ -5,7 +5,7 @@ import * as React from "react";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
-import DispatchCenter from "@/components/manager/dispatch/DispatchCenter";
+import DispatchCenter from "@/components/operations/dispatch/DispatchCenter";
 import { fetchOrders } from "@/lib/orders";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -329,7 +329,7 @@ export default function ManagerDispatchPage() {
             ) : (
               <DispatchCenter
                 orders={orders}
-                role="manager"
+                scope="erp"
                 onRefresh={handleRefresh}
               />
             )}
